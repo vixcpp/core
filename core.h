@@ -77,9 +77,6 @@ namespace Vix
     // JSON alias
     using json = nlohmann::json;
 
-    // Constants
-    constexpr size_t MAX_REQUEST_BODY_SIZE = 10 * 1024 * 1024;
-
     // Expose core types to simplify usage
     using AppPtr = std::shared_ptr<App>;
     using SessionPtr = std::shared_ptr<Session>;

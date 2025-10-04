@@ -8,7 +8,8 @@ namespace Vix
 {
     namespace fs = std::filesystem;
 
-    const std::string CONFIG_FILE_PATH = "config.json";
+    const std::string CONFIG_FILE_PATH =
+        std::getenv("VIX_CONFIG") ? std::getenv("VIX_CONFIG") : (fs::absolute(fs::path(__FILE__).parent_path().parent_path() / "config/config.json").string());
 
     Config::Config()
         : db_host("localhost"),
