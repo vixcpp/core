@@ -119,7 +119,17 @@ namespace Vix
          */
         int getServerPort() const;
 
+        void setServerPort(int port);
+
     private:
+        static constexpr const char *DEFAULT_DB_HOST = "localhost";
+        static constexpr const char *DEFAULT_DB_USER = "root";
+        static constexpr const char *DEFAULT_DB_PASS = "";
+        static constexpr const char *DEFAULT_DB_NAME = "";
+        static constexpr int DEFAULT_DB_PORT = 3306;
+        static constexpr int DEFAULT_SERVER_PORT = 8080;
+        static const std::filesystem::path DEFAULT_CONFIG_PATH;
+
         std::string db_host;
         std::string db_user;
         std::string db_pass;

@@ -50,14 +50,17 @@ namespace Vix
         void run();
         void start_accept();
         int calculate_io_thread_count();
+        std::shared_ptr<Router> getRouter() { return router_; }
+        void monitor_metrics();
 
     private:
-        void handle_client(std::shared_ptr<tcp::socket> socket_ptr, Router &router);
+        void init_acceptor(unsigned short port);
+        void handle_client(std::shared_ptr<tcp::socket> socket_ptr, std::shared_ptr<Router> router);
         void close_socket(std::shared_ptr<tcp::socket> socket);
         Config &config_;
         std::shared_ptr<net::io_context> io_context_;
         std::unique_ptr<tcp::acceptor> acceptor_;
-        Router router_;
+        std::shared_ptr<Router> router_;
         std::unique_ptr<RouteConfigurator> route_configurator_;
         Vix::ThreadPool request_thread_pool_;
         std::vector<std::thread> io_threads_;

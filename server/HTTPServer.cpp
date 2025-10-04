@@ -1,104 +1,132 @@
 #include "HTTPServer.hpp"
+#include "../utils/Logger.hpp"
 
 namespace Vix
 {
     void set_affinity(int thread_id)
     {
 #ifdef __linux__
+        unsigned int hc = std::thread::hardware_concurrency();
+        if (hc == 0)
+            hc = 1;
         cpu_set_t cpuset;
         CPU_ZERO(&cpuset);
-        CPU_SET(thread_id % std::thread::hardware_concurrency(), &cpuset);
+        CPU_SET(thread_id % hc, &cpuset);
         pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
 #endif
+    }
+
+    void HTTPServer::init_acceptor(unsigned short port)
+    {
+        auto &log = Vix::Logger::getInstance();
+
+        auto check_error = [&log](const boost::system::error_code &ec, const std::string &msg)
+        {
+            if (ec)
+            {
+                log.log(Vix::Logger::Level::ERROR, "{}: {} (Error code: {})", msg, ec.message(), ec.value());
+                throw std::system_error(ec, msg);
+            }
+        };
+
+        tcp::endpoint endpoint(net::ip::tcp::v4(), port);
+        acceptor_ = std::make_unique<tcp::acceptor>(*io_context_);
+
+        boost::system::error_code ec;
+
+        acceptor_->open(endpoint.protocol(), ec);
+        check_error(ec, "Could not open the acceptor socket");
+
+        acceptor_->set_option(boost::asio::socket_base::reuse_address(true), ec);
+        check_error(ec, "Could not set socket option");
+
+        acceptor_->bind(endpoint, ec);
+        check_error(ec, fmt::format("Could not bind to the server port {}", port));
+
+        acceptor_->listen(boost::asio::socket_base::max_connections, ec);
+        check_error(ec, fmt::format("Could not listen on the server port {}", port));
+
+        log.log(Vix::Logger::Level::INFO, "Acceptor initialized on port {}", port);
     }
 
     HTTPServer::HTTPServer(Config &config)
         : config_(config),
           io_context_(std::make_shared<net::io_context>()),
           acceptor_(nullptr),
-          router_(),
-          route_configurator_(std::make_unique<RouteConfigurator>(router_)),
-          request_thread_pool_(NUMBER_OF_THREADS, 100, 0, std::chrono::milliseconds(1000)),
+          router_(std::make_shared<Router>()),
+          route_configurator_(std::make_unique<RouteConfigurator>(*router_)),
+          request_thread_pool_(NUMBER_OF_THREADS, 100, 0, 4),
           io_threads_(),
           stop_requested_(false)
     {
+        auto &log = Vix::Logger::getInstance();
         try
         {
-            int newPort = config_.getServerPort();
-            if (newPort < 1024 || newPort > 65535)
+            int port = config_.getServerPort();
+            if (port < 1024 || port > 65535)
             {
-                throw std::invalid_argument("Port number out of range (1024-65535)");
+                log.log(Vix::Logger::Level::ERROR, "Section port {} out of range (1024-65535)", port);
+                throw;
             }
 
-            tcp::endpoint endpoint(boost::asio::ip::address_v4::any(), static_cast<unsigned short>(newPort));
-            acceptor_ = std::make_unique<tcp::acceptor>(*io_context_);
-
-            boost::system::error_code ec;
-            acceptor_->open(endpoint.protocol(), ec);
-            if (ec)
-            {
-                spdlog::error("Failed to open acceptor socket: {} (Error code: {})", ec.message(), ec.value());
-                throw std::system_error(ec, "Could not open the acceptor socket");
-            }
-
-            acceptor_->set_option(boost::asio::socket_base::reuse_address(true), ec);
-            if (ec)
-            {
-                spdlog::error("Failed to set socket option: {} (Error code: {})", ec.message(), ec.value());
-                throw std::system_error(ec, "Could not set socket option");
-            }
-
-            acceptor_->bind(endpoint, ec);
-            if (ec)
-            {
-                spdlog::error("Failed to bind to the server port: {} (Error code: {})", ec.message(), ec.value());
-                throw std::system_error(ec, "Could not bind to the server port");
-            }
-
-            acceptor_->listen(boost::asio::socket_base::max_connections, ec);
-            if (ec)
-            {
-                spdlog::error("Failed to listen on the server port: {} (Error code: {})", ec.message(), ec.value());
-                throw std::system_error(ec, "Could not listen on the server port");
-            }
+            init_acceptor(static_cast<unsigned short>(port));
         }
         catch (const std::exception &e)
         {
-            spdlog::error("Error initializing server: {}", e.what());
+            log.log(Vix::Logger::Level::ERROR, "Error initializing HTTPServer: {}", e.what());
             throw;
         }
     }
 
     HTTPServer::~HTTPServer() {}
 
+    void HTTPServer::monitor_metrics()
+    {
+        auto &log = Vix::Logger::getInstance();
+
+        request_thread_pool_.periodicTask(0, [this, &log]()
+                                          {
+            auto metrics = request_thread_pool_.getMetrics();
+            log.log(Vix::Logger::Level::INFO,
+                    "ThreadPool Metrics -> Pending: {}, Active: {}, TimedOut: {}",
+                    metrics.pendingTasks, metrics.activeTasks, metrics.timedOutTasks); }, std::chrono::seconds(5)); // toutes les 5s
+    }
+
     void HTTPServer::run()
     {
+        auto &log = Vix::Logger::getInstance();
+
         try
         {
             route_configurator_->configure_routes();
 
-            spdlog::info("Vix is running at http://127.0.0.1:{} using {} threads", config_.getServerPort(), NUMBER_OF_THREADS);
-            spdlog::info("Waiting for incoming connections...");
+            log.log(Vix::Logger::Level::INFO,
+                    "Vix is running at http://127.0.0.1:{} using {} threads",
+                    config_.getServerPort(), NUMBER_OF_THREADS);
+            log.log(Vix::Logger::Level::INFO, "Waiting for incoming connections...");
 
             start_accept();
+            monitor_metrics();
 
             std::size_t num_io_threads = calculate_io_thread_count();
-            spdlog::info("Starting {} io_context threads", num_io_threads);
+            log.log(Vix::Logger::Level::INFO, "Starting {} io_context threads", num_io_threads);
 
             for (std::size_t i = 0; i < num_io_threads; ++i)
             {
-                io_threads_.emplace_back([this, i]()
-                                         {
+                io_threads_.emplace_back(
+                    [this, i, &log]()
+                    {
                     try
                     {
-                        set_affinity(i); 
+                        set_affinity(i);
                         io_context_->run();
                     }
                     catch (const std::exception &e)
                     {
-                        spdlog::error("Error in io_context (thread {}): {}", i, e.what());
+                        log.log(Vix::Logger::Level::ERROR,
+                                "Error in io_context (thread {}): {}", i, e.what());
                     }
-                    spdlog::info("Thread {} finished.", i); });
+                    log.log(Vix::Logger::Level::INFO, "Thread {} finished.", i); });
             }
 
             for (auto &t : io_threads_)
@@ -106,79 +134,123 @@ namespace Vix
                 if (t.joinable())
                     t.join();
             }
-            spdlog::info("All io_context threads finished.");
+
+            log.log(Vix::Logger::Level::INFO, "All io_context threads finished.");
         }
         catch (const std::exception &e)
         {
-            spdlog::error("Error in HTTPServer::run(): {}", e.what());
+            log.log(Vix::Logger::Level::ERROR, "Error in HTTPServer::run(): {}", e.what());
         }
     }
 
     int HTTPServer::calculate_io_thread_count()
     {
-        return std::max(1, static_cast<int>(std::thread::hardware_concurrency() / 2));
+        unsigned int hc = std::thread::hardware_concurrency();
+        return std::max(1, static_cast<int>(hc > 0 ? hc / 2 : 1));
     }
 
     void HTTPServer::start_accept()
     {
         auto socket = std::make_shared<tcp::socket>(*io_context_);
+        auto &log = Vix::Logger::getInstance();
 
         try
         {
             acceptor_->async_accept(
                 *socket,
-                [this, socket](boost::system::error_code ec)
+                [this, socket, &log](boost::system::error_code ec)
                 {
-                if (!ec)
-                {
-                    request_thread_pool_.enqueue(1, [this, socket]() {
-                        try {
-                            handle_client(socket, router_);
-                        } catch (const std::exception &e) {
-                            spdlog::error("Error handling client: {}", e.what());
-                            close_socket(socket);
-                        }
-                    });
-                }
-                else
-                {
-                    spdlog::error("Error accepting connection from client: {} (Error code: {})", ec.message(), ec.value());
-                }
-                start_accept(); });
+                    if (!ec)
+                    {
+                        // Global timeout for this request (eg: 2 seconds)
+                        auto timeout = std::chrono::milliseconds(2000);
+
+                        // Enqueue in ThreadPool with priority 1
+                        request_thread_pool_.enqueue(
+                            1, timeout,
+                            [this, socket, &log]()
+                            {
+                                try
+                                {
+                                    handle_client(socket, router_);
+                                }
+                                catch (const std::exception &e)
+                                {
+                                    log.log(Vix::Logger::Level::ERROR, "Error handling client: {}", e.what());
+                                    close_socket(socket);
+                                }
+                                catch (...)
+                                {
+                                    log.log(Vix::Logger::Level::ERROR, "Unknown error handling client");
+                                    close_socket(socket);
+                                }
+                            });
+                    }
+                    else
+                    {
+                        log.log(Vix::Logger::Level::ERROR,
+                                "Error accepting connection from client: {} (Error code: {})",
+                                ec.message(), ec.value());
+                    }
+
+                    // Relaunch acceptance for the next customer
+                    start_accept();
+                });
         }
         catch (const std::exception &e)
         {
-            spdlog::error("Exception during async_accept: {}", e.what());
+            log.log(Vix::Logger::Level::ERROR, "Exception during async_accept: {}", e.what());
+            acceptor_->close();
+        }
+        catch (...)
+        {
+            log.log(Vix::Logger::Level::ERROR, "Unknown exception during async_accept");
             acceptor_->close();
         }
     }
 
     void HTTPServer::close_socket(std::shared_ptr<tcp::socket> socket)
     {
+        auto &log = Vix::Logger::getInstance();
         boost::system::error_code ec;
+
         socket->shutdown(tcp::socket::shutdown_both, ec);
         if (ec && ec != boost::system::error_code{})
         {
-            spdlog::error("Failed to shutdown socket: {} (Error code: {})", ec.message(), ec.value());
+            log.log(Vix::Logger::Level::ERROR,
+                    "Failed to shutdown socket: {} (Error code: {})", ec.message(), ec.value());
         }
+
         socket->close(ec);
         if (ec && ec != boost::system::error_code{})
         {
-            spdlog::error("Failed to close socket: {} (Error code: {})", ec.message(), ec.value());
+            log.log(Vix::Logger::Level::ERROR,
+                    "Failed to close socket: {} (Error code: {})", ec.message(), ec.value());
         }
     }
 
-    void HTTPServer::handle_client(std::shared_ptr<tcp::socket> socket_ptr, Router &router)
+    void HTTPServer::handle_client(std::shared_ptr<tcp::socket> socket_ptr, std::shared_ptr<Router> router)
     {
+        auto &log = Vix::Logger::getInstance();
+
         try
         {
-            auto session = std::make_shared<Session>(std::move(*socket_ptr), router);
+            auto session = std::make_shared<Session>(socket_ptr, *router);
             session->run();
         }
         catch (const std::exception &e)
         {
-            spdlog::error("Error in client session for client {}: {}", socket_ptr->remote_endpoint().address().to_string(), e.what());
-            socket_ptr->close();
+            log.log(Vix::Logger::Level::ERROR,
+                    "Error in client session for client {}: {}",
+                    socket_ptr->remote_endpoint().address().to_string(), e.what());
+            close_socket(socket_ptr);
+        }
+        catch (...)
+        {
+            log.log(Vix::Logger::Level::ERROR,
+                    "Unknown error in client session for client {}",
+                    socket_ptr->remote_endpoint().address().to_string());
+            close_socket(socket_ptr);
         }
     }
 

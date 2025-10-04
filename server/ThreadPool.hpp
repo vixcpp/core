@@ -13,13 +13,12 @@
 #include <mutex>
 #include <condition_variable>
 #include <future>
-#include <utility>
 #include <atomic>
 #include <chrono>
 #include <stdexcept>
 #include <pthread.h>
-#include <unordered_map>
-#include <shared_mutex>
+
+#include "../utils/Logger.hpp"
 
 namespace Vix
 {
@@ -30,13 +29,26 @@ namespace Vix
         int priority;
 
         Task(std::function<void()> f, int p) : func(f), priority(p) {}
-
         Task() : func(nullptr), priority(0) {}
 
         bool operator<(const Task &other) const
         {
-            return priority < other.priority;
+            return priority > other.priority;
         }
+    };
+
+    struct TaskGuard
+    {
+        std::atomic<int> &counter;
+        TaskGuard(std::atomic<int> &c) : counter(c) { ++counter; }
+        ~TaskGuard() { --counter; }
+    };
+
+    struct Metrics
+    {
+        int pendingTasks;
+        int activeTasks;
+        int timedOutTasks;
     };
 
     extern thread_local int threadId;
@@ -51,98 +63,159 @@ namespace Vix
         std::atomic<bool> stop;
         std::atomic<bool> stopPeriodic;
         size_t maxThreads;
-        std::unordered_map<std::thread::id, int> threadAffinity;
         std::atomic<int> activeTasks;
-
+        std::vector<std::thread> periodicWorkers;
         int threadPriority;
+        size_t maxPeriodicThreads;
+        std::atomic<size_t> activePeriodicThreads;
+        std::atomic<int> tasksTimedOut{0};
 
         void setThreadAffinity(int id)
         {
 #ifdef __linux__
+            if (maxThreads <= 1)
+                return;
+
             cpu_set_t cpuset;
             CPU_ZERO(&cpuset);
-            CPU_SET(id % std::thread::hardware_concurrency(), &cpuset);
-            pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+            int core = id % std::thread::hardware_concurrency();
+            CPU_SET(core, &cpuset);
+
+            int ret = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+            if (ret != 0)
+            {
+                auto &log = Vix::Logger::getInstance();
+                log.log(Vix::Logger::Level::WARN,
+                        "[ThreadPool][Thread {}] Failed to set thread affinity, error: {}", id, ret);
+            }
 #endif
         }
 
+        void createThread(int id)
+        {
+            workers.emplace_back(
+                [this, id]()
+                {
+                    threadId = id;
+                    setThreadAffinity(id);
+                    auto &log = Vix::Logger::getInstance();
+
+                    while (true)
+                    {
+                        Task task;
+                        {
+                            std::unique_lock<std::mutex> lock(m);
+                            condition.wait(lock, [this]
+                                           { return stop || !tasks.empty(); });
+                            if (stop && tasks.empty())
+                                return;
+                            task = std::move(tasks.top());
+                            tasks.pop();
+                        }
+
+                        TaskGuard guard(activeTasks);
+
+                        try
+                        {
+                            task.func();
+                        }
+                        catch (const std::exception &e)
+                        {
+                            log.log(Vix::Logger::Level::ERROR,
+                                    "[ThreadPool][Thread {}] Exception in task: {}", threadId, e.what());
+                        }
+                        catch (...)
+                        {
+                            log.log(Vix::Logger::Level::ERROR,
+                                    "[ThreadPool][Thread {}] Unknown exception in task", threadId);
+                        }
+
+                        condition.notify_one();
+                    }
+                });
+        }
+
     public:
-        ThreadPool(size_t threadCount, size_t maxThreadCount, int priority, std::chrono::milliseconds)
-            : workers(),
-              tasks(),
-              stop(false),
+        ThreadPool(size_t threadCount, size_t maxThreadCount, int priority, size_t maxPeriodic = 4)
+            : stop(false),
               stopPeriodic(false),
               maxThreads(maxThreadCount),
-              threadAffinity(),
               activeTasks(0),
-              threadPriority(priority)
+              threadPriority(priority),
+              maxPeriodicThreads(maxPeriodic),
+              activePeriodicThreads(0)
         {
             for (size_t i = 0; i < threadCount; ++i)
                 createThread(i);
         }
 
-        void createThread(int id)
+        Metrics getMetrics()
         {
-            workers.emplace_back([this, id]
-                                 {
-                threadId = id;
-                threadAffinity[std::this_thread::get_id()] = id;
-    
-                setThreadAffinity(id);  
-    
-                while (true) {
-                    Task task;
-                    {
-                        std::unique_lock<std::mutex> lock(m);
-                        condition.wait(lock, [this] { return stop || !tasks.empty(); });
-    
-                        if (stop && tasks.empty()) return;
-    
-                        task = std::move(tasks.top());
-                        tasks.pop();
-                        ++activeTasks;
-                    }
-                    try {
-                        task.func();
-                    } catch (const std::exception& e) {
-                        std::cerr << "Exception in thread " << threadId << ": " << e.what() << std::endl;
-                    }
-                    --activeTasks;
-                    condition.notify_one();
-                } });
+            std::lock_guard<std::mutex> lock(m);
+            return Metrics{
+                static_cast<int>(tasks.size()), // pending tasks
+                activeTasks.load(),             // current tasks
+                tasksTimedOut.load()            // timeout tasks
+            };
         }
 
         template <class F, class... Args>
-        auto enqueue(int priority, F &&f, Args &&...args)
+        auto enqueue(int priority, std::chrono::milliseconds timeout, F &&f, Args &&...args)
             -> std::future<typename std::invoke_result<F, Args...>::type>
         {
             using ReturnType = typename std::invoke_result<F, Args...>::type;
             auto task = std::make_shared<std::packaged_task<ReturnType()>>(
                 std::bind(std::forward<F>(f), std::forward<Args>(args)...));
+
             std::future<ReturnType> res = task->get_future();
+
             {
                 std::unique_lock<std::mutex> lock(m);
-                tasks.push(Vix::Task{
-                    [task]()
+
+                tasks.push(Task{
+                    [task, timeout, this]()
                     {
-                        try
+                        auto &log = Vix::Logger::getInstance();
+                        auto start = std::chrono::steady_clock::now();
+
+                        std::thread t([task]()
+                                      { (*task)(); });
+
+                        if (timeout.count() > 0)
                         {
-                            (*task)();
+                            if (t.joinable())
+                            {
+                                t.detach();
+
+                                auto end = std::chrono::steady_clock::now();
+                                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+
+                                log.log(Vix::Logger::Level::WARN,
+                                        "[ThreadPool][Timeout] Thread {} exceeded timeout of {} ms (actual: {} ms)",
+                                        threadId, timeout.count(), elapsed.count());
+
+                                tasksTimedOut.fetch_add(1);
+                            }
                         }
-                        catch (const std::exception &e)
+                        else
                         {
-                            std::cerr << "An exception occurred during task execution: " << e.what() << std::endl;
+                            t.join();
                         }
                     },
                     priority});
 
                 if (workers.size() < maxThreads)
-                {
                     createThread(workers.size());
-                }
             }
+
             condition.notify_one();
             return res;
+        }
+
+        template <class F, class... Args>
+        auto enqueue(int priority, F &&f, Args &&...args)
+        {
+            return enqueue(priority, std::chrono::milliseconds(0), std::forward<F>(f), std::forward<Args>(args)...);
         }
 
         template <class F, class... Args>
@@ -154,38 +227,55 @@ namespace Vix
 
         void periodicTask(int priority, std::function<void()> func, std::chrono::milliseconds interval)
         {
-            auto loop = [this, priority, func, interval]()
+            while (activePeriodicThreads.load() >= maxPeriodicThreads)
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+            activePeriodicThreads.fetch_add(1);
+
+            periodicWorkers.emplace_back([this, priority, func, interval]()
+                                         {
+            auto &log = Vix::Logger::getInstance();
+
+            while (!stopPeriodic)
             {
-                while (!stopPeriodic)
+                try
                 {
-                    try
-                    {
-                        auto future = enqueue(priority, func);
-                        if (future.wait_for(interval) == std::future_status::timeout)
-                        {
-                            std::cerr << "Periodic task cancelled due to timeout." << std::endl;
-                        }
-                    }
-                    catch (const std::exception &e)
-                    {
-                        std::cerr << "Exception in periodic task: " << e.what() << std::endl;
-                    }
+                    auto future = enqueue(priority, func);
 
-                    std::this_thread::sleep_for(interval);
+                    if (future.wait_for(interval) == std::future_status::timeout)
+                    {
+                        log.log(Vix::Logger::Level::WARN,
+                                "[ThreadPool][PeriodicTimeout] Thread {} periodic task exceeded interval of {} ms",
+                                threadId, interval.count());
+                    }
                 }
-            };
+                catch (const std::exception &e)
+                {
+                    log.log(Vix::Logger::Level::ERROR,
+                            "[ThreadPool][PeriodicException] Exception in periodic task: {}", e.what());
+                }
+                catch (...)
+                {
+                    log.log(Vix::Logger::Level::ERROR,
+                            "[ThreadPool][PeriodicException] Unknown exception in periodic task");
+                }
 
-            std::thread(loop).detach();
+                std::this_thread::sleep_for(interval);
+            }
+
+            activePeriodicThreads.fetch_sub(1); });
         }
 
         bool isIdle()
         {
+            std::lock_guard<std::mutex> lock(m);
             return activeTasks.load() == 0 && tasks.empty();
         }
 
         void stopPeriodicTasks()
         {
             stopPeriodic = true;
+            condition.notify_all();
         }
 
         ~ThreadPool()
@@ -196,16 +286,17 @@ namespace Vix
                 stopPeriodic = true;
             }
             condition.notify_all();
-            for (std::thread &worker : workers)
-            {
+
+            for (auto &worker : workers)
                 if (worker.joinable())
-                {
                     worker.join();
-                }
-            }
+
+            for (auto &pworker : periodicWorkers)
+                if (pworker.joinable())
+                    pworker.join();
         }
     };
 
-}
+} // namespace Vix
 
 #endif
