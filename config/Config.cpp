@@ -1,39 +1,43 @@
 #include "Config.hpp"
+#include "../utils/Logger.hpp"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
 
+#include <spdlog/spdlog.h>
+
 namespace Vix
 {
     namespace fs = std::filesystem;
+    using json = nlohmann::json;
 
-    const std::string CONFIG_FILE_PATH =
-        std::getenv("VIX_CONFIG") ? std::getenv("VIX_CONFIG") : (fs::absolute(fs::path(__FILE__).parent_path().parent_path() / "config/config.json").string());
+    const fs::path Config::DEFAULT_CONFIG_PATH = fs::absolute(fs::path(__FILE__).parent_path().parent_path() / "/config/config.json");
 
     Config::Config()
-        : db_host("localhost"),
-          db_user("root"),
-          db_pass(),
-          db_name(""),
-          db_port(3306),
-          server_port(8080)
+        : db_host(DEFAULT_DB_HOST),
+          db_user(DEFAULT_DB_USER),
+          db_pass(DEFAULT_DB_PASS),
+          db_name(DEFAULT_DB_NAME),
+          db_port(DEFAULT_DB_PORT),
+          server_port(DEFAULT_SERVER_PORT)
     {
     }
 
-    using json = nlohmann::json;
-
     void Config::loadConfig()
     {
-        if (!fs::exists(CONFIG_FILE_PATH))
+        auto &log = Vix::Logger::getInstance();
+        const fs::path configPath = std::getenv("VIX_CONFIG") ? std::getenv("VIX_CONFIG") : DEFAULT_CONFIG_PATH;
+
+        if (!fs::exists(configPath))
         {
-            throw std::runtime_error("Le fichier de configuration n'existe pas : " + CONFIG_FILE_PATH);
+            log.throwError("Configuration file does not exist: " + configPath.string());
         }
 
-        std::ifstream config_file(CONFIG_FILE_PATH, std::ios::in | std::ios::binary);
+        std::ifstream config_file(configPath, std::ios::in | std::ios::binary);
         if (!config_file.is_open())
         {
-            throw std::runtime_error("Impossible d'ouvrir le fichier de configuration : " + CONFIG_FILE_PATH);
+            log.throwError("Unable to open configuration file: " + configPath.string());
         }
 
         json config;
@@ -43,62 +47,50 @@ namespace Vix
         }
         catch (const json::parse_error &e)
         {
-            throw std::runtime_error("Erreur de parsing du fichier JSON : " + std::string(e.what()));
+            log.throwError("Json parsing error in config file: " + std::string(e.what()));
         }
 
-        if (!config.contains("database") || !config.contains("server"))
+        if (!config.contains("database") || !config["database"].contains("default"))
         {
-            throw std::runtime_error("Fichier JSON invalide : sections 'database' ou 'server' manquantes.");
+            log.throwError("Invalid config file: missing 'data.default' section");
         }
+        const auto &db = config["database"]["default"];
 
         try
         {
-            db_host = config.at("database").at("host").get<std::string>();
-            db_user = config.at("database").at("user").get<std::string>();
-            db_pass = config.at("database").at("password").get<std::string>();
-            db_name = config.at("database").at("name").get<std::string>();
-            server_port = config.at("server").at("port").get<int>();
+            db_host = db.value("host", DEFAULT_DB_HOST);
+            db_user = db.value("user", DEFAULT_DB_USER);
+            db_pass = db.value("password", DEFAULT_DB_PASS);
+            db_name = db.value("name", DEFAULT_DB_NAME);
+            server_port = db.value("port", DEFAULT_DB_PORT);
         }
         catch (const json::type_error &e)
         {
-            throw std::runtime_error("Types incorrects dans le fichier JSON : " + std::string(e.what()));
+            log.throwError("Invalid types in config file: " + std::string(e.what()));
         }
-    }
 
-    std::shared_ptr<sql::Connection> Config::getDbConnection()
-    {
-        try
+        if (!config.contains("server"))
         {
-            sql::mysql::MySQL_Driver *driver = sql::mysql::get_mysql_driver_instance();
-            if (!driver)
-            {
-                throw std::runtime_error("Impossible de récupérer le driver MySQL.");
-            }
-
-            std::shared_ptr<sql::Connection> con(
-                driver->connect("tcp://" + db_host + ":" + std::to_string(db_port), db_user, db_pass));
-            if (!con)
-            {
-                throw std::runtime_error("La connexion à la base de données a échoué.");
-            }
-
-            con->setSchema(getDbName());
-            return con;
+            log.throwError("Invalid config file: missing 'server' section");
         }
-        catch (const sql::SQLException &e)
-        {
-            throw std::runtime_error("Erreur de connexion à la base de données.");
-        }
+        server_port = config["server"].value("port", DEFAULT_SERVER_PORT);
+
+        log.log(Vix::Logger::Level::INFO, "Config loaded from {}", configPath.string());
     }
 
     std::string Config::getDbPasswordFromEnv()
     {
-        const char *password = std::getenv("DB_PASSWORD");
-        if (password == nullptr)
+        auto &log = Vix::Logger::getInstance();
+        if (const char *password = std::getenv("DB_PASSWORD"))
         {
-            std::cerr << "Aucun mot de passe DB_PASSWORD trouvé dans les variables d'environnement, utilisation d'un mot de passe par défaut." << std::endl;
+            log.log(Logger::Level::INFO, "Using DB_PASSWORD from environment variables.");
+            return std::string(password);
         }
-        return std::string(password);
+        else
+        {
+            log.log(Logger::Level::WARN, "No DB_PASSWORD found in environment variables, using default password (empty).");
+            return db_pass;
+        }
     }
 
     void Config::loadConfigOnce()
@@ -111,16 +103,54 @@ namespace Vix
         }
     }
 
+    std::shared_ptr<sql::Connection> Config::getDbConnection()
+    {
+        auto &log = Vix::Logger::getInstance();
+        try
+        {
+            sql::mysql::MySQL_Driver *driver = sql::mysql::get_mysql_driver_instance();
+            if (!driver)
+            {
+                log.throwError("Failed to get MySQL driver instance.");
+            }
+
+            std::shared_ptr<sql::Connection> con(
+                driver->connect("tcp://" + db_host + ":" + std::to_string(db_port), db_user, db_pass));
+            if (!con)
+            {
+                log.throwError("Failed to connect to the database.");
+            }
+
+            con->setSchema(getDbName());
+            log.log(Logger::Level::INFO, "Database connection established successfully.");
+            return con;
+        }
+        catch (const sql::SQLException &e)
+        {
+            log.throwError("Database connection error: " + std::string(e.what()));
+        }
+    }
+
     const std::string &Config::getDbHost() const { return db_host; }
     const std::string &Config::getDbUser() const { return db_user; }
     const std::string &Config::getDbName() const { return db_name; }
     int Config::getDbPort() const { return db_port; }
     int Config::getServerPort() const { return server_port; }
 
+    void Config::setServerPort(int port)
+    {
+        auto &log = Vix::Logger::getInstance();
+        if (port < 1024 || port > 65535)
+        {
+            log.throwError("Server port out of range (1024-65535).");
+        }
+        server_port = port;
+        log.log(Logger::Level::INFO, "Server port set to {}", std::to_string(port));
+    }
+
     Config &Config::getInstance()
     {
         static Config instance;
         return instance;
     }
-
 }
