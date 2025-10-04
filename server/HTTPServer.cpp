@@ -55,7 +55,7 @@ namespace Vix
           acceptor_(nullptr),
           router_(std::make_shared<Router>()),
           route_configurator_(std::make_unique<RouteConfigurator>(*router_)),
-          request_thread_pool_(NUMBER_OF_THREADS, 100, 0, std::chrono::milliseconds(1000)),
+          request_thread_pool_(NUMBER_OF_THREADS, 100, 0, 4),
           io_threads_(),
           stop_requested_(false)
     {
@@ -80,6 +80,18 @@ namespace Vix
 
     HTTPServer::~HTTPServer() {}
 
+    void HTTPServer::monitor_metrics()
+    {
+        auto &log = Vix::Logger::getInstance();
+
+        request_thread_pool_.periodicTask(0, [this, &log]()
+                                          {
+            auto metrics = request_thread_pool_.getMetrics();
+            log.log(Vix::Logger::Level::INFO,
+                    "ThreadPool Metrics -> Pending: {}, Active: {}, TimedOut: {}",
+                    metrics.pendingTasks, metrics.activeTasks, metrics.timedOutTasks); }, std::chrono::seconds(5)); // toutes les 5s
+    }
+
     void HTTPServer::run()
     {
         auto &log = Vix::Logger::getInstance();
@@ -94,6 +106,7 @@ namespace Vix
             log.log(Vix::Logger::Level::INFO, "Waiting for incoming connections...");
 
             start_accept();
+            monitor_metrics();
 
             std::size_t num_io_threads = calculate_io_thread_count();
             log.log(Vix::Logger::Level::INFO, "Starting {} io_context threads", num_io_threads);
@@ -149,26 +162,38 @@ namespace Vix
                 {
                     if (!ec)
                     {
-                        request_thread_pool_.enqueue(1, [this, socket, &log]()
-                                                     {
-                        try {
-                            handle_client(socket, router_);
-                        } 
-                        catch (const std::exception &e) {
-                            log.log(Vix::Logger::Level::ERROR, "Error handling client: {}", e.what());
-                            close_socket(socket);
-                        } 
-                        catch (...) {
-                            log.log(Vix::Logger::Level::ERROR, "Unknown error handling client");
-                            close_socket(socket);
-                        } });
+                        // Global timeout for this request (eg: 2 seconds)
+                        auto timeout = std::chrono::milliseconds(2000);
+
+                        // Enqueue in ThreadPool with priority 1
+                        request_thread_pool_.enqueue(
+                            1, timeout,
+                            [this, socket, &log]()
+                            {
+                                try
+                                {
+                                    handle_client(socket, router_);
+                                }
+                                catch (const std::exception &e)
+                                {
+                                    log.log(Vix::Logger::Level::ERROR, "Error handling client: {}", e.what());
+                                    close_socket(socket);
+                                }
+                                catch (...)
+                                {
+                                    log.log(Vix::Logger::Level::ERROR, "Unknown error handling client");
+                                    close_socket(socket);
+                                }
+                            });
                     }
                     else
                     {
                         log.log(Vix::Logger::Level::ERROR,
-                                "Error accepting connection from client: {} (Error code: {})", ec.message(), ec.value());
+                                "Error accepting connection from client: {} (Error code: {})",
+                                ec.message(), ec.value());
                     }
 
+                    // Relaunch acceptance for the next customer
                     start_accept();
                 });
         }

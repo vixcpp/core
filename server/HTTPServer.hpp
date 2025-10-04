@@ -51,6 +51,7 @@ namespace Vix
         void start_accept();
         int calculate_io_thread_count();
         std::shared_ptr<Router> getRouter() { return router_; }
+        void monitor_metrics();
 
     private:
         void init_acceptor(unsigned short port);

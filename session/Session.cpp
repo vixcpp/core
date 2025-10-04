@@ -2,79 +2,76 @@
 
 namespace Vix
 {
+    // ---------------- Implementation ----------------
 
-    Session::Session(tcp::socket socket, Router &router)
-        : socket_(std::move(socket)), router_(router), buffer_(), req_()
+    Session::Session(std::shared_ptr<tcp::socket> socket, Router &router)
+        : socket_(std::move(socket)), router_(router)
     {
-        socket_.set_option(tcp::no_delay(true));
+        socket_->set_option(tcp::no_delay(true));
     }
-
-    Session::~Session() {}
 
     void Session::run()
     {
-        auto self = shared_from_this();
         read_request();
+    }
+
+    void Session::start_timer()
+    {
+        timer_ = std::make_shared<net::steady_timer>(socket_->get_executor());
+        timer_->expires_after(REQUEST_TIMEOUT);
+
+        std::weak_ptr<net::steady_timer> weak_timer = timer_;
+        timer_->async_wait([this, weak_timer](const boost::system::error_code &ec)
+                           {
+            auto t = weak_timer.lock();
+            if (!t) return;
+
+            if (!ec)
+            {
+                spdlog::warn("Timeout: No request received after {} seconds!", REQUEST_TIMEOUT.count());
+                close_socket();
+            } });
+    }
+
+    void Session::cancel_timer()
+    {
+        if (timer_)
+        {
+            boost::system::error_code ec;
+            timer_->cancel(ec);
+        }
     }
 
     void Session::read_request()
     {
-        if (!socket_.is_open())
+        if (!socket_->is_open())
         {
             spdlog::error("Socket is not open, cannot read request!");
             return;
         }
 
-        auto self = shared_from_this();
         buffer_.consume(buffer_.size());
+        start_timer();
 
-        auto timer = std::make_shared<boost::asio::steady_timer>(socket_.get_executor());
-        timer->expires_after(std::chrono::seconds(20));
+        auto self = shared_from_this();
+        http::async_read(*socket_, buffer_, req_,
+                         [this, self](boost::system::error_code ec, std::size_t)
+                         {
+                             cancel_timer();
 
-        std::weak_ptr<boost::asio::steady_timer> weak_timer = timer;
-        timer->async_wait([this, self, weak_timer](boost::system::error_code ec)
-                          {
-            auto timer = weak_timer.lock();
-            if (!timer)
-            {
-                spdlog::info("Timer is no longer available.");
-                return;
-            }
-    
-            if (!ec)
-            {
-                spdlog::warn("Timeout: No request received after 5 seconds!");
-                close_socket();
-            } });
+                             if (ec)
+                             {
+                                 if (ec == http::error::end_of_stream)
+                                     spdlog::info("Client closed the connection.");
+                                 else if (ec != boost::asio::error::operation_aborted)
+                                     spdlog::error("Error during async_read: {}", ec.message());
 
-        http::async_read(
-            socket_, buffer_, req_,
-            [this, self, timer](boost::system::error_code ec, std::size_t)
-            {
-                timer->cancel();
+                                 close_socket();
+                                 return;
+                             }
 
-                if (ec)
-                {
-                    if (ec == http::error::end_of_stream)
-                    {
-                        spdlog::info("Client closed the connection.");
-                    }
-                    else if (ec != boost::asio::error::operation_aborted)
-                    {
-                        spdlog::error("Error during async_read: {}", ec.message());
-                    }
-                    close_socket();
-                    return;
-                }
-
-                if (req_[http::field::connection] != "close")
-                {
-                    http::response<http::string_body> res;
-                    res.set(http::field::connection, "keep-alive");
-                }
-
-                handle_request(ec);
-            });
+                             handle_request(ec);
+                         });
     }
 
     void Session::handle_request(const boost::system::error_code &ec)
@@ -82,6 +79,7 @@ namespace Vix
         if (ec)
         {
             spdlog::error("Error handling request: {}", ec.message());
+            close_socket();
             return;
         }
 
@@ -105,26 +103,26 @@ namespace Vix
         if (!success)
         {
             if (res.result() == http::status::method_not_allowed)
-            {
                 send_error("Method Not Allowed");
-            }
             else if (res.result() == http::status::not_found)
-            {
                 send_error("Route Not Found");
-            }
             else
-            {
                 send_error("Invalid request");
-            }
             return;
         }
 
-        send_response(res);
+        // Set proper connection header
+        if (req_[http::field::connection] != "close")
+            res.set(http::field::connection, "keep-alive");
+        else
+            res.set(http::field::connection, "close");
+
+        send_response(std::move(res));
     }
 
-    void Session::send_response(http::response<http::string_body> &res)
+    void Session::send_response(http::response<http::string_body> res)
     {
-        if (!socket_.is_open())
+        if (!socket_->is_open())
         {
             spdlog::error("Socket is not open, cannot send response!");
             return;
@@ -133,74 +131,60 @@ namespace Vix
         auto self = shared_from_this();
         auto res_ptr = std::make_shared<http::response<http::string_body>>(std::move(res));
 
-        http::async_write(
-            socket_, *res_ptr,
-            [this, self, res_ptr](boost::system::error_code ec, std::size_t)
-            {
-                if (ec)
-                {
-                    spdlog::error("Error sending response: {}", ec.message());
-                    close_socket();
-                    return;
-                }
+        http::async_write(*socket_, *res_ptr,
+                          [this, self, res_ptr](boost::system::error_code ec, std::size_t)
+                          {
+                              if (ec)
+                              {
+                                  spdlog::error("Error sending response: {}", ec.message());
+                                  close_socket();
+                                  return;
+                              }
 
-                spdlog::info("Response sent successfully.");
+                              spdlog::info("Response sent successfully.");
 
-                net::post(socket_.get_executor(), [this, self]()
-                          { close_socket(); });
-            });
+                              // Keep-alive handling
+                              if (req_[http::field::connection] != "close")
+                                  read_request();
+                              else
+                                  close_socket();
+                          });
     }
 
     void Session::send_error(const std::string &error_message)
     {
         http::response<http::string_body> res;
         Response::error_response(res, http::status::bad_request, error_message);
-
-        send_response(res);
+        send_response(std::move(res));
     }
 
     void Session::close_socket()
     {
-        if (!socket_.is_open())
-        {
-            spdlog::warn("Socket already closed or not open.");
+        if (!socket_ || !socket_->is_open())
             return;
-        }
 
         boost::system::error_code ec;
+        socket_->shutdown(tcp::socket::shutdown_both, ec);
 
-        socket_.shutdown(tcp::socket::shutdown_both, ec);
         if (ec && ec != boost::asio::error::not_connected)
-        {
             spdlog::warn("Error during socket shutdown: {}", ec.message());
-        }
 
-        if (socket_.is_open())
-        {
-            socket_.close(ec);
-            if (ec)
-            {
-                spdlog::warn("Error closing socket: {}", ec.message());
-            }
-            else
-            {
-                spdlog::info("Socket closed.");
-            }
-        }
+        socket_->close(ec);
+        if (ec)
+            spdlog::warn("Error closing socket: {}", ec.message());
+        else
+            spdlog::info("Socket closed.");
     }
 
     bool Session::waf_check_request(const http::request<http::string_body> &req)
     {
-        std::regex xss_pattern(R"(<script.*?>.*?</script>)", std::regex::icase);
-        std::regex sql_pattern(R"((\bUNION\b|\bSELECT\b|\bINSERT\b|\bDELETE\b|\bUPDATE\b|\bDROP\b))", std::regex::icase);
-
-        if (std::regex_search(req.target().to_string(), xss_pattern))
+        if (std::regex_search(req.target().to_string(), XSS_PATTERN))
         {
             spdlog::warn("Possible XSS attack detected in URL: {}", req.target());
             return false;
         }
 
-        if (std::regex_search(req.body(), sql_pattern))
+        if (std::regex_search(req.body(), SQL_PATTERN))
         {
             spdlog::warn("Possible SQL injection detected in body: {}", req.body());
             return false;
@@ -215,4 +199,4 @@ namespace Vix
         return true;
     }
 
-}
+} // namespace Vix

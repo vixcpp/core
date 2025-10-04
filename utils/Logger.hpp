@@ -32,7 +32,7 @@ namespace Vix
         }
 
         template <typename... Args>
-        void log(Level level, const std::string &fmt, Args &&...args)
+        void log(Level level, fmt::format_string<Args...> fmt, Args &&...args)
         {
             std::lock_guard<std::mutex> lock(mutex_);
             switch (level)
@@ -59,14 +59,23 @@ namespace Vix
         }
 
         template <typename... Args>
-        void logModule(const std::string &module, Level level, const std::string &fmt, Args &&...args)
+        void logModule(const std::string &module, Level level, fmt::format_string<Args...> fmt, Args &&...args)
         {
-            log(level, "[{} {}]", module, fmt::format(fmt, std::forward<Args>(args)...));
+            log(level, "[{}] {}", module, fmt::vformat(fmt, fmt::make_format_args(std::forward<Args>(args)...)));
         }
 
+        template <typename... Args>
+        [[noreturn]] void throwError(fmt::format_string<Args...> fmt, Args &&...args)
+        {
+            auto msg = fmt::format(fmt, std::forward<Args>(args)...);
+            log(Level::ERROR, "{}", msg);
+            throw std::runtime_error(msg);
+        }
+
+        // nouvelle surcharge pour std::string
         [[noreturn]] void throwError(const std::string &msg)
         {
-            log(Level::ERROR, msg);
+            log(Level::ERROR, "{}", msg);
             throw std::runtime_error(msg);
         }
 

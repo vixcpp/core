@@ -31,13 +31,13 @@ namespace Vix
 
         if (!fs::exists(configPath))
         {
-            log.throwError("Configuration file does not exist: " + configPath.string());
+            log.throwError(fmt::format("Configuration file does not exist: {}", configPath.string()));
         }
 
         std::ifstream config_file(configPath, std::ios::in | std::ios::binary);
         if (!config_file.is_open())
         {
-            log.throwError("Unable to open configuration file: " + configPath.string());
+            log.throwError(fmt::format("Unable to open configuration file: {}", configPath.string()));
         }
 
         json config;
@@ -47,13 +47,14 @@ namespace Vix
         }
         catch (const json::parse_error &e)
         {
-            log.throwError("Json parsing error in config file: " + std::string(e.what()));
+            log.throwError(fmt::format("Json parsing error in config file: {}", e.what()));
         }
 
         if (!config.contains("database") || !config["database"].contains("default"))
         {
-            log.throwError("Invalid config file: missing 'data.default' section");
+            log.throwError("Invalid config file: missing 'database.default' section");
         }
+
         const auto &db = config["database"]["default"];
 
         try
@@ -127,7 +128,7 @@ namespace Vix
         }
         catch (const sql::SQLException &e)
         {
-            log.throwError("Database connection error: " + std::string(e.what()));
+            log.throwError(fmt::format("Database connection error: {}", std::string(e.what())));
         }
     }
 
