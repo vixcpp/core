@@ -40,11 +40,15 @@ namespace Vix
                 found = true;
                 break;
             }
+            else
+            {
+                log.log(Vix::Logger::Level::WARN, "Config file not found at: {}", p.string());
+            }
         }
 
         if (!found)
         {
-            log.log(Vix::Logger::Level::WARN, "Config file not found in any candidate path. Using default settings.");
+            log.log(Vix::Logger::Level::WARN, "No config file found in any candidate path. Using default settings.");
             return;
         }
 
