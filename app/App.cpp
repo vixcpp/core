@@ -43,7 +43,6 @@ namespace Vix
     void App::run(int port)
     {
         auto &log = Logger::getInstance();
-
         config_.setServerPort(port);
         g_server_ptr = &server_;
         std::signal(SIGINT, handle_sigint);
@@ -51,10 +50,17 @@ namespace Vix
         std::thread server_thread([this]()
                                   { server_.run(); });
 
-        server_thread.join();
+        while (true)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            if (!g_server_ptr)
+                break;
+        }
+
+        if (server_thread.joinable())
+            server_thread.join();
 
         server_.join_threads();
-
         log.log(Logger::Level::INFO, "Application shutdown complete");
     }
 
