@@ -29,14 +29,20 @@ namespace Vix
         {
             int port = config_.getServerPort();
             if (port < 1024 || port > 65535)
-                throw std::invalid_argument("Port out of range");
+            {
+                log.log(Logger::Level::ERROR, "Server port {} out of range (1024-65535)", port);
+                throw std::invalid_argument("Invalid port number");
+            }
 
             init_acceptor(static_cast<unsigned short>(port));
-            log.log(Logger::Level::INFO, "Server initialized on port {}", port);
+
+            log.log(Logger::Level::INFO,
+                    "Server request timeout set to {} ms",
+                    config_.getRequestTimeout());
         }
         catch (const std::exception &e)
         {
-            log.log(Logger::Level::ERROR, "HTTPServer init error: {}", e.what());
+            log.log(Logger::Level::ERROR, "Error initializing HTTPServer: {}", e.what());
             throw;
         }
     }
@@ -45,6 +51,7 @@ namespace Vix
 
     void HTTPServer::init_acceptor(unsigned short port)
     {
+        auto &log = Logger::getInstance();
         acceptor_ = std::make_unique<tcp::acceptor>(*io_context_);
         boost::system::error_code ec;
 
@@ -52,15 +59,17 @@ namespace Vix
         acceptor_->open(endpoint.protocol(), ec);
         if (ec)
             throw std::system_error(ec, "open acceptor");
-        acceptor_->set_option(net::socket_base::reuse_address(true), ec);
+        acceptor_->set_option(boost::asio::socket_base::reuse_address(true), ec);
         if (ec)
             throw std::system_error(ec, "reuse_address");
         acceptor_->bind(endpoint, ec);
         if (ec)
             throw std::system_error(ec, "bind acceptor");
-        acceptor_->listen(net::socket_base::max_connections, ec);
+        acceptor_->listen(boost::asio::socket_base::max_connections, ec);
         if (ec)
             throw std::system_error(ec, "listen acceptor");
+
+        log.log(Logger::Level::INFO, "Acceptor initialized on port {}", port);
     }
 
     void HTTPServer::start_io_threads()
@@ -70,18 +79,19 @@ namespace Vix
 
         for (std::size_t i = 0; i < num_threads; ++i)
         {
-            io_threads_.emplace_back([this, i, &log]()
-                                     {
-                try
+            io_threads_.emplace_back(
+                [this, i, &log]()
                 {
-                    set_affinity(i);
-                    io_context_->run();
-                }
-                catch (const std::exception &e)
-                {
-                    log.log(Logger::Level::ERROR, "IO thread {} error: {}", i, e.what());
-                }
-                log.log(Logger::Level::INFO, "IO thread {} finished", i); });
+            try
+            {
+                set_affinity(i);
+                io_context_->run();
+            }
+            catch (const std::exception &e)
+            {
+                log.log(Logger::Level::ERROR, "Error in io_context thread {}: {}", i, e.what());
+            }
+            log.log(Logger::Level::INFO, "IO thread {} finished", i); });
         }
     }
 
@@ -107,9 +117,7 @@ namespace Vix
             {
                 auto timeout = std::chrono::milliseconds(config_.getRequestTimeout());
                 request_thread_pool_.enqueue(1, timeout, [this, socket]()
-                {
-                    handle_client(socket, router_);
-                });
+                                            { handle_client(socket, router_); });
             }
             if (!stop_requested_) start_accept(); });
     }
