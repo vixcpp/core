@@ -15,7 +15,8 @@ namespace Vix
           db_pass(DEFAULT_DB_PASS),
           db_name(DEFAULT_DB_NAME),
           db_port(DEFAULT_DB_PORT),
-          server_port(DEFAULT_SERVER_PORT)
+          server_port(DEFAULT_SERVER_PORT),
+          request_timeout(DEFAULT_REQUEST_TIMEOUT)
     {
         auto &log = Vix::Logger::getInstance();
         std::vector<fs::path> candidate_paths;
@@ -95,7 +96,11 @@ namespace Vix
         db_port = db.value("port", DEFAULT_DB_PORT);
 
         if (cfg.contains("server"))
-            server_port = cfg["server"].value("port", DEFAULT_SERVER_PORT);
+        {
+            const auto &server = cfg["server"];
+            server_port = server.value("port", DEFAULT_SERVER_PORT);
+            request_timeout = server.value("request_timeout", DEFAULT_REQUEST_TIMEOUT);
+        }
 
         log.log(Vix::Logger::Level::INFO, "Config loaded from {}", configPath_.string());
     }
@@ -137,4 +142,6 @@ namespace Vix
         server_port = port;
         log.log(Logger::Level::INFO, "Server port set to {}", std::to_string(port));
     }
+
+    int Config::getRequestTimeout() const { return request_timeout; }
 }

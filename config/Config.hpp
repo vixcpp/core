@@ -31,6 +31,7 @@ namespace Vix
         const std::string &getDbName() const;
         int getDbPort() const;
         int getServerPort() const;
+        int getRequestTimeout() const;
         void setServerPort(int port);
 
     private:
@@ -40,6 +41,7 @@ namespace Vix
         static constexpr const char *DEFAULT_DB_NAME = "";
         static constexpr int DEFAULT_DB_PORT = 3306;
         static constexpr int DEFAULT_SERVER_PORT = 8080;
+        static constexpr int DEFAULT_REQUEST_TIMEOUT = 2000; // ✅ nouveau
 
         std::filesystem::path configPath_;
         std::string db_host;
@@ -48,6 +50,7 @@ namespace Vix
         std::string db_name;
         int db_port;
         int server_port;
+        int request_timeout; // ✅ nouveau
     };
 }
 

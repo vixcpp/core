@@ -183,23 +183,26 @@ namespace Vix
 
                         if (timeout.count() > 0)
                         {
-                            if (t.joinable())
+                            auto future = std::async(std::launch::async, [task]()
+                                                     { (*task)(); });
+
+                            if (future.wait_for(timeout) == std::future_status::timeout)
                             {
-                                t.detach();
+                                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - start);
 
-                                auto end = std::chrono::steady_clock::now();
-                                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-
-                                log.log(Vix::Logger::Level::WARN,
-                                        "[ThreadPool][Timeout] Thread {} exceeded timeout of {} ms (actual: {} ms)",
-                                        threadId, timeout.count(), elapsed.count());
-
-                                tasksTimedOut.fetch_add(1);
+                                if (elapsed.count() > timeout.count())
+                                {
+                                    log.log(Vix::Logger::Level::WARN,
+                                            "[ThreadPool][Timeout] Thread {} exceeded timeout of {} ms (actual: {} ms)",
+                                            threadId, timeout.count(), elapsed.count());
+                                    tasksTimedOut.fetch_add(1);
+                                }
                             }
                         }
                         else
                         {
-                            t.join();
+                            (*task)();
                         }
                     },
                     priority});

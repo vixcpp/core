@@ -69,6 +69,10 @@ namespace Vix
             }
 
             init_acceptor(static_cast<unsigned short>(port));
+
+            log.log(Vix::Logger::Level::INFO,
+                    "Server request timeout set to {} ms",
+                    config_.getRequestTimeout());
         }
         catch (const std::exception &e)
         {
@@ -152,41 +156,44 @@ namespace Vix
 
         try
         {
-            acceptor_->async_accept(*socket,
-                                    [this, socket, &log](boost::system::error_code ec)
-                                    {
-                                        if (!ec)
-                                        {
-                                            auto timeout = std::chrono::milliseconds(2000);
+            acceptor_->async_accept(
+                *socket,
+                [this, socket, &log](boost::system::error_code ec)
+                {
+                    if (!ec)
+                    {
+                        auto timeout = std::chrono::milliseconds(config_.getRequestTimeout());
 
-                                            request_thread_pool_.enqueue(1, timeout,
-                                                                         [this, socket, &log]()
-                                                                         {
-                                                                             try
-                                                                             {
-                                                                                 handle_client(socket, router_);
-                                                                             }
-                                                                             catch (const std::exception &e)
-                                                                             {
-                                                                                 log.log(Vix::Logger::Level::ERROR, "Error handling client: {}", e.what());
-                                                                                 close_socket(socket);
-                                                                             }
-                                                                             catch (...)
-                                                                             {
-                                                                                 log.log(Vix::Logger::Level::ERROR, "Unknown error handling client");
-                                                                                 close_socket(socket);
-                                                                             }
-                                                                         });
-                                        }
-                                        else
-                                        {
-                                            log.log(Vix::Logger::Level::ERROR,
-                                                    "Error accepting connection from client: {} (Error code: {})",
-                                                    ec.message(), ec.value());
-                                        }
+                        request_thread_pool_.enqueue(
+                            1, timeout,
+                            [this, socket, &log]()
+                            {
+                                try
+                                {
+                                    handle_client(socket, router_);
+                                }
+                                catch (const std::exception &e)
+                                {
+                                    log.log(Vix::Logger::Level::ERROR, "Error handling client: {}", e.what());
+                                    close_socket(socket);
+                                }
+                                catch (...)
+                                {
+                                    log.log(Vix::Logger::Level::ERROR, "Unknown error handling client");
+                                    close_socket(socket);
+                                }
+                            });
+                    }
 
-                                        start_accept(); // continue accepting new connections
-                                    });
+                    else
+                    {
+                        log.log(Vix::Logger::Level::ERROR,
+                                "Error accepting connection from client: {} (Error code: {})",
+                                ec.message(), ec.value());
+                    }
+
+                    start_accept();
+                });
         }
         catch (const std::exception &e)
         {
