@@ -49,6 +49,7 @@ namespace Vix
         void stop();
         void stop_async();
         void join_threads();
+        bool is_stop_requested() const { return stop_requested_; }
 
     private:
         void init_acceptor(unsigned short port);

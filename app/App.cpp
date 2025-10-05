@@ -1,6 +1,7 @@
 #include "App.hpp"
 #include "../utils/Logger.hpp"
 #include <csignal>
+#include <thread>
 
 namespace Vix
 {
@@ -11,7 +12,9 @@ namespace Vix
         auto &log = Logger::getInstance();
         log.log(Logger::Level::INFO, "Received SIGINT, shutting down...");
         if (g_server_ptr)
+        {
             g_server_ptr->stop_async();
+        }
     }
 
     App::App()
@@ -45,7 +48,10 @@ namespace Vix
         g_server_ptr = &server_;
         std::signal(SIGINT, handle_sigint);
 
-        server_.run();
+        std::thread server_thread([this]()
+                                  { server_.run(); });
+
+        server_thread.join();
 
         server_.join_threads();
 
