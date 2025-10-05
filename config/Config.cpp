@@ -17,20 +17,37 @@ namespace Vix
           db_port(DEFAULT_DB_PORT),
           server_port(DEFAULT_SERVER_PORT)
     {
+        std::vector<fs::path> candidates;
         if (!configPath.empty())
         {
-            configPath_ = configPath;
+            candidates.push_back(configPath);
         }
         else
         {
-            fs::path exe_dir = fs::current_path();
-            configPath_ = exe_dir / "vix/config/config.json";
+            fs::path cwd = fs::current_path();
 
-            if (!fs::exists(configPath_))
+            candidates.push_back(cwd / "vix/config/config.json");
+            candidates.push_back(cwd.parent_path() / "vix/config/config.json");
+            candidates.push_back(cwd / "../vix/config/config.json");
+            candidates.push_back(cwd / "config/config.json");
+        }
+
+        bool found = false;
+        for (auto &p : candidates)
+        {
+            if (fs::exists(p))
             {
-                spdlog::warn("Config file {} not found. Using default settings.", configPath_.string());
-                return;
+                configPath_ = fs::canonical(p);
+                found = true;
+                break;
             }
+        }
+
+        if (!found)
+        {
+            spdlog::warn("Config file not found in any candidate path. Using default settings.");
+            configPath_ = "";
+            return;
         }
 
         loadConfig();
@@ -46,16 +63,15 @@ namespace Vix
     {
         auto &log = Vix::Logger::getInstance();
 
-        if (!fs::exists(configPath_))
+        if (configPath_.empty() || !fs::exists(configPath_))
         {
-            log.throwError(fmt::format("Configuration file does not exist: {}", configPath_.string()));
+            log.log(Logger::Level::WARN, "No config file found. Using default settings.");
+            return;
         }
 
         std::ifstream file(configPath_, std::ios::in | std::ios::binary);
         if (!file.is_open())
-        {
             log.throwError(fmt::format("Unable to open configuration file: {}", configPath_.string()));
-        }
 
         json cfg;
         try
@@ -68,9 +84,7 @@ namespace Vix
         }
 
         if (!cfg.contains("database") || !cfg["database"].contains("default"))
-        {
             log.throwError("Invalid config file: missing 'database.default' section");
-        }
 
         const auto &db = cfg["database"]["default"];
         db_host = db.value("host", DEFAULT_DB_HOST);
@@ -80,9 +94,7 @@ namespace Vix
         db_port = db.value("port", DEFAULT_DB_PORT);
 
         if (cfg.contains("server"))
-        {
             server_port = cfg["server"].value("port", DEFAULT_SERVER_PORT);
-        }
 
         log.log(Vix::Logger::Level::INFO, "Config loaded from {}", configPath_.string());
     }
