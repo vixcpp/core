@@ -55,7 +55,7 @@ namespace Vix
     {
         if (!socket_ || !socket_->is_open())
         {
-            logger.log(Level::DEBUG, "[Session] Socket closed before read_request()");
+            logger.log(Vix::Logger::Level::DEBUG, "[Session] Socket closed before read_request()");
             return;
         }
 
@@ -66,38 +66,45 @@ namespace Vix
         start_timer();
 
         auto self = shared_from_this();
-        http::async_read(*socket_, buffer_, *parser_,
-                         [this, self](boost::system::error_code ec, std::size_t)
-                         {
-                             cancel_timer();
+        http::async_read(
+            *socket_, buffer_, *parser_,
+            [this, self](boost::system::error_code ec, std::size_t)
+            {
+                cancel_timer();
 
-                             if (ec)
-                             {
-                                 if (ec == http::error::end_of_stream)
-                                     logger.log(Level::DEBUG, "[Session] Client closed connection");
-                                 else if (ec == boost::asio::error::connection_reset)
-                                     logger.log(Level::DEBUG, "[Session] Connection reset by client");
-                                 else if (ec != boost::asio::error::operation_aborted)
-                                     logger.log(Level::WARN, "[Session] Read error: {}", ec.message());
+                if (ec)
+                {
+                    if (ec == http::error::end_of_stream ||
+                        ec == boost::asio::error::connection_reset)
+                    {
+                        logger.log(Vix::Logger::Level::DEBUG,
+                                   "[Session] Client closed connection: {}", ec.message());
+                    }
+                    else if (ec != boost::asio::error::operation_aborted)
+                    {
+                        logger.log(Vix::Logger::Level::ERROR,
+                                   "[Session] Read error: {}", ec.message());
+                    }
 
-                                 close_socket_gracefully();
-                                 return;
-                             }
+                    close_socket_gracefully();
+                    return;
+                }
 
-                             std::optional<http::request<http::string_body>> parsed;
-                             try
-                             {
-                                 parsed = parser_->release();
-                             }
-                             catch (const std::exception &ex)
-                             {
-                                 logger.log(Level::ERROR, "[Session] Parser release failed: {}", ex.what());
-                                 close_socket_gracefully();
-                                 return;
-                             }
+                std::optional<http::request<http::string_body>> parsed;
+                try
+                {
+                    parsed = parser_->release();
+                }
+                catch (const std::exception &ex)
+                {
+                    logger.log(Vix::Logger::Level::ERROR,
+                               "[Session] Parser release failed: {}", ex.what());
+                    close_socket_gracefully();
+                    return;
+                }
 
-                             handle_request({}, std::move(parsed));
-                         });
+                handle_request({}, std::move(parsed));
+            });
     }
 
     void Session::handle_request(const boost::system::error_code &ec,
