@@ -15,8 +15,6 @@ namespace Vix
             {
                 throw std::runtime_error("Failed to get router from HTTPServer");
             }
-
-            spdlog::info("✅ App initialized successfully.");
         }
         catch (const std::exception &e)
         {
@@ -30,7 +28,6 @@ namespace Vix
         try
         {
             config_.setServerPort(port);
-            spdlog::info("🚀 Starting server on port {}", port);
             server_.run();
         }
         catch (const std::exception &e)

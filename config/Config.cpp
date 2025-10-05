@@ -17,27 +17,26 @@ namespace Vix
           db_port(DEFAULT_DB_PORT),
           server_port(DEFAULT_SERVER_PORT)
     {
-        std::vector<fs::path> candidates;
+        auto &log = Vix::Logger::getInstance();
+        std::vector<fs::path> candidate_paths;
+
         if (!configPath.empty())
         {
-            candidates.push_back(configPath);
+            candidate_paths.push_back(configPath);
         }
         else
         {
-            fs::path cwd = fs::current_path();
-
-            candidates.push_back(cwd / "vix/config/config.json");
-            candidates.push_back(cwd.parent_path() / "vix/config/config.json");
-            candidates.push_back(cwd / "../vix/config/config.json");
-            candidates.push_back(cwd / "config/config.json");
+            candidate_paths.push_back(fs::current_path() / "vix/config/config.json");
+            candidate_paths.push_back(fs::path(__FILE__).parent_path().parent_path().parent_path() / "config/config.json");
         }
 
         bool found = false;
-        for (auto &p : candidates)
+        for (const auto &p : candidate_paths)
         {
             if (fs::exists(p))
             {
-                configPath_ = fs::canonical(p);
+                configPath_ = p;
+                log.log(Vix::Logger::Level::INFO, "Using configuration file: {}", p.string());
                 found = true;
                 break;
             }
@@ -45,8 +44,7 @@ namespace Vix
 
         if (!found)
         {
-            spdlog::warn("Config file not found in any candidate path. Using default settings.");
-            configPath_ = "";
+            log.log(Vix::Logger::Level::WARN, "Config file not found in any candidate path. Using default settings.");
             return;
         }
 
