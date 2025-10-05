@@ -26,8 +26,7 @@ namespace Vix
         }
         else
         {
-            candidate_paths.push_back(fs::current_path() / "vix/config/config.json");
-            candidate_paths.push_back(fs::path(__FILE__).parent_path().parent_path().parent_path() / "config/config.json");
+            candidate_paths.push_back(fs::path(__FILE__).parent_path().parent_path().parent_path().parent_path() / "config/config.json");
         }
 
         bool found = false;
