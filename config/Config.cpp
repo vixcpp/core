@@ -18,9 +18,19 @@ namespace Vix
           server_port(DEFAULT_SERVER_PORT)
     {
         if (!configPath.empty())
+        {
             configPath_ = configPath;
+        }
         else
-            configPath_ = fs::absolute(fs::path(__FILE__).parent_path().parent_path().parent_path() / "config/config.json");
+        {
+            fs::path exe_dir = fs::current_path();
+            configPath_ = exe_dir / "vix/config/config.json";
+
+            if (!fs::exists(configPath_))
+            {
+                configPath_ = fs::absolute(fs::path(__FILE__).parent_path().parent_path() / "config/config.json");
+            }
+        }
 
         if (!fs::exists(configPath_))
         {
