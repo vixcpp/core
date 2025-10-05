@@ -4,9 +4,7 @@
 #include "IRequestHandler.hpp"
 #include "../http/Response.hpp"
 #include <nlohmann/json.hpp>
-#include <spdlog/spdlog.h>
 #include <boost/regex.hpp>
-#include <boost/beast/http.hpp>
 #include <string>
 #include <unordered_map>
 #include <type_traits>
@@ -16,15 +14,13 @@ namespace Vix
     namespace http = boost::beast::http;
     using json = nlohmann::json;
 
-    // -------------------- Fonctions utilitaires --------------------
-    // Extrait les paramètres dynamiques d'une route type "/users/{id}"
+    // Extraction des paramètres depuis la route
     inline std::unordered_map<std::string, std::string> extract_params_from_path(
         const std::string &route_pattern,
         const std::string &path)
     {
         std::unordered_map<std::string, std::string> params;
 
-        // Transforme la route en regex
         std::string regex_pattern = "^";
         bool inside_placeholder = false;
         for (char c : route_pattern)
@@ -39,16 +35,14 @@ namespace Vix
                 inside_placeholder = false;
                 regex_pattern += "[^/]+)";
             }
-            else
-            {
-                if (!inside_placeholder)
-                    regex_pattern += (c == '/' ? "\\/" : std::string(1, c));
-            }
+            else if (!inside_placeholder)
+                regex_pattern += (c == '/' ? "\\/" : std::string(1, c));
         }
         regex_pattern += "$";
 
         boost::regex re(regex_pattern);
         boost::smatch match;
+
         if (boost::regex_match(path, match, re))
         {
             size_t param_index = 1;
@@ -68,7 +62,6 @@ namespace Vix
         return params;
     }
 
-    // -------------------- Wrapper Response --------------------
     struct ResponseWrapper
     {
         http::response<http::string_body> &res;
@@ -95,7 +88,6 @@ namespace Vix
         }
     };
 
-    // -------------------- RequestHandler générique --------------------
     template <typename Handler>
     class RequestHandler : public IRequestHandler
     {
@@ -108,16 +100,14 @@ namespace Vix
             http::response<http::string_body> &res) override
         {
             ResponseWrapper wrapped{res};
-
             try
             {
-                // Si le handler accepte (req, res, params)
+                auto params = extract_params_from_path(route_pattern_, std::string(req.target()));
+
                 if constexpr (std::is_invocable_v<Handler, decltype(req), ResponseWrapper &, std::unordered_map<std::string, std::string> &>)
                 {
-                    auto params = Vix::extract_params_from_path(route_pattern_, std::string(req.target()));
                     handler_(req, wrapped, params);
                 }
-                // Si le handler accepte seulement (req, res)
                 else if constexpr (std::is_invocable_v<Handler, decltype(req), ResponseWrapper &>)
                 {
                     handler_(req, wrapped);
@@ -127,7 +117,6 @@ namespace Vix
                     static_assert(always_false<Handler>::value, "Handler signature not supported");
                 }
 
-                // Keep-Alive
                 bool keep_alive = (req[http::field::connection] == "keep-alive") ||
                                   (req.version() == 11 && req[http::field::connection].empty());
                 res.set(http::field::connection, keep_alive ? "keep-alive" : "close");
@@ -135,7 +124,6 @@ namespace Vix
             }
             catch (const std::exception &e)
             {
-                spdlog::error("Error in RequestHandler: {}", e.what());
                 Response::error_response(res, http::status::internal_server_error, "Internal Server Error");
             }
         }

@@ -3,14 +3,12 @@
 
 #include "RequestHandler.hpp"
 #include "../http/Response.hpp"
-
 #include <boost/beast/http.hpp>
 #include <boost/regex.hpp>
-#include <nlohmann/json.hpp>
 #include <unordered_map>
 #include <memory>
 #include <string>
-#include <spdlog/spdlog.h>
+#include <nlohmann/json.hpp>
 
 namespace Vix
 {
@@ -33,9 +31,6 @@ namespace Vix
     public:
         using RouteKey = std::pair<http::verb, std::string>;
 
-        Router() = default;
-        ~Router() = default;
-
         void add_route(http::verb method, const std::string &path, std::shared_ptr<IRequestHandler> handler)
         {
             routes_[{method, path}] = std::move(handler);
@@ -53,9 +48,17 @@ namespace Vix
                 return true;
             }
 
+            std::string path = std::string(req.target());
+
             for (auto &[key, handler] : routes_)
             {
-                if (key.first == req.method())
+                if (key.first != req.method())
+                    continue;
+
+                auto params = Vix::extract_params_from_path(key.second, path);
+                bool is_match = (!params.empty() || key.second == path);
+
+                if (is_match)
                 {
                     handler->handle_request(req, res);
                     return true;
@@ -64,69 +67,14 @@ namespace Vix
 
             res.result(http::status::not_found);
             res.set(http::field::content_type, "application/json");
-            res.body() = json{{"message", "Route not found"}}.dump();
+            res.body() = R"({"message":"Route not found"})";
             return false;
         }
 
     private:
-        bool matches_dynamic_route(const std::string &route_pattern,
-                                   const std::string &path,
-                                   std::shared_ptr<IRequestHandler> handler,
-                                   http::response<http::string_body> &res,
-                                   const http::request<http::string_body> &req)
-        {
-            std::string regex_pattern = convert_route_to_regex(route_pattern);
-            boost::regex re(regex_pattern);
-            boost::smatch match;
-
-            if (boost::regex_match(path, match, re))
-            {
-                std::unordered_map<std::string, std::string> params;
-                size_t index = 1;
-                for (size_t start = 0; (start = route_pattern.find('{', start)) != std::string::npos;)
-                {
-                    size_t end = route_pattern.find('}', start);
-                    std::string name = route_pattern.substr(start + 1, end - start - 1);
-                    if (index < match.size())
-                    {
-                        params[name] = match[index].str();
-                        index++;
-                    }
-                    start = end + 1;
-                }
-
-                handler->handle_request(req, res);
-                return true;
-            }
-            return false;
-        }
-
-        static std::string convert_route_to_regex(const std::string &pattern)
-        {
-            std::string regex = "^";
-            // L'ancienne variable 'inside' n'était pas utilisée -> suppression
-            for (char c : pattern)
-            {
-                if (c == '{')
-                {
-                    regex += "(";
-                }
-                else if (c == '}')
-                {
-                    regex += "[^/]+)";
-                }
-                else
-                {
-                    regex += (c == '/' ? "\\/" : std::string(1, c));
-                }
-            }
-            regex += "$";
-            return regex;
-        }
-
         std::unordered_map<RouteKey, std::shared_ptr<IRequestHandler>, PairHash> routes_;
     };
 
 } // namespace Vix
 
-#endif
+#endif // VIX_ROUTER_HPP
