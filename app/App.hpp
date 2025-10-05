@@ -4,9 +4,13 @@
 #include "../config/Config.hpp"
 #include "../server/HTTPServer.hpp"
 #include "../router/RequestHandler.hpp"
-
 #include <memory>
 #include <functional>
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
+#include <csignal>
+#include <thread>
 #include <spdlog/spdlog.h>
 
 namespace Vix
@@ -18,28 +22,16 @@ namespace Vix
         void run(int port);
 
         template <typename Handler>
-        void get(const std::string &path, Handler handler)
-        {
-            add_route(http::verb::get, path, handler);
-        }
+        void get(const std::string &path, Handler handler) { add_route(http::verb::get, path, handler); }
 
         template <typename Handler>
-        void post(const std::string &path, Handler handler)
-        {
-            add_route(http::verb::post, path, handler);
-        }
+        void post(const std::string &path, Handler handler) { add_route(http::verb::post, path, handler); }
 
         template <typename Handler>
-        void put(const std::string &path, Handler handler)
-        {
-            add_route(http::verb::put, path, handler);
-        }
+        void put(const std::string &path, Handler handler) { add_route(http::verb::put, path, handler); }
 
         template <typename Handler>
-        void del(const std::string &path, Handler handler)
-        {
-            add_route(http::verb::delete_, path, handler);
-        }
+        void del(const std::string &path, Handler handler) { add_route(http::verb::delete_, path, handler); }
 
     private:
         Config &config_;
@@ -50,15 +42,11 @@ namespace Vix
         void add_route(http::verb method, const std::string &path, Handler handler)
         {
             if (!router_)
-            {
-                spdlog::error("Router is not initialized!");
                 throw std::runtime_error("Router is not initialized in App");
-            }
-
             auto request_handler = std::make_shared<RequestHandler<Handler>>(path, std::move(handler));
             router_->add_route(method, path, request_handler);
         }
     };
 }
 
-#endif // VIX_APP_HPP
+#endif
