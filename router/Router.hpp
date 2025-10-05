@@ -55,8 +55,9 @@ namespace Vix
 
             for (auto &[key, handler] : routes_)
             {
-                if (key.first == req.method() && matches_dynamic_route(key.second, std::string(req.target()), handler, res, req))
+                if (key.first == req.method())
                 {
+                    handler->handle_request(req, res);
                     return true;
                 }
             }
