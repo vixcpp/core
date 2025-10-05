@@ -13,22 +13,20 @@
 
 namespace Vix
 {
-
     namespace http = boost::beast::http;
     using json = nlohmann::json;
 
     // -------------------- Fonctions utilitaires --------------------
-
+    // Extrait les paramètres dynamiques d'une route type "/users/{id}"
     inline std::unordered_map<std::string, std::string> extract_params_from_path(
         const std::string &route_pattern,
         const std::string &path)
     {
         std::unordered_map<std::string, std::string> params;
 
-        // Convertir /users/{id} en regex ^/users/([^/]+)$
+        // Transforme la route en regex
         std::string regex_pattern = "^";
         bool inside_placeholder = false;
-
         for (char c : route_pattern)
         {
             if (c == '{')
@@ -44,12 +42,7 @@ namespace Vix
             else
             {
                 if (!inside_placeholder)
-                {
-                    if (c == '/')
-                        regex_pattern += "\\/";
-                    else
-                        regex_pattern += c;
-                }
+                    regex_pattern += (c == '/' ? "\\/" : std::string(1, c));
             }
         }
         regex_pattern += "$";
@@ -75,20 +68,7 @@ namespace Vix
         return params;
     }
 
-    inline std::string extract_param(
-        const http::request<http::string_body> &req,
-        const std::string &route_pattern,
-        const std::string &param_name)
-    {
-        auto params = extract_params_from_path(route_pattern, std::string(req.target()));
-        auto it = params.find(param_name);
-        if (it != params.end())
-            return it->second;
-        return "";
-    }
-
     // -------------------- Wrapper Response --------------------
-
     struct ResponseWrapper
     {
         http::response<http::string_body> &res;
@@ -116,29 +96,31 @@ namespace Vix
     };
 
     // -------------------- RequestHandler générique --------------------
-
     template <typename Handler>
     class RequestHandler : public IRequestHandler
     {
     public:
-        explicit RequestHandler(Handler handler)
-            : handler_(std::move(handler)) {}
+        RequestHandler(std::string route_pattern, Handler handler)
+            : route_pattern_(std::move(route_pattern)), handler_(std::move(handler)) {}
 
         void handle_request(
             const http::request<http::string_body> &req,
             http::response<http::string_body> &res) override
         {
+            ResponseWrapper wrapped{res};
+
             try
             {
-                ResponseWrapper wrapped{res};
-
-                if constexpr (std::is_invocable_v<Handler, decltype(req), ResponseWrapper &>)
+                // Si le handler accepte (req, res, params)
+                if constexpr (std::is_invocable_v<Handler, decltype(req), ResponseWrapper &, std::unordered_map<std::string, std::string> &>)
+                {
+                    auto params = Vix::extract_params_from_path(route_pattern_, std::string(req.target()));
+                    handler_(req, wrapped, params);
+                }
+                // Si le handler accepte seulement (req, res)
+                else if constexpr (std::is_invocable_v<Handler, decltype(req), ResponseWrapper &>)
                 {
                     handler_(req, wrapped);
-                }
-                else if constexpr (std::is_invocable_v<Handler, decltype(req), decltype(res)>)
-                {
-                    handler_(req, res);
                 }
                 else
                 {
@@ -148,7 +130,6 @@ namespace Vix
                 // Keep-Alive
                 bool keep_alive = (req[http::field::connection] == "keep-alive") ||
                                   (req.version() == 11 && req[http::field::connection].empty());
-
                 res.set(http::field::connection, keep_alive ? "keep-alive" : "close");
                 res.prepare_payload();
             }
@@ -160,6 +141,7 @@ namespace Vix
         }
 
     private:
+        std::string route_pattern_;
         Handler handler_;
 
         template <typename T>
@@ -168,6 +150,6 @@ namespace Vix
         };
     };
 
-}
+} // namespace Vix
 
 #endif // VIX_REQUEST_HANDLER_HPP

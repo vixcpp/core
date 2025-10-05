@@ -55,7 +55,8 @@ namespace Vix
                 throw std::runtime_error("Router is not initialized in App");
             }
 
-            auto request_handler = std::make_shared<RequestHandler<Handler>>(std::move(handler));
+            // Passe la route à RequestHandler pour extraction automatique des paramètres
+            auto request_handler = std::make_shared<RequestHandler<Handler>>(path, std::move(handler));
 
             router_->add_route(method, path, request_handler);
         }
