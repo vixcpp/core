@@ -178,31 +178,57 @@ namespace Vix
                         auto &log = Vix::Logger::getInstance();
                         auto start = std::chrono::steady_clock::now();
 
-                        std::thread t([task]()
-                                      { (*task)(); });
-
-                        if (timeout.count() > 0)
+                        try
                         {
-                            auto future = std::async(std::launch::async, [task]()
-                                                     { (*task)(); });
-
-                            if (future.wait_for(timeout) == std::future_status::timeout)
+                            if (timeout.count() > 0)
                             {
-                                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                    std::chrono::steady_clock::now() - start);
+                                auto future = std::async(std::launch::async, [task]()
+                                                         {
+                                                     try { (*task)(); }
+                                                     catch (const std::exception &e)
+                                                     {
+                                                         auto &log = Vix::Logger::getInstance();
+                                                         log.log(Vix::Logger::Level::ERROR,
+                                                                 "Exception in async task: {}", e.what());
+                                                         throw;
+                                                     }
+                                                     catch (...)
+                                                     {
+                                                         auto &log = Vix::Logger::getInstance();
+                                                         log.log(Vix::Logger::Level::ERROR,
+                                                                 "Unknown exception in async task");
+                                                         throw;
+                                                     } });
 
-                                if (elapsed.count() > timeout.count())
+                                if (future.wait_for(timeout) == std::future_status::timeout)
                                 {
+                                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                        std::chrono::steady_clock::now() - start);
+
                                     log.log(Vix::Logger::Level::WARN,
                                             "[ThreadPool][Timeout] Thread {} exceeded timeout of {} ms (actual: {} ms)",
                                             threadId, timeout.count(), elapsed.count());
                                     tasksTimedOut.fetch_add(1);
                                 }
+                                else
+                                {
+                                    future.get();
+                                }
+                            }
+                            else
+                            {
+                                (*task)();
                             }
                         }
-                        else
+                        catch (const std::exception &e)
                         {
-                            (*task)();
+                            log.log(Vix::Logger::Level::ERROR,
+                                    "[ThreadPool][TaskException] Thread {}: {}", threadId, e.what());
+                        }
+                        catch (...)
+                        {
+                            log.log(Vix::Logger::Level::ERROR,
+                                    "[ThreadPool][TaskException] Thread {}: Unknown exception", threadId);
                         }
                     },
                     priority});
