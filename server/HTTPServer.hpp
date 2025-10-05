@@ -17,6 +17,7 @@
 #include <system_error>
 #include <boost/system/error_code.hpp>
 #include <boost/filesystem.hpp>
+#include <atomic>
 
 #include "../router/IRequestHandler.hpp"
 #include "../session/Session.hpp"
@@ -46,7 +47,6 @@ namespace Vix
         int calculate_io_thread_count();
         std::shared_ptr<Router> getRouter() { return router_; }
         void monitor_metrics();
-        void stop();
         void stop_async();
         void join_threads();
         bool is_stop_requested() const { return stop_requested_; }
@@ -55,6 +55,7 @@ namespace Vix
         void init_acceptor(unsigned short port);
         void handle_client(std::shared_ptr<tcp::socket> socket_ptr, std::shared_ptr<Router> router);
         void close_socket(std::shared_ptr<tcp::socket> socket);
+        void start_io_threads();
 
         Config &config_;
         std::shared_ptr<net::io_context> io_context_;
