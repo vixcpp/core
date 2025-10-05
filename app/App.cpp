@@ -1,4 +1,5 @@
 #include "App.hpp"
+#include "../utils/Logger.hpp"
 
 namespace Vix
 {
@@ -6,6 +7,9 @@ namespace Vix
         : config_(Config::getInstance()),
           server_(config_)
     {
+        auto &log = Logger::getInstance();
+        log.setLevel(Logger::Level::WARN);
+
         try
         {
             config_.loadConfig();
@@ -13,18 +17,19 @@ namespace Vix
 
             if (!router_)
             {
-                throw std::runtime_error("Failed to get router from HTTPServer");
+                log.throwError("Failed to get router from HTTPServer");
             }
         }
         catch (const std::exception &e)
         {
-            spdlog::critical("Failed to initialize App: {}", e.what());
-            throw;
+            log.throwError("Failed to initialize App: {}", e.what());
         }
     }
 
     void App::run(int port)
     {
+        auto &log = Logger::getInstance();
+
         try
         {
             config_.setServerPort(port);
@@ -32,13 +37,11 @@ namespace Vix
         }
         catch (const std::exception &e)
         {
-            spdlog::critical("Critical error while running the server: {}", e.what());
-            throw;
+            log.throwError("Critical error while running the server: {}", e.what());
         }
         catch (...)
         {
-            spdlog::critical("Unknown critical error while running the server");
-            throw;
+            log.throwError("Unknown critical error while running the server");
         }
     }
 }

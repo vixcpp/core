@@ -31,6 +31,12 @@ namespace Vix
             return instance;
         }
 
+        void setLevel(Level level)
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            spd_->set_level(toSpdLevel(level));
+        }
+
         template <typename... Args>
         void log(Level level, fmt::format_string<Args...> fmt, Args &&...args)
         {
