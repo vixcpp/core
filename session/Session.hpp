@@ -2,7 +2,9 @@
 #define VIX_SESSION_HPP
 
 #include <boost/asio/ip/tcp.hpp>
+#include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <boost/asio.hpp>
 #include <spdlog/spdlog.h>
 #include <nlohmann/json.hpp>
@@ -20,7 +22,7 @@ namespace Vix
     using tcp = net::ip::tcp;
     using json = nlohmann::json;
 
-    constexpr size_t MAX_REQUEST_BODY_SIZE = 10 * 1024 * 1024;
+    constexpr size_t MAX_REQUEST_BODY_SIZE = 10 * 1024 * 1024; // 10 MB
     constexpr auto REQUEST_TIMEOUT = std::chrono::seconds(20);
 
     class Session : public std::enable_shared_from_this<Session>
@@ -47,14 +49,13 @@ namespace Vix
         http::request<http::string_body> req_;
         std::shared_ptr<net::steady_timer> timer_;
 
-        // Precompiled regex for performance
         static const std::regex XSS_PATTERN;
         static const std::regex SQL_PATTERN;
     };
 
-    // Static regex definitions
     const std::regex Session::XSS_PATTERN(R"(<script.*?>.*?</script>)", std::regex::icase);
     const std::regex Session::SQL_PATTERN(R"((\bUNION\b|\bSELECT\b|\bINSERT\b|\bDELETE\b|\bUPDATE\b|\bDROP\b))", std::regex::icase);
 
 }
+
 #endif // VIX_SESSION_HPP

@@ -2,8 +2,6 @@
 
 namespace Vix
 {
-    // ---------------- Implementation ----------------
-
     Session::Session(std::shared_ptr<tcp::socket> socket, Router &router)
         : socket_(std::move(socket)), router_(router)
     {
@@ -44,7 +42,7 @@ namespace Vix
 
     void Session::read_request()
     {
-        if (!socket_->is_open())
+        if (!socket_ || !socket_->is_open())
         {
             spdlog::error("Socket is not open, cannot read request!");
             return;
@@ -102,16 +100,10 @@ namespace Vix
 
         if (!success)
         {
-            if (res.result() == http::status::method_not_allowed)
-                send_error("Method Not Allowed");
-            else if (res.result() == http::status::not_found)
-                send_error("Route Not Found");
-            else
-                send_error("Invalid request");
+            send_error(res.body());
             return;
         }
 
-        // Set proper connection header
         if (req_[http::field::connection] != "close")
             res.set(http::field::connection, "keep-alive");
         else
@@ -122,7 +114,7 @@ namespace Vix
 
     void Session::send_response(http::response<http::string_body> res)
     {
-        if (!socket_->is_open())
+        if (!socket_ || !socket_->is_open())
         {
             spdlog::error("Socket is not open, cannot send response!");
             return;
@@ -143,7 +135,6 @@ namespace Vix
 
                               spdlog::info("Response sent successfully.");
 
-                              // Keep-alive handling
                               if (req_[http::field::connection] != "close")
                                   read_request();
                               else
@@ -198,5 +189,4 @@ namespace Vix
 
         return true;
     }
-
 } // namespace Vix

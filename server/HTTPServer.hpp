@@ -18,10 +18,7 @@
 #include <boost/system/error_code.hpp>
 #include <boost/filesystem.hpp>
 
-#include "../router/SimpleRequestHandler.hpp"
 #include "../router/IRequestHandler.hpp"
-#include "../router/DynamicRequestHandler.hpp"
-#include "../router/Router.hpp"
 #include "../session/Session.hpp"
 #include "../http/Response.hpp"
 #include "../config/Config.hpp"

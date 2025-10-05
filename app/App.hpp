@@ -3,7 +3,7 @@
 
 #include "../config/Config.hpp"
 #include "../server/HTTPServer.hpp"
-#include "../router/UnifiedRequestHandler.hpp"
+#include "../router/RequestHandler.hpp"
 
 #include <memory>
 #include <functional>
@@ -55,11 +55,9 @@ namespace Vix
                 throw std::runtime_error("Router is not initialized in App");
             }
 
-            router_->add_route(
-                method,
-                path,
-                std::static_pointer_cast<IRequestHandler>(
-                    std::make_shared<UnifiedRequestHandler>(handler)));
+            auto request_handler = std::make_shared<RequestHandler<Handler>>(std::move(handler));
+
+            router_->add_route(method, path, request_handler);
         }
     };
 }
