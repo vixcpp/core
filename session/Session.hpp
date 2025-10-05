@@ -52,10 +52,6 @@ namespace Vix
         static const std::regex XSS_PATTERN;
         static const std::regex SQL_PATTERN;
     };
-
-    const std::regex Session::XSS_PATTERN(R"(<script.*?>.*?</script>)", std::regex::icase);
-    const std::regex Session::SQL_PATTERN(R"((\bUNION\b|\bSELECT\b|\bINSERT\b|\bDELETE\b|\bUPDATE\b|\bDROP\b))", std::regex::icase);
-
 }
 
 #endif // VIX_SESSION_HPP

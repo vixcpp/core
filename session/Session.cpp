@@ -2,6 +2,9 @@
 
 namespace Vix
 {
+    const std::regex Session::XSS_PATTERN(R"(<script.*?>.*?</script>)", std::regex::icase);
+    const std::regex Session::SQL_PATTERN(R"((\bUNION\b|\bSELECT\b|\bINSERT\b|\bDELETE\b|\bUPDATE\b|\bDROP\b))", std::regex::icase);
+
     Session::Session(std::shared_ptr<tcp::socket> socket, Router &router)
         : socket_(std::move(socket)), router_(router)
     {
