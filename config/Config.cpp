@@ -12,7 +12,7 @@ namespace Vix
     namespace fs = std::filesystem;
     using json = nlohmann::json;
 
-    const fs::path Config::DEFAULT_CONFIG_PATH = fs::absolute(fs::path(__FILE__).parent_path().parent_path() / "/config/config.json");
+    const fs::path Config::DEFAULT_CONFIG_PATH = fs::absolute(fs::path(__FILE__).parent_path().parent_path() / "config/config.json");
 
     Config::Config()
         : db_host(DEFAULT_DB_HOST),
