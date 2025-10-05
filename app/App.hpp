@@ -56,7 +56,6 @@ namespace Vix
             }
 
             auto request_handler = std::make_shared<RequestHandler<Handler>>(path, std::move(handler));
-
             router_->add_route(method, path, request_handler);
         }
     };

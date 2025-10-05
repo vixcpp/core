@@ -37,8 +37,8 @@ tag:
 		echo "❌ Tag $(VERSION) already exists."; \
 		exit 1; \
 	else \
-		echo "🏷️  Creating tag $(VERSION)..."; \
-		git tag $(VERSION); \
+		echo "🏷️  Creating annotated tag $(VERSION)..."; \
+		git tag -a $(VERSION) -m "Release version $(VERSION)"; \
 		git push origin $(VERSION); \
 	fi
 
