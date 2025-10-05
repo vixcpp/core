@@ -1,8 +1,19 @@
 #include "App.hpp"
 #include "../utils/Logger.hpp"
+#include <csignal>
 
 namespace Vix
 {
+    static HTTPServer *g_server_ptr = nullptr;
+
+    void handle_sigint(int)
+    {
+        auto &log = Logger::getInstance();
+        log.log(Logger::Level::INFO, "Received SIGINT, shutting down...");
+        if (g_server_ptr)
+            g_server_ptr->stop();
+    }
+
     App::App()
         : config_(Config::getInstance()),
           server_(config_)
@@ -33,7 +44,13 @@ namespace Vix
         try
         {
             config_.setServerPort(port);
+
+            g_server_ptr = &server_;
+            std::signal(SIGINT, handle_sigint);
+
             server_.run();
+
+            log.log(Logger::Level::INFO, "Application shutdown complete");
         }
         catch (const std::exception &e)
         {

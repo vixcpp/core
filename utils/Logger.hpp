@@ -78,7 +78,6 @@ namespace Vix
             throw std::runtime_error(msg);
         }
 
-        // nouvelle surcharge pour std::string
         [[noreturn]] void throwError(const std::string &msg)
         {
             log(Level::ERROR, "{}", msg);

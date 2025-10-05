@@ -221,6 +221,24 @@ namespace Vix
             log.log(Vix::Logger::Level::ERROR, "Failed to close socket: {}", ec.message());
     }
 
+    void HTTPServer::stop()
+    {
+        auto &log = Vix::Logger::getInstance();
+        log.log(Logger::Level::INFO, "Stopping HTTPServer...");
+
+        stop_requested_ = true;
+        io_context_->stop();
+
+        for (auto &t : io_threads_)
+            if (t.joinable())
+                t.join();
+
+        if (acceptor_ && acceptor_->is_open())
+            acceptor_->close();
+
+        log.log(Logger::Level::INFO, "HTTPServer stopped gracefully");
+    }
+
     void HTTPServer::handle_client(std::shared_ptr<tcp::socket> socket_ptr, std::shared_ptr<Router> router)
     {
         auto &log = Vix::Logger::getInstance();

@@ -75,8 +75,11 @@ namespace Vix
                              {
                                  if (ec == http::error::end_of_stream)
                                      logger.log(Level::DEBUG, "[Session] Client closed connection");
+                                 else if (ec == boost::asio::error::connection_reset)
+                                     logger.log(Level::DEBUG, "[Session] Connection reset by client");
                                  else if (ec != boost::asio::error::operation_aborted)
-                                     logger.log(Level::ERROR, "[Session] Read error: {}", ec.message());
+                                     logger.log(Level::WARN, "[Session] Read error: {}", ec.message());
+
                                  close_socket_gracefully();
                                  return;
                              }
