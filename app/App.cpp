@@ -1,10 +1,5 @@
 #include "App.hpp"
 #include "../utils/Logger.hpp"
-#include <csignal>
-#include <thread>
-#include <atomic>
-#include <condition_variable>
-#include <mutex>
 
 namespace Vix
 {
@@ -17,37 +12,20 @@ namespace Vix
     {
         auto &log = Logger::getInstance();
         log.log(Logger::Level::INFO, "Received SIGINT, shutting down...");
-
         stop_flag = true;
         stop_cv.notify_one();
-
         if (g_server_ptr)
-        {
             g_server_ptr->stop_async();
-        }
     }
 
-    App::App()
-        : config_(Config::getInstance()),
-          server_(config_)
+    App::App() : config_(Config::getInstance()), server_(config_)
     {
         auto &log = Logger::getInstance();
         log.setLevel(Logger::Level::WARN);
-
-        try
-        {
-            config_.loadConfig();
-            router_ = server_.getRouter();
-
-            if (!router_)
-            {
-                log.throwError("Failed to get router from HTTPServer");
-            }
-        }
-        catch (const std::exception &e)
-        {
-            log.throwError("Failed to initialize App: {}", e.what());
-        }
+        config_.loadConfig();
+        router_ = server_.getRouter();
+        if (!router_)
+            log.throwError("Failed to get router from HTTPServer");
     }
 
     void App::run(int port)
@@ -69,7 +47,6 @@ namespace Vix
 
         if (server_thread.joinable())
             server_thread.join();
-
         server_.join_threads();
 
         log.log(Logger::Level::INFO, "Application shutdown complete");
