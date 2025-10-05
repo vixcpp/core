@@ -4,20 +4,35 @@
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/asio/ip/tcp.hpp>
+#include <nlohmann/json.hpp>
+#include <boost/regex.hpp>
+#include <string>
+#include <unordered_map>
+#include <iostream>
 #include <thread>
 #include <memory>
-#include <vector>
-#include <atomic>
 #include <functional>
-#include "../router/Router.hpp"
+#include <spdlog/spdlog.h>
+#include <vector>
+#include <system_error>
+#include <boost/system/error_code.hpp>
+#include <boost/filesystem.hpp>
+#include <atomic>
+
+#include "../router/IRequestHandler.hpp"
 #include "../session/Session.hpp"
+#include "../http/Response.hpp"
 #include "../config/Config.hpp"
 #include "ThreadPool.hpp"
 
 namespace Vix
 {
+    namespace beast = boost::beast;
+    namespace http = boost::beast::http;
     namespace net = boost::asio;
+
     using tcp = net::ip::tcp;
+    using json = nlohmann::json;
 
     constexpr size_t NUMBER_OF_THREADS = 8;
 
@@ -34,12 +49,12 @@ namespace Vix
         void monitor_metrics();
         void stop_async();
         void join_threads();
+        bool is_stop_requested() const { return stop_requested_; }
 
     private:
         void init_acceptor(unsigned short port);
         void handle_client(std::shared_ptr<tcp::socket> socket_ptr, std::shared_ptr<Router> router);
         void close_socket(std::shared_ptr<tcp::socket> socket);
-
         void start_io_threads();
 
         Config &config_;
@@ -50,8 +65,6 @@ namespace Vix
         std::vector<std::thread> io_threads_;
         std::atomic<bool> stop_requested_;
     };
-
-    void set_affinity(int thread_id);
 }
 
 #endif // VIX_HTTP_SERVER_HPP
