@@ -1,34 +1,26 @@
 # ======================================================
-
-# CMake configuration for vix.cpp core module
+# vix.cpp core module CMake configuration (optimized)
 # ======================================================
 
 cmake_minimum_required(VERSION 3.20)
-
-# Project definition
 project(vix_core VERSION 0.1 LANGUAGES CXX)
 
 # ======================================================
-# C++ standard and general options
+# C++ standard and options
 # ======================================================
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # ======================================================
-# Build types and optimized compilation flags
+# Build types
 # ======================================================
 if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Release)  # Default to Release
+    set(CMAKE_BUILD_TYPE Release)
 endif()
 
-# Common flags applied to all builds
 set(GLOBAL_CXX_FLAGS "-Wall -Wextra -Weffc++ -Wshadow")
-
-# Release-specific flags (faster compilation and optimized)
 set(CMAKE_CXX_FLAGS_RELEASE "${GLOBAL_CXX_FLAGS} -O2 -Wno-unused-result")
-
-# Debug-specific flags (sanitizers and debug info)
 set(CMAKE_CXX_FLAGS_DEBUG "${GLOBAL_CXX_FLAGS} -g -fsanitize=address -fsanitize=undefined -D_GLIBCXX_DEBUG")
 
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
@@ -37,48 +29,47 @@ message(STATUS "CXX flags: ${CMAKE_CXX_FLAGS}")
 # ======================================================
 # External dependencies
 # ======================================================
-
-# Boost (required for Asio/Beast)
 find_package(Boost 1.78 REQUIRED COMPONENTS filesystem system)
-if (Boost_FOUND)
-    include_directories(${Boost_INCLUDE_DIRS})
-else()
-    message(FATAL_ERROR "Boost not found!")
-endif()
+include_directories(${Boost_INCLUDE_DIRS})
 
-# OpenSSL for HTTPS support
 find_package(OpenSSL REQUIRED)
 include_directories(${OPENSSL_INCLUDE_DIR})
 
-# spdlog for logging
 include_directories(/usr/local/include/spdlog)
 link_directories(/usr/local/lib)
 
-# MySQL Connector/C++ for ORM
 include_directories(/usr/include/mysql)
 link_directories(/usr/lib)
 
 # ======================================================
-# Core sources
+# Explicit list of sources
 # ======================================================
-
-file(GLOB_RECURSE CORE_SOURCES
-    "app/*.cpp"
-    "server/*.cpp"
-    "router/*.cpp"
-    "http/*.cpp"
-    "middleware/*.cpp"
-    "utils/*.cpp"
-    "config/*.cpp"
-    "session/*.cpp"
+set(CORE_SOURCES
+    app/App.cpp
+    app/Module.cpp
+    server/HTTPServer.cpp
+    server/ThreadPool.cpp
+    router/Router.cpp
+    router/IRequestHandler.hpp
+    http/Request.cpp
+    http/Response.cpp
+    middleware/Middleware.cpp
+    middleware/MiddlewarePipeline.cpp
+    middleware/MiddlewareContext.cpp
+    utils/Logger.cpp
+    utils/StringUtils.cpp
+    utils/JsonHelper.cpp
+    utils/ErrorUtils.cpp
+    config/Config.cpp
+    session/Session.cpp
 )
 
-# Create a static library for core
+# ======================================================
+# Create static library 'core'
+# ======================================================
 add_library(core STATIC ${CORE_SOURCES})
-
-# Include directories for users
 target_include_directories(core PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}         
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/app
     ${CMAKE_CURRENT_SOURCE_DIR}/server
     ${CMAKE_CURRENT_SOURCE_DIR}/router
@@ -89,7 +80,6 @@ target_include_directories(core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/session
 )
 
-# Link external libraries
 target_link_libraries(core PRIVATE
     ${Boost_FILESYSTEM_LIBRARY}
     ${Boost_SYSTEM_LIBRARY}
@@ -98,3 +88,33 @@ target_link_libraries(core PRIVATE
     spdlog
     mysqlcppconn
 )
+
+# ======================================================
+# Optional: Git hash tracking to skip rebuild
+# ======================================================
+find_package(Git QUIET)
+if(GIT_FOUND)
+    set(CORE_HASH_FILE "${CMAKE_CURRENT_BINARY_DIR}/core_commit_hash.txt")
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} rev-parse HEAD
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        OUTPUT_VARIABLE CORE_GIT_HASH
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+
+    # Check if file exists before reading
+    if(EXISTS ${CORE_HASH_FILE})
+        file(READ ${CORE_HASH_FILE} OLD_CORE_HASH)
+    else()
+        set(OLD_CORE_HASH "")
+    endif()
+
+    if(NOT CORE_GIT_HASH STREQUAL OLD_CORE_HASH)
+        message(STATUS "Core commit changed (${CORE_GIT_HASH}), rebuild triggered")
+        file(WRITE ${CORE_HASH_FILE} "${CORE_GIT_HASH}")
+    else()
+        message(STATUS "Core commit unchanged (${CORE_GIT_HASH}), skipping rebuild if no source changed")
+    endif()
+endif()
+
+message(STATUS "vix_core static library configured with ${CORE_SOURCES}")
