@@ -239,6 +239,22 @@ namespace Vix
         log.log(Logger::Level::INFO, "HTTPServer stopped gracefully");
     }
 
+    void HTTPServer::stop_async()
+    {
+        stop_requested_ = true;
+        io_context_->stop();
+
+        if (acceptor_ && acceptor_->is_open())
+            acceptor_->close();
+    }
+
+    void HTTPServer::join_threads()
+    {
+        for (auto &t : io_threads_)
+            if (t.joinable())
+                t.join();
+    }
+
     void HTTPServer::handle_client(std::shared_ptr<tcp::socket> socket_ptr, std::shared_ptr<Router> router)
     {
         auto &log = Vix::Logger::getInstance();

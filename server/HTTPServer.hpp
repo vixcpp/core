@@ -47,6 +47,8 @@ namespace Vix
         std::shared_ptr<Router> getRouter() { return router_; }
         void monitor_metrics();
         void stop();
+        void stop_async();
+        void join_threads();
 
     private:
         void init_acceptor(unsigned short port);

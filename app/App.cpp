@@ -11,7 +11,7 @@ namespace Vix
         auto &log = Logger::getInstance();
         log.log(Logger::Level::INFO, "Received SIGINT, shutting down...");
         if (g_server_ptr)
-            g_server_ptr->stop();
+            g_server_ptr->stop_async();
     }
 
     App::App()
@@ -41,24 +41,15 @@ namespace Vix
     {
         auto &log = Logger::getInstance();
 
-        try
-        {
-            config_.setServerPort(port);
+        config_.setServerPort(port);
+        g_server_ptr = &server_;
+        std::signal(SIGINT, handle_sigint);
 
-            g_server_ptr = &server_;
-            std::signal(SIGINT, handle_sigint);
+        server_.run();
 
-            server_.run();
+        server_.join_threads();
 
-            log.log(Logger::Level::INFO, "Application shutdown complete");
-        }
-        catch (const std::exception &e)
-        {
-            log.throwError("Critical error while running the server: {}", e.what());
-        }
-        catch (...)
-        {
-            log.throwError("Unknown critical error while running the server");
-        }
+        log.log(Logger::Level::INFO, "Application shutdown complete");
     }
+
 }
