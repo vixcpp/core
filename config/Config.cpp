@@ -28,14 +28,9 @@ namespace Vix
 
             if (!fs::exists(configPath_))
             {
-                configPath_ = fs::absolute(fs::path(__FILE__).parent_path().parent_path() / "config/config.json");
+                spdlog::warn("Config file {} not found. Using default settings.", configPath_.string());
+                return;
             }
-        }
-
-        if (!fs::exists(configPath_))
-        {
-            spdlog::warn("Config file {} not found. Using default settings.", configPath_.string());
-            return;
         }
 
         loadConfig();
