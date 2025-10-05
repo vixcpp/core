@@ -164,6 +164,7 @@ namespace Vix
             -> std::future<typename std::invoke_result<F, Args...>::type>
         {
             using ReturnType = typename std::invoke_result<F, Args...>::type;
+
             auto task = std::make_shared<std::packaged_task<ReturnType()>>(
                 std::bind(std::forward<F>(f), std::forward<Args>(args)...));
 
@@ -180,55 +181,30 @@ namespace Vix
 
                         try
                         {
-                            if (timeout.count() > 0)
-                            {
-                                auto future = std::async(std::launch::async, [task]()
-                                                         {
-                                                     try { (*task)(); }
-                                                     catch (const std::exception &e)
-                                                     {
-                                                         auto &log = Vix::Logger::getInstance();
-                                                         log.log(Vix::Logger::Level::ERROR,
-                                                                 "Exception in async task: {}", e.what());
-                                                         throw;
-                                                     }
-                                                     catch (...)
-                                                     {
-                                                         auto &log = Vix::Logger::getInstance();
-                                                         log.log(Vix::Logger::Level::ERROR,
-                                                                 "Unknown exception in async task");
-                                                         throw;
-                                                     } });
-
-                                if (future.wait_for(timeout) == std::future_status::timeout)
-                                {
-                                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                        std::chrono::steady_clock::now() - start);
-
-                                    log.log(Vix::Logger::Level::WARN,
-                                            "[ThreadPool][Timeout] Thread {} exceeded timeout of {} ms (actual: {} ms)",
-                                            threadId, timeout.count(), elapsed.count());
-                                    tasksTimedOut.fetch_add(1);
-                                }
-                                else
-                                {
-                                    future.get();
-                                }
-                            }
-                            else
-                            {
-                                (*task)();
-                            }
+                            (*task)();
                         }
                         catch (const std::exception &e)
                         {
                             log.log(Vix::Logger::Level::ERROR,
-                                    "[ThreadPool][TaskException] Thread {}: {}", threadId, e.what());
+                                    "[ThreadPool][Thread {}] Exception in task: {}", threadId, e.what());
                         }
                         catch (...)
                         {
                             log.log(Vix::Logger::Level::ERROR,
-                                    "[ThreadPool][TaskException] Thread {}: Unknown exception", threadId);
+                                    "[ThreadPool][Thread {}] Unknown exception in task", threadId);
+                        }
+
+                        if (timeout.count() > 0)
+                        {
+                            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                std::chrono::steady_clock::now() - start);
+                            if (elapsed.count() > timeout.count())
+                            {
+                                log.log(Vix::Logger::Level::WARN,
+                                        "[ThreadPool][Timeout] Thread {} exceeded timeout of {} ms (actual: {} ms)",
+                                        threadId, timeout.count(), elapsed.count());
+                                tasksTimedOut.fetch_add(1);
+                            }
                         }
                     },
                     priority});
