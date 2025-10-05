@@ -15,15 +15,12 @@ namespace Vix
             {
                 throw std::runtime_error("Failed to get router from HTTPServer");
             }
+
+            spdlog::info("✅ App initialized successfully.");
         }
         catch (const std::exception &e)
         {
-            spdlog::critical("Faailed to initialize App: {}", e.what());
-            throw;
-        }
-        catch (...)
-        {
-            spdlog::critical("Unknown error during App initialization");
+            spdlog::critical("Failed to initialize App: {}", e.what());
             throw;
         }
     }
@@ -33,6 +30,7 @@ namespace Vix
         try
         {
             config_.setServerPort(port);
+            spdlog::info("🚀 Starting server on port {}", port);
             server_.run();
         }
         catch (const std::exception &e)
@@ -42,7 +40,7 @@ namespace Vix
         }
         catch (...)
         {
-            spdlog::critical("Unknow critical error while running the server");
+            spdlog::critical("Unknown critical error while running the server");
             throw;
         }
     }
