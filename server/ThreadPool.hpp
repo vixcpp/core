@@ -164,6 +164,7 @@ namespace Vix
             -> std::future<typename std::invoke_result<F, Args...>::type>
         {
             using ReturnType = typename std::invoke_result<F, Args...>::type;
+
             auto task = std::make_shared<std::packaged_task<ReturnType()>>(
                 std::bind(std::forward<F>(f), std::forward<Args>(args)...));
 
@@ -178,28 +179,32 @@ namespace Vix
                         auto &log = Vix::Logger::getInstance();
                         auto start = std::chrono::steady_clock::now();
 
-                        std::thread t([task]()
-                                      { (*task)(); });
+                        try
+                        {
+                            (*task)();
+                        }
+                        catch (const std::exception &e)
+                        {
+                            log.log(Vix::Logger::Level::ERROR,
+                                    "[ThreadPool][Thread {}] Exception in task: {}", threadId, e.what());
+                        }
+                        catch (...)
+                        {
+                            log.log(Vix::Logger::Level::ERROR,
+                                    "[ThreadPool][Thread {}] Unknown exception in task", threadId);
+                        }
 
                         if (timeout.count() > 0)
                         {
-                            if (t.joinable())
+                            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                std::chrono::steady_clock::now() - start);
+                            if (elapsed.count() > timeout.count())
                             {
-                                t.detach();
-
-                                auto end = std::chrono::steady_clock::now();
-                                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-
                                 log.log(Vix::Logger::Level::WARN,
                                         "[ThreadPool][Timeout] Thread {} exceeded timeout of {} ms (actual: {} ms)",
                                         threadId, timeout.count(), elapsed.count());
-
                                 tasksTimedOut.fetch_add(1);
                             }
-                        }
-                        else
-                        {
-                            t.join();
                         }
                     },
                     priority});

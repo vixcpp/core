@@ -2,16 +2,24 @@
 
 namespace Vix
 {
-    // ---------------- Implementation ----------------
+    using Level = Logger::Level;
+    static Logger &logger = Logger::getInstance();
+
+    const std::regex Session::XSS_PATTERN(R"(<script.*?>.*?</script>)", std::regex::icase);
+    const std::regex Session::SQL_PATTERN(R"((\bUNION\b|\bSELECT\b|\bINSERT\b|\bDELETE\b|\bUPDATE\b|\bDROP\b))", std::regex::icase);
 
     Session::Session(std::shared_ptr<tcp::socket> socket, Router &router)
         : socket_(std::move(socket)), router_(router)
     {
-        socket_->set_option(tcp::no_delay(true));
+        boost::system::error_code ec;
+        socket_->set_option(tcp::no_delay(true), ec);
+        if (ec)
+            logger.log(Level::WARN, "[Session] Failed to disable Nagle: {}", ec.message());
     }
 
     void Session::run()
     {
+        logger.log(Level::DEBUG, "[Session] Starting new session");
         read_request();
     }
 
@@ -21,15 +29,16 @@ namespace Vix
         timer_->expires_after(REQUEST_TIMEOUT);
 
         std::weak_ptr<net::steady_timer> weak_timer = timer_;
-        timer_->async_wait([this, weak_timer](const boost::system::error_code &ec)
+        auto self = shared_from_this();
+        timer_->async_wait([this, self, weak_timer](const boost::system::error_code &ec)
                            {
             auto t = weak_timer.lock();
             if (!t) return;
 
             if (!ec)
             {
-                spdlog::warn("Timeout: No request received after {} seconds!", REQUEST_TIMEOUT.count());
-                close_socket();
+                logger.log(Level::WARN, "[Session] Timeout ({}s), closing socket", REQUEST_TIMEOUT.count());
+                close_socket_gracefully();
             } });
     }
 
@@ -44,87 +53,126 @@ namespace Vix
 
     void Session::read_request()
     {
-        if (!socket_->is_open())
+        if (!socket_ || !socket_->is_open())
         {
-            spdlog::error("Socket is not open, cannot read request!");
+            logger.log(Vix::Logger::Level::DEBUG, "[Session] Socket closed before read_request()");
             return;
         }
 
         buffer_.consume(buffer_.size());
+        parser_ = std::make_unique<http::request_parser<http::string_body>>();
+        parser_->body_limit(MAX_REQUEST_BODY_SIZE);
+
         start_timer();
 
         auto self = shared_from_this();
-        http::async_read(*socket_, buffer_, req_,
-                         [this, self](boost::system::error_code ec, std::size_t)
-                         {
-                             cancel_timer();
+        http::async_read(
+            *socket_, buffer_, *parser_,
+            [this, self](boost::system::error_code ec, std::size_t)
+            {
+                cancel_timer();
 
-                             if (ec)
-                             {
-                                 if (ec == http::error::end_of_stream)
-                                     spdlog::info("Client closed the connection.");
-                                 else if (ec != boost::asio::error::operation_aborted)
-                                     spdlog::error("Error during async_read: {}", ec.message());
+                if (ec)
+                {
+                    if (ec == http::error::end_of_stream ||
+                        ec == boost::asio::error::connection_reset)
+                    {
+                        logger.log(Vix::Logger::Level::DEBUG,
+                                   "[Session] Client closed connection: {}", ec.message());
+                    }
+                    else if (ec != boost::asio::error::operation_aborted)
+                    {
+                        logger.log(Vix::Logger::Level::ERROR,
+                                   "[Session] Read error: {}", ec.message());
+                    }
 
-                                 close_socket();
-                                 return;
-                             }
+                    close_socket_gracefully();
+                    return;
+                }
 
-                             handle_request(ec);
-                         });
+                std::optional<http::request<http::string_body>> parsed;
+                try
+                {
+                    parsed = parser_->release();
+                }
+                catch (const std::exception &ex)
+                {
+                    logger.log(Vix::Logger::Level::ERROR,
+                               "[Session] Parser release failed: {}", ex.what());
+                    close_socket_gracefully();
+                    return;
+                }
+
+                handle_request({}, std::move(parsed));
+            });
     }
 
-    void Session::handle_request(const boost::system::error_code &ec)
+    void Session::handle_request(const boost::system::error_code &ec,
+                                 std::optional<http::request<http::string_body>> parsed_req)
     {
         if (ec)
         {
-            spdlog::error("Error handling request: {}", ec.message());
-            close_socket();
+            logger.log(Level::ERROR, "[Session] Error handling request: {}", ec.message());
+            close_socket_gracefully();
             return;
         }
+
+        if (!parsed_req)
+        {
+            logger.log(Level::WARN, "[Session] No request parsed");
+            close_socket_gracefully();
+            return;
+        }
+
+        req_ = std::move(*parsed_req);
 
         if (!waf_check_request(req_))
         {
-            spdlog::warn("Request blocked by WAF.");
-            send_error("Request blocked due to security policy");
+            logger.log(Level::WARN, "[WAF] Request blocked by rules");
+            send_error(http::status::bad_request, "Request blocked (security)");
             return;
         }
 
+#if defined(BOOST_BEAST_VERSION) && BOOST_BEAST_VERSION >= 315
+        constexpr auto too_large_status = http::status::payload_too_large;
+#else
+        constexpr auto too_large_status = static_cast<http::status>(413);
+#endif
         if (req_.body().size() > MAX_REQUEST_BODY_SIZE)
         {
-            spdlog::warn("Request too large: {} bytes", req_.body().size());
-            send_error("Request too large");
+            logger.log(Level::WARN, "[Session] Body too large ({} bytes)", req_.body().size());
+            send_error(too_large_status, "Request too large");
             return;
         }
 
         http::response<http::string_body> res;
-        bool success = router_.handle_request(req_, res);
-
-        if (!success)
+        bool ok = false;
+        try
         {
-            if (res.result() == http::status::method_not_allowed)
-                send_error("Method Not Allowed");
-            else if (res.result() == http::status::not_found)
-                send_error("Route Not Found");
-            else
-                send_error("Invalid request");
+            ok = router_.handle_request(req_, res);
+        }
+        catch (const std::exception &ex)
+        {
+            logger.log(Level::ERROR, "[Router] Exception: {}", ex.what());
+            send_error(http::status::internal_server_error, "Internal server error");
             return;
         }
 
-        // Set proper connection header
-        if (req_[http::field::connection] != "close")
-            res.set(http::field::connection, "keep-alive");
-        else
-            res.set(http::field::connection, "close");
+        if (!ok)
+        {
+            if (res.result() == http::status::ok)
+                res.result(http::status::bad_request);
+        }
 
+        res.set(http::field::connection, req_.keep_alive() ? "keep-alive" : "close");
         send_response(std::move(res));
     }
 
     void Session::send_response(http::response<http::string_body> res)
     {
-        if (!socket_->is_open())
+        if (!socket_ || !socket_->is_open())
         {
-            spdlog::error("Socket is not open, cannot send response!");
+            logger.log(Level::DEBUG, "[Session] Cannot send response (socket closed)");
             return;
         }
 
@@ -136,67 +184,71 @@ namespace Vix
                           {
                               if (ec)
                               {
-                                  spdlog::error("Error sending response: {}", ec.message());
-                                  close_socket();
+                                  logger.log(Level::WARN, "[Session] Write error: {}", ec.message());
+                                  close_socket_gracefully();
                                   return;
                               }
 
-                              spdlog::info("Response sent successfully.");
+                              logger.log(Level::DEBUG, "[Session] Response sent ({} bytes)", res_ptr->body().size());
 
-                              // Keep-alive handling
-                              if (req_[http::field::connection] != "close")
+                              if (res_ptr->keep_alive())
+                              {
+                                  parser_.reset();
                                   read_request();
+                              }
                               else
-                                  close_socket();
+                                  close_socket_gracefully();
                           });
     }
 
-    void Session::send_error(const std::string &error_message)
+    void Session::send_error(http::status status, const std::string &msg)
     {
         http::response<http::string_body> res;
-        Response::error_response(res, http::status::bad_request, error_message);
+        Response::error_response(res, status, msg);
+        res.set(http::field::connection, "close");
         send_response(std::move(res));
     }
 
-    void Session::close_socket()
+    void Session::close_socket_gracefully()
     {
         if (!socket_ || !socket_->is_open())
             return;
 
         boost::system::error_code ec;
         socket_->shutdown(tcp::socket::shutdown_both, ec);
-
-        if (ec && ec != boost::asio::error::not_connected)
-            spdlog::warn("Error during socket shutdown: {}", ec.message());
-
         socket_->close(ec);
-        if (ec)
-            spdlog::warn("Error closing socket: {}", ec.message());
-        else
-            spdlog::info("Socket closed.");
+
+        logger.log(Level::DEBUG, "[Session] Socket closed");
     }
 
     bool Session::waf_check_request(const http::request<http::string_body> &req)
     {
-        if (std::regex_search(req.target().to_string(), XSS_PATTERN))
+        if (req.target().size() > 4096)
         {
-            spdlog::warn("Possible XSS attack detected in URL: {}", req.target());
+            logger.log(Level::WARN, "[WAF] Target too long");
             return false;
         }
 
-        if (std::regex_search(req.body(), SQL_PATTERN))
+        try
         {
-            spdlog::warn("Possible SQL injection detected in body: {}", req.body());
-            return false;
-        }
+            if (std::regex_search(req.target().to_string(), XSS_PATTERN))
+            {
+                logger.log(Level::WARN, "[WAF] XSS pattern detected in URL");
+                return false;
+            }
 
-        if (req.body().size() > MAX_REQUEST_BODY_SIZE)
+            if (!req.body().empty() && std::regex_search(req.body(), SQL_PATTERN))
+            {
+                logger.log(Level::WARN, "[WAF] SQL injection attempt detected");
+                return false;
+            }
+        }
+        catch (const std::regex_error &)
         {
-            spdlog::warn("Request body too large: {} bytes", req.body().size());
+            logger.log(Level::ERROR, "[WAF] Regex error during pattern check");
             return false;
         }
 
         return true;
     }
-
 } // namespace Vix

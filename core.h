@@ -32,10 +32,6 @@
 // ----------------------------
 #include "router/Router.hpp"
 #include "router/IRequestHandler.hpp"
-#include "router/RouteManager.hpp"
-#include "router/SimpleRequestHandler.hpp"
-#include "router/DynamicRequestHandler.hpp"
-#include "router/UnifiedRequestHandler.hpp"
 
 // ----------------------------
 // Middleware
@@ -67,7 +63,6 @@
 
 namespace Vix
 {
-
     // Boost aliases
     namespace http = boost::beast::http;
     namespace net = boost::asio;
@@ -81,5 +76,4 @@ namespace Vix
     using AppPtr = std::shared_ptr<App>;
     using SessionPtr = std::shared_ptr<Session>;
     using ModulePtr = std::shared_ptr<Module>;
-
 } // namespace Vix

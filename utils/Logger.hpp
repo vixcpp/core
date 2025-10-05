@@ -31,6 +31,12 @@ namespace Vix
             return instance;
         }
 
+        void setLevel(Level level)
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            spd_->set_level(toSpdLevel(level));
+        }
+
         template <typename... Args>
         void log(Level level, fmt::format_string<Args...> fmt, Args &&...args)
         {
@@ -72,7 +78,6 @@ namespace Vix
             throw std::runtime_error(msg);
         }
 
-        // nouvelle surcharge pour std::string
         [[noreturn]] void throwError(const std::string &msg)
         {
             log(Level::ERROR, "{}", msg);

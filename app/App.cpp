@@ -1,11 +1,26 @@
 #include "App.hpp"
+#include "../utils/Logger.hpp"
+#include <csignal>
 
 namespace Vix
 {
+    static HTTPServer *g_server_ptr = nullptr;
+
+    void handle_sigint(int)
+    {
+        auto &log = Logger::getInstance();
+        log.log(Logger::Level::INFO, "Received SIGINT, shutting down...");
+        if (g_server_ptr)
+            g_server_ptr->stop();
+    }
+
     App::App()
         : config_(Config::getInstance()),
           server_(config_)
     {
+        auto &log = Logger::getInstance();
+        log.setLevel(Logger::Level::WARN);
+
         try
         {
             config_.loadConfig();
@@ -13,37 +28,37 @@ namespace Vix
 
             if (!router_)
             {
-                throw std::runtime_error("Failed to get router from HTTPServer");
+                log.throwError("Failed to get router from HTTPServer");
             }
         }
         catch (const std::exception &e)
         {
-            spdlog::critical("Faailed to initialize App: {}", e.what());
-            throw;
-        }
-        catch (...)
-        {
-            spdlog::critical("Unknown error during App initialization");
-            throw;
+            log.throwError("Failed to initialize App: {}", e.what());
         }
     }
 
     void App::run(int port)
     {
+        auto &log = Logger::getInstance();
+
         try
         {
             config_.setServerPort(port);
+
+            g_server_ptr = &server_;
+            std::signal(SIGINT, handle_sigint);
+
             server_.run();
+
+            log.log(Logger::Level::INFO, "Application shutdown complete");
         }
         catch (const std::exception &e)
         {
-            spdlog::critical("Critical error while running the server: {}", e.what());
-            throw;
+            log.throwError("Critical error while running the server: {}", e.what());
         }
         catch (...)
         {
-            spdlog::critical("Unknow critical error while running the server");
-            throw;
+            log.throwError("Unknown critical error while running the server");
         }
     }
 }

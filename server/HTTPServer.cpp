@@ -54,7 +54,6 @@ namespace Vix
           io_context_(std::make_shared<net::io_context>()),
           acceptor_(nullptr),
           router_(std::make_shared<Router>()),
-          route_configurator_(std::make_unique<RouteConfigurator>(*router_)),
           request_thread_pool_(NUMBER_OF_THREADS, 100, 0, 4),
           io_threads_(),
           stop_requested_(false)
@@ -65,11 +64,15 @@ namespace Vix
             int port = config_.getServerPort();
             if (port < 1024 || port > 65535)
             {
-                log.log(Vix::Logger::Level::ERROR, "Section port {} out of range (1024-65535)", port);
-                throw;
+                log.log(Vix::Logger::Level::ERROR, "Server port {} out of range (1024-65535)", port);
+                throw std::invalid_argument("Invalid port number");
             }
 
             init_acceptor(static_cast<unsigned short>(port));
+
+            log.log(Vix::Logger::Level::INFO,
+                    "Server request timeout set to {} ms",
+                    config_.getRequestTimeout());
         }
         catch (const std::exception &e)
         {
@@ -78,7 +81,7 @@ namespace Vix
         }
     }
 
-    HTTPServer::~HTTPServer() {}
+    HTTPServer::~HTTPServer() = default;
 
     void HTTPServer::monitor_metrics()
     {
@@ -89,7 +92,7 @@ namespace Vix
             auto metrics = request_thread_pool_.getMetrics();
             log.log(Vix::Logger::Level::INFO,
                     "ThreadPool Metrics -> Pending: {}, Active: {}, TimedOut: {}",
-                    metrics.pendingTasks, metrics.activeTasks, metrics.timedOutTasks); }, std::chrono::seconds(5)); // toutes les 5s
+                    metrics.pendingTasks, metrics.activeTasks, metrics.timedOutTasks); }, std::chrono::seconds(5));
     }
 
     void HTTPServer::run()
@@ -98,8 +101,6 @@ namespace Vix
 
         try
         {
-            route_configurator_->configure_routes();
-
             log.log(Vix::Logger::Level::INFO,
                     "Vix is running at http://127.0.0.1:{} using {} threads",
                     config_.getServerPort(), NUMBER_OF_THREADS);
@@ -113,9 +114,8 @@ namespace Vix
 
             for (std::size_t i = 0; i < num_io_threads; ++i)
             {
-                io_threads_.emplace_back(
-                    [this, i, &log]()
-                    {
+                io_threads_.emplace_back([this, i, &log]()
+                                         {
                     try
                     {
                         set_affinity(i);
@@ -162,10 +162,8 @@ namespace Vix
                 {
                     if (!ec)
                     {
-                        // Global timeout for this request (eg: 2 seconds)
-                        auto timeout = std::chrono::milliseconds(2000);
+                        auto timeout = std::chrono::milliseconds(config_.getRequestTimeout());
 
-                        // Enqueue in ThreadPool with priority 1
                         request_thread_pool_.enqueue(
                             1, timeout,
                             [this, socket, &log]()
@@ -186,6 +184,7 @@ namespace Vix
                                 }
                             });
                     }
+
                     else
                     {
                         log.log(Vix::Logger::Level::ERROR,
@@ -193,7 +192,6 @@ namespace Vix
                                 ec.message(), ec.value());
                     }
 
-                    // Relaunch acceptance for the next customer
                     start_accept();
                 });
         }
@@ -216,17 +214,29 @@ namespace Vix
 
         socket->shutdown(tcp::socket::shutdown_both, ec);
         if (ec && ec != boost::system::error_code{})
-        {
-            log.log(Vix::Logger::Level::ERROR,
-                    "Failed to shutdown socket: {} (Error code: {})", ec.message(), ec.value());
-        }
+            log.log(Vix::Logger::Level::ERROR, "Failed to shutdown socket: {}", ec.message());
 
         socket->close(ec);
         if (ec && ec != boost::system::error_code{})
-        {
-            log.log(Vix::Logger::Level::ERROR,
-                    "Failed to close socket: {} (Error code: {})", ec.message(), ec.value());
-        }
+            log.log(Vix::Logger::Level::ERROR, "Failed to close socket: {}", ec.message());
+    }
+
+    void HTTPServer::stop()
+    {
+        auto &log = Vix::Logger::getInstance();
+        log.log(Logger::Level::INFO, "Stopping HTTPServer...");
+
+        stop_requested_ = true;
+        io_context_->stop();
+
+        for (auto &t : io_threads_)
+            if (t.joinable())
+                t.join();
+
+        if (acceptor_ && acceptor_->is_open())
+            acceptor_->close();
+
+        log.log(Logger::Level::INFO, "HTTPServer stopped gracefully");
     }
 
     void HTTPServer::handle_client(std::shared_ptr<tcp::socket> socket_ptr, std::shared_ptr<Router> router)
@@ -253,5 +263,4 @@ namespace Vix
             close_socket(socket_ptr);
         }
     }
-
 }
