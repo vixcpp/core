@@ -86,7 +86,7 @@ namespace Vix
             ResponseWrapper wrapped{res};
             try
             {
-                auto params = extract_params_from_path(route_pattern_, req.target());
+                auto params = extract_params_from_path(route_pattern_, std::string_view(req.target().data(), req.target().size()));
 
                 if constexpr (std::is_invocable_v<Handler, decltype(req), ResponseWrapper &, std::unordered_map<std::string, std::string> &>)
                 {
