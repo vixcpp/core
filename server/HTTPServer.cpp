@@ -1,5 +1,5 @@
 #include "HTTPServer.hpp"
-#include "../utils/Logger.hpp"
+#include <vix/utils/Logger.hpp>
 
 namespace Vix
 {

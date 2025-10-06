@@ -18,7 +18,7 @@
 #include <stdexcept>
 #include <pthread.h>
 
-#include "../utils/Logger.hpp"
+#include <vix/utils/Logger.hpp>
 
 namespace Vix
 {

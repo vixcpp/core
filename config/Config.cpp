@@ -1,5 +1,5 @@
 #include "Config.hpp"
-#include "../utils/Logger.hpp"
+#include <vix/utils/Logger.hpp>
 #include <fstream>
 #include <cstdlib>
 #include <spdlog/spdlog.h>

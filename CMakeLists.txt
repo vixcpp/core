@@ -42,15 +42,6 @@ include_directories(/usr/include/mysql)
 link_directories(/usr/lib)
 
 # ======================================================
-# Utils library (independent, reusable)
-# ======================================================
-file(GLOB UTILS_SOURCES
-    utils/*.cpp
-)
-add_library(utils STATIC ${UTILS_SOURCES})
-target_include_directories(utils PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/utils)
-
-# ======================================================
 # Core sources
 # ======================================================
 set(CORE_SOURCES
@@ -75,7 +66,7 @@ set(CORE_SOURCES
 add_library(core STATIC ${CORE_SOURCES})
 
 target_include_directories(core PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}        # core root
     ${CMAKE_CURRENT_SOURCE_DIR}/app
     ${CMAKE_CURRENT_SOURCE_DIR}/server
     ${CMAKE_CURRENT_SOURCE_DIR}/router
@@ -88,6 +79,7 @@ target_include_directories(core PUBLIC
 # ======================================================
 # Link core with utils + external libraries
 # ======================================================
+# NOTE: utils is now imported via top-level vix/CMakeLists.txt
 target_link_libraries(core
     PRIVATE utils
     PRIVATE ${Boost_FILESYSTEM_LIBRARY}
@@ -125,5 +117,7 @@ if(GIT_FOUND)
     endif()
 endif()
 
+# ======================================================
+# Messages
+# ======================================================
 message(STATUS "vix_core static library configured with ${CORE_SOURCES}")
-message(STATUS "Utils static library configured with ${UTILS_SOURCES}")

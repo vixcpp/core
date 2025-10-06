@@ -11,7 +11,7 @@
 
 #include "../router/Router.hpp"
 #include "../http/Response.hpp"
-#include "../utils/Logger.hpp"
+#include <vix/utils/Logger.hpp>
 
 namespace Vix
 {
