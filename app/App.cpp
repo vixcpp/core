@@ -1,5 +1,6 @@
 #include "App.hpp"
-#include "../utils/Logger.hpp"
+#include <vix/utils/Logger.hpp>
+
 #include <csignal>
 #include <thread>
 #include <atomic>
