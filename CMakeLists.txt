@@ -42,7 +42,16 @@ include_directories(/usr/include/mysql)
 link_directories(/usr/lib)
 
 # ======================================================
-# Explicit list of sources
+# Utils library (independent, reusable)
+# ======================================================
+file(GLOB UTILS_SOURCES
+    utils/*.cpp
+)
+add_library(utils STATIC ${UTILS_SOURCES})
+target_include_directories(utils PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/utils)
+
+# ======================================================
+# Core sources
 # ======================================================
 set(CORE_SOURCES
     app/App.cpp
@@ -56,18 +65,15 @@ set(CORE_SOURCES
     middleware/Middleware.cpp
     middleware/MiddlewarePipeline.cpp
     middleware/MiddlewareContext.cpp
-    utils/Logger.cpp
-    utils/StringUtils.cpp
-    utils/JsonHelper.cpp
-    utils/ErrorUtils.cpp
     config/Config.cpp
     session/Session.cpp
 )
 
 # ======================================================
-# Create static library 'core'
+# Core library
 # ======================================================
 add_library(core STATIC ${CORE_SOURCES})
+
 target_include_directories(core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/app
@@ -75,18 +81,21 @@ target_include_directories(core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/router
     ${CMAKE_CURRENT_SOURCE_DIR}/http
     ${CMAKE_CURRENT_SOURCE_DIR}/middleware
-    ${CMAKE_CURRENT_SOURCE_DIR}/utils
     ${CMAKE_CURRENT_SOURCE_DIR}/config
     ${CMAKE_CURRENT_SOURCE_DIR}/session
 )
 
-target_link_libraries(core PRIVATE
-    ${Boost_FILESYSTEM_LIBRARY}
-    ${Boost_SYSTEM_LIBRARY}
-    OpenSSL::SSL
-    OpenSSL::Crypto
-    spdlog
-    mysqlcppconn
+# ======================================================
+# Link core with utils + external libraries
+# ======================================================
+target_link_libraries(core
+    PRIVATE utils
+    PRIVATE ${Boost_FILESYSTEM_LIBRARY}
+    PRIVATE ${Boost_SYSTEM_LIBRARY}
+    PRIVATE OpenSSL::SSL
+    PRIVATE OpenSSL::Crypto
+    PRIVATE spdlog
+    PRIVATE mysqlcppconn
 )
 
 # ======================================================
@@ -102,7 +111,6 @@ if(GIT_FOUND)
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
 
-    # Check if file exists before reading
     if(EXISTS ${CORE_HASH_FILE})
         file(READ ${CORE_HASH_FILE} OLD_CORE_HASH)
     else()
@@ -118,3 +126,4 @@ if(GIT_FOUND)
 endif()
 
 message(STATUS "vix_core static library configured with ${CORE_SOURCES}")
+message(STATUS "Utils static library configured with ${UTILS_SOURCES}")
