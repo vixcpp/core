@@ -4,7 +4,6 @@
 #include "../config/Config.hpp"
 #include "../server/HTTPServer.hpp"
 #include "../router/RequestHandler.hpp"
-
 #include <memory>
 #include <functional>
 #include <spdlog/spdlog.h>

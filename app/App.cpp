@@ -38,7 +38,6 @@ namespace Vix
         {
             config_.loadConfig();
             router_ = server_.getRouter();
-
             if (!router_)
             {
                 log.throwError("Failed to get router from HTTPServer");
@@ -58,9 +57,9 @@ namespace Vix
         g_server_ptr = &server_;
         std::signal(SIGINT, handle_sigint);
 
-        std::thread server_thread([this]()
-                                  { server_.run(); });
-
+        std::thread server_thread(
+            [this]()
+            { server_.run(); });
         {
             std::unique_lock<std::mutex> lock(stop_mutex);
             stop_cv.wait(lock, []
