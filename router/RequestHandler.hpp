@@ -4,7 +4,6 @@
 #include "IRequestHandler.hpp"
 #include "../http/Response.hpp"
 #include <nlohmann/json.hpp>
-#include <boost/regex.hpp>
 #include <string>
 #include <unordered_map>
 #include <type_traits>
@@ -14,48 +13,33 @@ namespace Vix
     namespace http = boost::beast::http;
     using json = nlohmann::json;
 
-    // Extraction des paramètres depuis la route
     inline std::unordered_map<std::string, std::string> extract_params_from_path(
         const std::string &route_pattern,
-        const std::string &path)
+        std::string_view path)
     {
         std::unordered_map<std::string, std::string> params;
 
-        std::string regex_pattern = "^";
-        bool inside_placeholder = false;
-        for (char c : route_pattern)
+        size_t rpos = 0, ppos = 0;
+        while (rpos < route_pattern.size() && ppos < path.size())
         {
-            if (c == '{')
+            if (route_pattern[rpos] == '{')
             {
-                inside_placeholder = true;
-                regex_pattern += "(";
-            }
-            else if (c == '}')
-            {
-                inside_placeholder = false;
-                regex_pattern += "[^/]+)";
-            }
-            else if (!inside_placeholder)
-                regex_pattern += (c == '/' ? "\\/" : std::string(1, c));
-        }
-        regex_pattern += "$";
+                size_t end_brace = route_pattern.find('}', rpos);
+                auto param_name = route_pattern.substr(rpos + 1, end_brace - rpos - 1);
 
-        boost::regex re(regex_pattern);
-        boost::smatch match;
+                size_t next_slash = path.find('/', ppos);
+                auto param_value = (next_slash == std::string_view::npos)
+                                       ? path.substr(ppos)
+                                       : path.substr(ppos, next_slash - ppos);
 
-        if (boost::regex_match(path, match, re))
-        {
-            size_t param_index = 1;
-            for (size_t start = 0; (start = route_pattern.find('{', start)) != std::string::npos;)
+                params[param_name] = std::string(param_value);
+                rpos = end_brace + 1;
+                ppos = (next_slash == std::string_view::npos) ? path.size() : next_slash + 1;
+            }
+            else
             {
-                size_t end = route_pattern.find('}', start);
-                std::string param_name = route_pattern.substr(start + 1, end - start - 1);
-                if (param_index < match.size())
-                {
-                    params[param_name] = match[param_index].str();
-                    param_index++;
-                }
-                start = end + 1;
+                rpos++;
+                ppos++;
             }
         }
 
@@ -74,11 +58,11 @@ namespace Vix
             res.prepare_payload();
         }
 
-        void text(const std::string &data, http::status status = http::status::ok)
+        void text(std::string_view data, http::status status = http::status::ok)
         {
             res.result(status);
             res.set(http::field::content_type, "text/plain");
-            res.body() = data;
+            res.body() = std::string(data);
             res.prepare_payload();
         }
 
@@ -102,7 +86,7 @@ namespace Vix
             ResponseWrapper wrapped{res};
             try
             {
-                auto params = extract_params_from_path(route_pattern_, std::string(req.target()));
+                auto params = extract_params_from_path(route_pattern_, std::string_view(req.target().data(), req.target().size()));
 
                 if constexpr (std::is_invocable_v<Handler, decltype(req), ResponseWrapper &, std::unordered_map<std::string, std::string> &>)
                 {
@@ -122,7 +106,7 @@ namespace Vix
                 res.set(http::field::connection, keep_alive ? "keep-alive" : "close");
                 res.prepare_payload();
             }
-            catch (const std::exception &e)
+            catch (const std::exception &)
             {
                 Response::error_response(res, http::status::internal_server_error, "Internal Server Error");
             }
