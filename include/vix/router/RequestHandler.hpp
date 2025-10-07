@@ -1,21 +1,29 @@
 #ifndef VIX_REQUEST_HANDLER_HPP
 #define VIX_REQUEST_HANDLER_HPP
 
-#include <vix/router/IRequestHandler.hpp>
-#include <vix/http/Response.hpp"
-#include <nlohmann/json.hpp>
 #include <string>
-#include <unordered_map>
+#include <string_view>
+#include <memory>
 #include <type_traits>
+#include <unordered_map>
+
+#include <boost/beast/http.hpp>
+
+#include <vix/router/IRequestHandler.hpp>
+#include <vix/http/Response.hpp>
+#include <nlohmann/json.hpp>
 
 namespace Vix
 {
+
     namespace http = boost::beast::http;
     using json = nlohmann::json;
 
-    inline std::unordered_map<std::string, std::string> extract_params_from_path(
-        const std::string &route_pattern,
-        std::string_view path)
+    // --------------------------------------------------------------
+    // Helper: extraire {params} depuis un pattern de route type "/u/{id}"
+    // --------------------------------------------------------------
+    inline std::unordered_map<std::string, std::string>
+    extract_params_from_path(const std::string &route_pattern, std::string_view path)
     {
         std::unordered_map<std::string, std::string> params;
 
@@ -46,16 +54,17 @@ namespace Vix
         return params;
     }
 
+    // --------------------------------------------------------------
+    // Petit wrapper pratique pour construire des réponses
+    // --------------------------------------------------------------
     struct ResponseWrapper
     {
         http::response<http::string_body> &res;
 
-        void json(const json &data, http::status status = http::status::ok)
+        void json_body(const json &data, http::status status = http::status::ok)
         {
+            Response::json_response(res, data);
             res.result(status);
-            res.set(http::field::content_type, "application/json");
-            res.body() = data.dump();
-            res.prepare_payload();
         }
 
         void text(std::string_view data, http::status status = http::status::ok)
@@ -72,6 +81,12 @@ namespace Vix
         }
     };
 
+    // --------------------------------------------------------------
+    // RequestHandler générique (Handler est callable)
+    // Signatures supportées :
+    //   handler(req, ResponseWrapper&)
+    //   handler(req, ResponseWrapper&, std::unordered_map<std::string,std::string>&)
+    // --------------------------------------------------------------
     template <typename Handler>
     class RequestHandler : public IRequestHandler
     {
@@ -79,28 +94,31 @@ namespace Vix
         RequestHandler(std::string route_pattern, Handler handler)
             : route_pattern_(std::move(route_pattern)), handler_(std::move(handler)) {}
 
-        void handle_request(
-            const http::request<http::string_body> &req,
-            http::response<http::string_body> &res) override
+        void handle_request(const http::request<http::string_body> &req,
+                            http::response<http::string_body> &res) override
         {
             ResponseWrapper wrapped{res};
             try
             {
-                auto params = extract_params_from_path(route_pattern_, std::string_view(req.target().data(), req.target().size()));
+                auto params = extract_params_from_path(
+                    route_pattern_, std::string_view(req.target().data(), req.target().size()));
 
-                if constexpr (std::is_invocable_v<Handler, decltype(req), ResponseWrapper &, std::unordered_map<std::string, std::string> &>)
+                if constexpr (std::is_invocable_v<Handler,
+                                                  decltype(req), ResponseWrapper &, std::unordered_map<std::string, std::string> &>)
                 {
                     handler_(req, wrapped, params);
                 }
-                else if constexpr (std::is_invocable_v<Handler, decltype(req), ResponseWrapper &>)
+                else if constexpr (std::is_invocable_v<Handler,
+                                                       decltype(req), ResponseWrapper &>)
                 {
                     handler_(req, wrapped);
                 }
                 else
                 {
-                    static_assert(always_false<Handler>::value, "Handler signature not supported");
+                    static_assert(always_false<Handler>::value, "Unsupported handler signature");
                 }
 
+                // keep-alive
                 bool keep_alive = (req[http::field::connection] == "keep-alive") ||
                                   (req.version() == 11 && req[http::field::connection].empty());
                 res.set(http::field::connection, keep_alive ? "keep-alive" : "close");
