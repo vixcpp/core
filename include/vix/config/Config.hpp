@@ -1,9 +1,6 @@
 #ifndef VIX_CONFIG_HPP
 #define VIX_CONFIG_HPP
 
-#include <mysql_driver.h>
-#include <mysql_connection.h>
-#include <cppconn/prepared_statement.h>
 #include <memory>
 #include <string>
 #include <filesystem>
@@ -23,7 +20,14 @@ namespace Vix
 
         void loadConfig();
 
+#if VIX_CORE_WITH_MYSQL
+        namespace sql
+        {
+            class Connection;
+        }
         std::shared_ptr<sql::Connection> getDbConnection();
+#endif
+
         std::string getDbPasswordFromEnv();
 
         const std::string &getDbHost() const;
@@ -54,4 +58,4 @@ namespace Vix
     };
 }
 
-#endif
+#endif // VIX_CONFIG_HPP

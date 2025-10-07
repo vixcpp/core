@@ -2,13 +2,13 @@
 # Vix.cpp — Core Module
 # ====================================================================
 # Purpose:
-#   - HTTP server, routing, middleware pipeline, config, session, etc.
+#   - HTTP server, routing, config, session, etc.
 #   - If sources exist in ./src, build a static library.
-#     If not yet implemented, fall back to header-only so the tree builds.
+#     Otherwise, fallback to header-only (INTERFACE).
 #
 # Targets:
 #   - vix_core   (real target)
-#   - Vix::core  (alias, preferred by consumers)
+#   - Vix::core  (alias)
 #
 # Dependencies:
 #   - PUBLIC: Vix::utils, Vix::json
@@ -35,11 +35,9 @@ option(VIX_CORE_WITH_OPENSSL "Enable HTTPS/TLS support using OpenSSL" ON)
 option(VIX_CORE_WITH_MYSQL   "Enable MySQL client linkage" OFF)
 
 # ------------------------ Sources discovery --------------------------
-# All implementation .cpp files are expected under ./src/**.
 file(GLOB_RECURSE CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
 # ------------------------ Resolve JSON target ------------------------
-# Accept different exported names across environments.
 set(JSON_TARGET "Vix::json")
 if (NOT TARGET ${JSON_TARGET})
   if (TARGET vix::json)
@@ -65,11 +63,6 @@ if (CORE_SOURCES)
     find_package(OpenSSL REQUIRED)
   endif()
 
-  if (VIX_CORE_WITH_MYSQL)
-    # Adjust to your environment if needed.
-    find_package(MySQL REQUIRED COMPONENTS CppConn)
-  endif()
-
   add_library(vix_core STATIC ${CORE_SOURCES})
   add_library(Vix::core ALIAS vix_core)
   target_compile_features(vix_core PUBLIC cxx_std_20)
@@ -93,8 +86,24 @@ if (CORE_SOURCES)
     target_link_libraries(vix_core PUBLIC OpenSSL::SSL OpenSSL::Crypto)
   endif()
 
+  # ----- MySQL (optionnel) -----
   if (VIX_CORE_WITH_MYSQL)
-    target_link_libraries(vix_core PRIVATE mysqlcppconn)
+    # On essaie d'abord le Connector/C++ 8 (X DevAPI), puis le legacy.
+    find_library(MYSQLCPP_CONN8_LIB mysqlcppconn8)
+    if (MYSQLCPP_CONN8_LIB)
+      target_link_libraries(vix_core PRIVATE ${MYSQLCPP_CONN8_LIB})
+      target_compile_definitions(vix_core PUBLIC VIX_CORE_WITH_MYSQL=1)
+    else()
+      find_library(MYSQLCPP_CONN_LIB mysqlcppconn)
+      if (MYSQLCPP_CONN_LIB)
+        target_link_libraries(vix_core PRIVATE ${MYSQLCPP_CONN_LIB})
+        target_compile_definitions(vix_core PUBLIC VIX_CORE_WITH_MYSQL=1)
+      else()
+        message(FATAL_ERROR "MySQL requested but neither mysqlcppconn8 nor mysqlcppconn found.")
+      endif()
+    endif()
+  else()
+    target_compile_definitions(vix_core PUBLIC VIX_CORE_WITH_MYSQL=0)
   endif()
 
   set_target_properties(vix_core PROPERTIES
@@ -104,10 +113,7 @@ if (CORE_SOURCES)
     EXPORT_NAME core
   )
 
-  # ---------------------------------------------------------------
-  # Install/export ONLY when building this module standalone.
-  # (Prevents superproject export errors about transitive deps.)
-  # ---------------------------------------------------------------
+  # N’installe/exporte que si on build ce module seul (pas via superproject)
   if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     install(TARGETS vix_core
       EXPORT vix_coreTargets
@@ -125,7 +131,6 @@ if (CORE_SOURCES)
 
 # ============================ HEADER-ONLY ============================
 else()
-  # No .cpp sources → header-only interface library (silent fallback).
   add_library(vix_core INTERFACE)
   add_library(Vix::core ALIAS vix_core)
   target_compile_features(vix_core INTERFACE cxx_std_20)
@@ -139,6 +144,9 @@ else()
     Vix::utils
     ${JSON_TARGET}
   )
+
+  # Définir quand même le flag pour éviter les #if non définis côté headers
+  target_compile_definitions(vix_core INTERFACE VIX_CORE_WITH_MYSQL=0)
 endif()
 
 # ----------------------------- Summary -------------------------------

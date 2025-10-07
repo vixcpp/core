@@ -32,7 +32,6 @@ namespace Vix
     namespace net = boost::asio;
 
     using tcp = net::ip::tcp;
-    using json = nlohmann::json;
 
     constexpr size_t NUMBER_OF_THREADS = 8;
 
