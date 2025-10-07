@@ -1,8 +1,10 @@
 #include <vix/config/Config.hpp>
 #include <vix/utils/Logger.hpp>
+
 #include <fstream>
 #include <cstdlib>
-#include <spdlog/spdlog.h>
+#include <vector>
+#include <sstream>
 
 namespace Vix
 {
@@ -27,7 +29,14 @@ namespace Vix
         }
         else
         {
-            candidate_paths.push_back(fs::path(__FILE__).parent_path().parent_path().parent_path().parent_path() / "config/config.json");
+            // <repo_root>/config/config.json
+            candidate_paths.push_back(
+                fs::path(__FILE__).parent_path() // .../modules/core/src/config
+                    .parent_path()               // .../modules/core/src
+                    .parent_path()               // .../modules/core
+                    .parent_path()               // .../modules
+                    .parent_path() /
+                "config/config.json"); // .../<root>/config/config.json
         }
 
         bool found = false;
@@ -48,7 +57,7 @@ namespace Vix
 
         if (!found)
         {
-            log.log(Vix::Logger::Level::WARN, "No config file found in any candidate path. Using default settings.");
+            log.log(Vix::Logger::Level::WARN, "No config file found. Using default settings.");
             return;
         }
 
@@ -85,15 +94,15 @@ namespace Vix
             log.throwError(fmt::format("JSON parsing error in config file: {}", e.what()));
         }
 
-        if (!cfg.contains("database") || !cfg["database"].contains("default"))
-            log.throwError("Invalid config file: missing 'database.default' section");
-
-        const auto &db = cfg["database"]["default"];
-        db_host = db.value("host", DEFAULT_DB_HOST);
-        db_user = db.value("user", DEFAULT_DB_USER);
-        db_pass = db.value("password", DEFAULT_DB_PASS);
-        db_name = db.value("name", DEFAULT_DB_NAME);
-        db_port = db.value("port", DEFAULT_DB_PORT);
+        if (cfg.contains("database") && cfg["database"].contains("default"))
+        {
+            const auto &db = cfg["database"]["default"];
+            db_host = db.value("host", DEFAULT_DB_HOST);
+            db_user = db.value("user", DEFAULT_DB_USER);
+            db_pass = db.value("password", DEFAULT_DB_PASS);
+            db_name = db.value("name", DEFAULT_DB_NAME);
+            db_port = db.value("port", DEFAULT_DB_PORT);
+        }
 
         if (cfg.contains("server"))
         {
@@ -113,26 +122,44 @@ namespace Vix
             log.log(Logger::Level::INFO, "Using DB_PASSWORD from environment.");
             return password;
         }
-        log.log(Logger::Level::WARN, "No DB_PASSWORD found in environment, using default password.");
+        log.log(Logger::Level::WARN, "No DB_PASSWORD found in environment; using config/default password.");
         return db_pass;
     }
+
+// -------------- MySQL: impl seulement si activé --------------
+#if VIX_CORE_WITH_MYSQL
+#include <mysql_driver.h>
+#include <mysql_connection.h>
+#include <cppconn/driver.h>
+#include <cppconn/exception.h>
 
     std::shared_ptr<sql::Connection> Config::getDbConnection()
     {
         auto &log = Vix::Logger::getInstance();
-        sql::mysql::MySQL_Driver *driver = sql::mysql::get_mysql_driver_instance();
-        auto con = std::shared_ptr<sql::Connection>(
-            driver->connect("tcp://" + db_host + ":" + std::to_string(db_port), db_user, db_pass));
-        con->setSchema(db_name);
-        log.log(Logger::Level::INFO, "Database connection established.");
+
+        // Connector/C++ 8 legacy interface expose get_driver_instance()
+        sql::Driver *driver = sql::mysql::get_driver_instance();
+
+        const std::string host = "tcp://" + db_host + ":" + std::to_string(db_port);
+        const std::string user = db_user;
+        const std::string pass = getDbPasswordFromEnv();
+
+        std::shared_ptr<sql::Connection> con(driver->connect(host, user, pass));
+        if (!db_name.empty())
+            con->setSchema(db_name);
+
+        log.log(Logger::Level::INFO, "Database connection established (host={}, db={}).",
+                host, db_name);
         return con;
     }
+#endif // VIX_CORE_WITH_MYSQL
 
     const std::string &Config::getDbHost() const { return db_host; }
     const std::string &Config::getDbUser() const { return db_user; }
     const std::string &Config::getDbName() const { return db_name; }
     int Config::getDbPort() const { return db_port; }
     int Config::getServerPort() const { return server_port; }
+    int Config::getRequestTimeout() const { return request_timeout; }
 
     void Config::setServerPort(int port)
     {
@@ -142,6 +169,4 @@ namespace Vix
         server_port = port;
         log.log(Logger::Level::INFO, "Server port set to {}", std::to_string(port));
     }
-
-    int Config::getRequestTimeout() const { return request_timeout; }
 }

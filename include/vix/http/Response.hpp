@@ -6,14 +6,48 @@
 #include <ctime>
 #include <sstream>
 #include <iomanip>
+#include <type_traits>
 
 #include <boost/beast/http.hpp>
 #include <nlohmann/json.hpp>
+
+#if __has_include(<vix/json/json.hpp>)
+#include <vix/json/json.hpp>
+#define VIX_CORE_HAS_VIX_JSON 1
+#else
+#define VIX_CORE_HAS_VIX_JSON 0
+#endif
 
 namespace Vix
 {
 
     namespace http = boost::beast::http;
+
+    // ---------- Helpers ----------
+    template <class J>
+    inline std::string to_json_string(const J &j)
+    {
+#if VIX_CORE_HAS_VIX_JSON
+        if constexpr (std::is_same_v<J, Vix::json::Json>)
+        {
+            // Vix::json backend
+            return Vix::json::dumps(j);
+        }
+        else
+#endif
+        {
+            // nlohmann::json backend (ou tout type avec .dump())
+            if constexpr (requires { j.dump(); })
+            {
+                return j.dump();
+            }
+            else
+            {
+                static_assert(sizeof(J) == 0,
+                              "Unsupported JSON type: provide nlohmann::json or Vix::json::Json");
+            }
+        }
+    }
 
     class Response
     {
@@ -75,13 +109,15 @@ namespace Vix
             res.prepare_payload();
         }
 
+        // ---------- JSON générique ----------
+        template <class J>
         static void json_response(http::response<http::string_body> &res,
-                                  const nlohmann::json &data,
+                                  const J &data,
                                   http::status status = http::status::ok)
         {
             res.result(status);
             res.set(http::field::content_type, "application/json");
-            res.body() = data.dump();
+            res.body() = to_json_string(data);
             common_headers(res);
             res.prepare_payload();
         }

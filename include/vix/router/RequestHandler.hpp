@@ -11,35 +11,31 @@
 #include <nlohmann/json.hpp>
 
 #include <vix/router/IRequestHandler.hpp>
-#include <vix/http/Response.hpp> // corrigé
+#include <vix/http/Response.hpp>
 
 namespace Vix
 {
 
     namespace http = boost::beast::http;
 
-    // --------------------------------------------------------------
-    // Helper: extraire {params} depuis un pattern de route type "/u/{id}"
-    // --------------------------------------------------------------
+    // ---------------- Params extraction ----------------
     inline std::unordered_map<std::string, std::string>
-    extract_params_from_path(const std::string &route_pattern, std::string_view path)
+    extract_params_from_path(const std::string &pattern, std::string_view path)
     {
         std::unordered_map<std::string, std::string> params;
-
         size_t rpos = 0, ppos = 0;
-        while (rpos < route_pattern.size() && ppos < path.size())
+        while (rpos < pattern.size() && ppos < path.size())
         {
-            if (route_pattern[rpos] == '{')
+            if (pattern[rpos] == '{')
             {
-                size_t end_brace = route_pattern.find('}', rpos);
-                auto param_name = route_pattern.substr(rpos + 1, end_brace - rpos - 1);
-
+                size_t end_brace = pattern.find('}', rpos);
+                auto name = pattern.substr(rpos + 1, end_brace - rpos - 1);
                 size_t next_slash = path.find('/', ppos);
-                auto param_value = (next_slash == std::string_view::npos)
-                                       ? path.substr(ppos)
-                                       : path.substr(ppos, next_slash - ppos);
+                auto value = (next_slash == std::string_view::npos)
+                                 ? path.substr(ppos)
+                                 : path.substr(ppos, next_slash - ppos);
 
-                params[param_name] = std::string(param_value);
+                params[name] = std::string(value);
                 rpos = end_brace + 1;
                 ppos = (next_slash == std::string_view::npos) ? path.size() : next_slash + 1;
             }
@@ -49,44 +45,47 @@ namespace Vix
                 ppos++;
             }
         }
-
         return params;
     }
 
-    // --------------------------------------------------------------
-    // Petit wrapper pratique pour construire des réponses
-    // --------------------------------------------------------------
+    // ---------------- Fluent ResponseWrapper ----------------
     struct ResponseWrapper
     {
         http::response<http::string_body> &res;
 
-        void json_body(const nlohmann::json &data,
-                       http::status status = http::status::ok)
-        {
-            Response::json_response(res, data, status);
-        }
-
-        void text(std::string_view data,
-                  http::status status = http::status::ok)
-        {
-            res.result(status);
-            res.set(http::field::content_type, "text/plain");
-            res.body() = std::string(data);
-            res.prepare_payload();
-        }
-
-        void status(http::status code)
+        // Allows chaining: res.status(...).json(...)
+        ResponseWrapper &status(http::status code)
         {
             res.result(code);
+            return *this;
+        }
+
+        // nlohmann::json
+        ResponseWrapper &json(const nlohmann::json &j)
+        {
+            // Use the status already set (res.result())
+            Vix::Response::json_response(res, j, res.result());
+            return *this;
+        }
+
+        // Vix::json::Json (if you use it in your examples)
+        template <typename J,
+                  typename = std::enable_if_t<!std::is_same_v<J, nlohmann::json>>>
+        ResponseWrapper &json(const J &data)
+        {
+            Vix::Response::json_response(res, data, res.result());
+            return *this;
+        }
+
+        // Plain text — also keeps the current status
+        ResponseWrapper &text(std::string_view data)
+        {
+            Vix::Response::text_response(res, data, res.result());
+            return *this;
         }
     };
 
-    // --------------------------------------------------------------
-    // RequestHandler générique (Handler est callable)
-    // Signatures supportées :
-    //   handler(req, ResponseWrapper&)
-    //   handler(req, ResponseWrapper&, std::unordered_map<std::string,std::string>&)
-    // --------------------------------------------------------------
+    // ---------------- Templated RequestHandler ----------------
     template <typename Handler>
     class RequestHandler : public IRequestHandler
     {
@@ -118,7 +117,6 @@ namespace Vix
                     static_assert(always_false<Handler>::value, "Unsupported handler signature");
                 }
 
-                // keep-alive
                 bool keep_alive = (req[http::field::connection] == "keep-alive") ||
                                   (req.version() == 11 && req[http::field::connection].empty());
                 res.set(http::field::connection, keep_alive ? "keep-alive" : "close");
