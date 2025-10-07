@@ -87,6 +87,22 @@ target_include_directories(core
     ${CMAKE_CURRENT_SOURCE_DIR}/session
 )
 
+# Resolve JSON target name (supports several variants)
+set(JSON_TARGET "Vix::json")
+if (NOT TARGET ${JSON_TARGET})
+  if (TARGET vix_json)
+    set(JSON_TARGET vix_json)
+  elseif (TARGET vix::json)
+    # If someone exported a lowercase alias
+    set(JSON_TARGET vix::json)
+  else()
+    message(FATAL_ERROR
+      "JSON module target not found. Expected Vix::json (or vix_json / vix::json).\n"
+      "Make sure 'modules/json' is added and defines 'add_library(Vix::json ALIAS vix_json)'.")
+  endif()
+endif()
+
+
 # ======================================================
 # Linking configuration
 # ======================================================
@@ -97,7 +113,7 @@ target_include_directories(core
 target_link_libraries(core
   PUBLIC
     Vix::utils
-    Vix::json
+    ${JSON_TARGET}
     Boost::filesystem
     Boost::system
 )
