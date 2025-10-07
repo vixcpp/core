@@ -8,16 +8,15 @@
 #include <unordered_map>
 
 #include <boost/beast/http.hpp>
+#include <nlohmann/json.hpp>
 
 #include <vix/router/IRequestHandler.hpp>
-#include <vix/http/Response.hpp>
-#include <nlohmann/json.hpp>
+#include <vix/http/Response.hpp> // corrigé
 
 namespace Vix
 {
 
     namespace http = boost::beast::http;
-    using json = nlohmann::json;
 
     // --------------------------------------------------------------
     // Helper: extraire {params} depuis un pattern de route type "/u/{id}"
@@ -61,13 +60,14 @@ namespace Vix
     {
         http::response<http::string_body> &res;
 
-        void json_body(const json &data, http::status status = http::status::ok)
+        void json_body(const nlohmann::json &data,
+                       http::status status = http::status::ok)
         {
-            Response::json_response(res, data);
-            res.result(status);
+            Response::json_response(res, data, status);
         }
 
-        void text(std::string_view data, http::status status = http::status::ok)
+        void text(std::string_view data,
+                  http::status status = http::status::ok)
         {
             res.result(status);
             res.set(http::field::content_type, "text/plain");

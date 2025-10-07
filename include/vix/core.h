@@ -1,15 +1,15 @@
 #pragma once
 // ======================================================
-// vix/core.h
-// Public umbrella header for the Vix Core module.
-// Exposes HTTP server, router, request/response, middleware,
-// session management, config, and app components.
+// vix/core.h - Public umbrella header for Vix Core
 // ======================================================
 
 #include <memory>
 #include <string>
 #include <vector>
 #include <functional>
+
+#include <boost/asio.hpp>
+#include <boost/beast/http.hpp>
 
 // ----------------------------
 // App
@@ -30,7 +30,7 @@
 #include <vix/router/RequestHandler.hpp>
 
 // ----------------------------
-// Session Management
+// Session
 // ----------------------------
 #include <vix/session/Session.hpp>
 
@@ -39,22 +39,17 @@
 // ----------------------------
 #include <vix/config/Config.hpp>
 
-// ======================================================
-// Namespace & aliases
-// ======================================================
-
 namespace Vix
 {
 
+    // Expose some useful Boost.Beast / Asio aliases
     namespace http = boost::beast::http;
     namespace net = boost::asio;
     namespace beast = boost::beast;
     using tcp = net::ip::tcp;
 
-    // JSON
-    using json = nlohmann::json;
-
+    // Convenience aliases
     using AppPtr = std::shared_ptr<App>;
     using SessionPtr = std::shared_ptr<Session>;
-    using ModulePtr = std::shared_ptr<Module>;
+
 } // namespace Vix

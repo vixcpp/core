@@ -14,12 +14,10 @@ namespace Vix
 {
 
     namespace http = boost::beast::http;
-    using json = nlohmann::json;
 
     class Response
     {
     public:
-        // Applique des headers communs (Server + Date)
         static void common_headers(http::response<http::string_body> &res)
         {
             res.set(http::field::server, "Vix");
@@ -38,7 +36,7 @@ namespace Vix
         {
             res.result(status);
             res.set(http::field::content_type, content_type);
-            res.body() = json{{"message", message}}.dump();
+            res.body() = nlohmann::json{{"message", message}}.dump();
             common_headers(res);
             res.prepare_payload();
         }
@@ -61,7 +59,7 @@ namespace Vix
         {
             res.result(http::status::no_content);
             res.set(http::field::content_type, "application/json");
-            res.body() = json{{"message", message}}.dump();
+            res.body() = nlohmann::json{{"message", message}}.dump();
             common_headers(res);
             res.prepare_payload();
         }
@@ -72,13 +70,13 @@ namespace Vix
             res.result(http::status::found);
             res.set(http::field::location, location);
             res.set(http::field::content_type, "application/json");
-            res.body() = json{{"message", "Redirecting to " + location}}.dump();
+            res.body() = nlohmann::json{{"message", "Redirecting to " + location}}.dump();
             common_headers(res);
             res.prepare_payload();
         }
 
         static void json_response(http::response<http::string_body> &res,
-                                  const json &data,
+                                  const nlohmann::json &data,
                                   http::status status = http::status::ok)
         {
             res.result(status);
