@@ -1,4 +1,4 @@
-#include "Config.hpp"
+#include <vix/config/Config.hpp>
 #include <vix/utils/Logger.hpp>
 #include <fstream>
 #include <cstdlib>

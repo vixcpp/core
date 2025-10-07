@@ -1,71 +1,59 @@
 #pragma once
-
 // ======================================================
 // vix/core.h
-// Main public header for the core module of vix.cpp
+// Public umbrella header for the Vix Core module.
 // Exposes HTTP server, router, request/response, middleware,
-// session management, JSON utilities, and core app components.
+// session management, config, and app components.
 // ======================================================
 
 #include <memory>
 #include <string>
 #include <vector>
 #include <functional>
-#include <nlohmann/json.hpp>
-#include <boost/asio.hpp>
-#include <boost/beast.hpp>
 
 // ----------------------------
 // App
 // ----------------------------
-#include "app/App.hpp"
-#include "app/Module.hpp"
+#include <vix/app/App.hpp>
 
 // ----------------------------
 // HTTP Server
 // ----------------------------
-#include "server/HTTPServer.hpp"
-#include "server/ThreadPool.hpp"
+#include <vix/server/HTTPServer.hpp>
+#include <vix/server/ThreadPool.hpp>
 
 // ----------------------------
 // Routing
 // ----------------------------
-#include "router/Router.hpp"
-#include "router/IRequestHandler.hpp"
-
-// ----------------------------
-// Middleware
-// ----------------------------
-#include "middleware/Middleware.hpp"
-#include "middleware/MiddlewareContext.hpp"
-#include "middleware/MiddlewarePipeline.hpp"
+#include <vix/router/Router.hpp>
+#include <vix/router/IRequestHandler.hpp>
+#include <vix/router/RequestHandler.hpp>
 
 // ----------------------------
 // Session Management
 // ----------------------------
-#include "session/Session.hpp"
+#include <vix/session/Session.hpp>
 
 // ----------------------------
 // Configuration
 // ----------------------------
-#include "config/Config.hpp"
+#include <vix/config/Config.hpp>
 
 // ======================================================
-// Namespace
+// Namespace & aliases
 // ======================================================
 
 namespace Vix
 {
-    // Boost aliases
+
     namespace http = boost::beast::http;
     namespace net = boost::asio;
     namespace beast = boost::beast;
     using tcp = net::ip::tcp;
 
-    // JSON alias
+    // JSON
     using json = nlohmann::json;
 
-    // Expose core types to simplify usage
     using AppPtr = std::shared_ptr<App>;
     using SessionPtr = std::shared_ptr<Session>;
     using ModulePtr = std::shared_ptr<Module>;

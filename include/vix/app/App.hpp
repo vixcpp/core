@@ -8,9 +8,9 @@
 // It exposes a minimal Express-like API (get/post/put/del) and delegates to the
 // underlying Router/HTTPServer at runtime.
 
-#include "../config/Config.hpp"
-#include "../server/HTTPServer.hpp"
-#include "../router/RequestHandler.hpp"
+#include <vix/config/Config.hpp>
+#include <vix/server/HTTPServer.hpp>
+#include <vix/router/RequestHandler.hpp>
 
 #include <memory>
 #include <functional>
@@ -56,8 +56,6 @@ namespace Vix
         std::shared_ptr<Router> router_;
         HTTPServer server_;
 
-        // Adds a route to the router. This is header-only for convenience,
-        // but remains minimal to keep compile times reasonable.
         template <typename Handler>
         void add_route(http::verb method, const std::string &path, Handler handler)
         {

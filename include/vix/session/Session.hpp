@@ -9,8 +9,8 @@
 #include <regex>
 #include <optional>
 
-#include "../router/Router.hpp"
-#include "../http/Response.hpp"
+#include <vix/router/Router.hpp>
+#include <vix/http/Response.hpp>
 #include <vix/utils/Logger.hpp>
 
 namespace Vix

@@ -19,11 +19,11 @@
 #include <boost/filesystem.hpp>
 #include <atomic>
 
-#include "../router/IRequestHandler.hpp"
-#include "../session/Session.hpp"
-#include "../http/Response.hpp"
-#include "../config/Config.hpp"
-#include "ThreadPool.hpp"
+#include <vix/router/IRequestHandler.hpp>
+#include <vix/session/Session.hpp>
+#include <vix/http/Response.hpp>
+#include <vix/config/Config.hpp>
+#include <vix/server/ThreadPool.hpp>
 
 namespace Vix
 {

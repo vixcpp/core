@@ -1,4 +1,4 @@
-#include "ThreadPool.hpp"
+#include <vix/server/ThreadPool.hpp>
 
 namespace Vix
 {

@@ -1,8 +1,8 @@
 #ifndef VIX_ROUTER_HPP
 #define VIX_ROUTER_HPP
 
-#include "RequestHandler.hpp"
-#include "../http/Response.hpp"
+#include <vix/http/Response.hpp>
+#include <vix/router/RequestHandler.hpp>
 #include <boost/beast/http.hpp>
 #include <memory>
 #include <string>

@@ -1,8 +1,8 @@
 #ifndef VIX_REQUEST_HANDLER_HPP
 #define VIX_REQUEST_HANDLER_HPP
 
-#include "IRequestHandler.hpp"
-#include "../http/Response.hpp"
+#include <vix/router/IRequestHandler.hpp>
+#include <vix/http/Response.hpp"
 #include <nlohmann/json.hpp>
 #include <string>
 #include <unordered_map>

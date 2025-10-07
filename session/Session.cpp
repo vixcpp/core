@@ -1,4 +1,4 @@
-#include "Session.hpp"
+#include <vix/session/Session.hpp>
 
 namespace Vix
 {

@@ -1,4 +1,4 @@
-#include "HTTPServer.hpp"
+#include <vix/server/HTTPServer.hpp>
 #include <vix/utils/Logger.hpp>
 
 namespace Vix
