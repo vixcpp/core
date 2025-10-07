@@ -1,120 +1,163 @@
-# ======================================================
-# vix.cpp core module CMake configuration (optimized)
-# ======================================================
+# ====================================================================
+# Vix.cpp — Core Module
+# ====================================================================
+# Purpose:
+#   - HTTP server, routing, config, session, etc.
+#   - If sources exist in ./src, build a static library.
+#     Otherwise, fallback to header-only (INTERFACE).
+#
+# Targets:
+#   - vix_core   (real target)
+#   - Vix::core  (alias)
+#
+# Dependencies:
+#   - PUBLIC: Vix::utils, Vix::json
+#   - STATIC mode adds Boost (filesystem, system), optionally OpenSSL/MySQL.
+# ====================================================================
 
 cmake_minimum_required(VERSION 3.20)
-project(vix_core VERSION 0.1 LANGUAGES CXX)
+project(vix_core VERSION 0.2.0 LANGUAGES CXX)
 
-# ======================================================
-# C++ standard and options
-# ======================================================
+# ------------------------ Global settings ----------------------------
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# ======================================================
-# Build types
-# ======================================================
 if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Release)
+  set(CMAKE_BUILD_TYPE Release)
 endif()
 
-set(GLOBAL_CXX_FLAGS "-Wall -Wextra -Weffc++ -Wshadow")
-set(CMAKE_CXX_FLAGS_RELEASE "${GLOBAL_CXX_FLAGS} -O2 -Wno-unused-result")
-set(CMAKE_CXX_FLAGS_DEBUG "${GLOBAL_CXX_FLAGS} -g -fsanitize=address -fsanitize=undefined -D_GLIBCXX_DEBUG")
+set(GLOBAL_CXX_FLAGS "-Wall -Wextra -Wshadow -Weffc++")
+set(CMAKE_CXX_FLAGS_RELEASE "${GLOBAL_CXX_FLAGS} -O2 -DNDEBUG")
+set(CMAKE_CXX_FLAGS_DEBUG   "${GLOBAL_CXX_FLAGS} -g -fsanitize=address -fsanitize=undefined -D_GLIBCXX_DEBUG")
 
-message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
-message(STATUS "CXX flags: ${CMAKE_CXX_FLAGS}")
+option(VIX_CORE_WITH_OPENSSL "Enable HTTPS/TLS support using OpenSSL" ON)
+option(VIX_CORE_WITH_MYSQL   "Enable MySQL client linkage" OFF)
 
-# ======================================================
-# External dependencies
-# ======================================================
-find_package(Boost 1.78 REQUIRED COMPONENTS filesystem system)
-include_directories(${Boost_INCLUDE_DIRS})
+# ------------------------ Sources discovery --------------------------
+file(GLOB_RECURSE CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
-find_package(OpenSSL REQUIRED)
-include_directories(${OPENSSL_INCLUDE_DIR})
+# ------------------------ Resolve JSON target ------------------------
+set(JSON_TARGET "Vix::json")
+if (NOT TARGET ${JSON_TARGET})
+  if (TARGET vix::json)
+    set(JSON_TARGET vix::json)
+  elseif (TARGET vix_json)
+    set(JSON_TARGET vix_json)
+  else()
+    message(FATAL_ERROR
+      "JSON module target not found. Expected one of: Vix::json, vix::json, vix_json. "
+      "Ensure modules/json defines an exported target and alias.")
+  endif()
+endif()
 
-include_directories(/usr/local/include/spdlog)
-link_directories(/usr/local/lib)
+# ============================== STATIC ===============================
+if (CORE_SOURCES)
+  message(STATUS "[core] Building STATIC library with detected sources.")
 
-include_directories(/usr/include/mysql)
-link_directories(/usr/lib)
+  find_package(Boost 1.78 REQUIRED COMPONENTS filesystem system)
+  # spdlog may already come from utils; keep this for standalone builds.
+  find_package(spdlog REQUIRED)
 
-# ======================================================
-# Explicit list of sources
-# ======================================================
-set(CORE_SOURCES
-    app/App.cpp
-    app/Module.cpp
-    server/HTTPServer.cpp
-    server/ThreadPool.cpp
-    router/Router.cpp
-    router/IRequestHandler.hpp
-    http/Request.cpp
-    http/Response.cpp
-    middleware/Middleware.cpp
-    middleware/MiddlewarePipeline.cpp
-    middleware/MiddlewareContext.cpp
-    utils/Logger.cpp
-    utils/StringUtils.cpp
-    utils/JsonHelper.cpp
-    utils/ErrorUtils.cpp
-    config/Config.cpp
-    session/Session.cpp
-)
+  if (VIX_CORE_WITH_OPENSSL)
+    find_package(OpenSSL REQUIRED)
+  endif()
 
-# ======================================================
-# Create static library 'core'
-# ======================================================
-add_library(core STATIC ${CORE_SOURCES})
-target_include_directories(core PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/app
-    ${CMAKE_CURRENT_SOURCE_DIR}/server
-    ${CMAKE_CURRENT_SOURCE_DIR}/router
-    ${CMAKE_CURRENT_SOURCE_DIR}/http
-    ${CMAKE_CURRENT_SOURCE_DIR}/middleware
-    ${CMAKE_CURRENT_SOURCE_DIR}/utils
-    ${CMAKE_CURRENT_SOURCE_DIR}/config
-    ${CMAKE_CURRENT_SOURCE_DIR}/session
-)
+  add_library(vix_core STATIC ${CORE_SOURCES})
+  add_library(Vix::core ALIAS vix_core)
+  target_compile_features(vix_core PUBLIC cxx_std_20)
 
-target_link_libraries(core PRIVATE
-    ${Boost_FILESYSTEM_LIBRARY}
-    ${Boost_SYSTEM_LIBRARY}
-    OpenSSL::SSL
-    OpenSSL::Crypto
-    spdlog
-    mysqlcppconn
-)
+  # Public headers for installed-style includes: #include <vix/...>
+  target_include_directories(vix_core
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+      $<INSTALL_INTERFACE:include>
+  )
 
-# ======================================================
-# Optional: Git hash tracking to skip rebuild
-# ======================================================
-find_package(Git QUIET)
-if(GIT_FOUND)
-    set(CORE_HASH_FILE "${CMAKE_CURRENT_BINARY_DIR}/core_commit_hash.txt")
-    execute_process(
-        COMMAND ${GIT_EXECUTABLE} rev-parse HEAD
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        OUTPUT_VARIABLE CORE_GIT_HASH
-        OUTPUT_STRIP_TRAILING_WHITESPACE
+  target_link_libraries(vix_core
+    PUBLIC
+      Vix::utils
+      ${JSON_TARGET}
+      Boost::filesystem
+      Boost::system
+  )
+
+  if (VIX_CORE_WITH_OPENSSL)
+    target_link_libraries(vix_core PUBLIC OpenSSL::SSL OpenSSL::Crypto)
+  endif()
+
+  # ----- MySQL (optionnel) -----
+  if (VIX_CORE_WITH_MYSQL)
+    # On essaie d'abord le Connector/C++ 8 (X DevAPI), puis le legacy.
+    find_library(MYSQLCPP_CONN8_LIB mysqlcppconn8)
+    if (MYSQLCPP_CONN8_LIB)
+      target_link_libraries(vix_core PRIVATE ${MYSQLCPP_CONN8_LIB})
+      target_compile_definitions(vix_core PUBLIC VIX_CORE_WITH_MYSQL=1)
+    else()
+      find_library(MYSQLCPP_CONN_LIB mysqlcppconn)
+      if (MYSQLCPP_CONN_LIB)
+        target_link_libraries(vix_core PRIVATE ${MYSQLCPP_CONN_LIB})
+        target_compile_definitions(vix_core PUBLIC VIX_CORE_WITH_MYSQL=1)
+      else()
+        message(FATAL_ERROR "MySQL requested but neither mysqlcppconn8 nor mysqlcppconn found.")
+      endif()
+    endif()
+  else()
+    target_compile_definitions(vix_core PUBLIC VIX_CORE_WITH_MYSQL=0)
+  endif()
+
+  set_target_properties(vix_core PROPERTIES
+    OUTPUT_NAME vix_core
+    VERSION ${PROJECT_VERSION}
+    SOVERSION 0
+    EXPORT_NAME core
+  )
+
+  # N’installe/exporte que si on build ce module seul (pas via superproject)
+  if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+    install(TARGETS vix_core
+      EXPORT vix_coreTargets
+      ARCHIVE DESTINATION lib
+      LIBRARY DESTINATION lib
+      RUNTIME DESTINATION bin
+      INCLUDES DESTINATION include
     )
+    install(DIRECTORY include/ DESTINATION include)
+    export(EXPORT vix_coreTargets
+      FILE "${CMAKE_CURRENT_BINARY_DIR}/vix_coreTargets.cmake"
+      NAMESPACE Vix::
+    )
+  endif()
 
-    # Check if file exists before reading
-    if(EXISTS ${CORE_HASH_FILE})
-        file(READ ${CORE_HASH_FILE} OLD_CORE_HASH)
-    else()
-        set(OLD_CORE_HASH "")
-    endif()
+# ============================ HEADER-ONLY ============================
+else()
+  add_library(vix_core INTERFACE)
+  add_library(Vix::core ALIAS vix_core)
+  target_compile_features(vix_core INTERFACE cxx_std_20)
 
-    if(NOT CORE_GIT_HASH STREQUAL OLD_CORE_HASH)
-        message(STATUS "Core commit changed (${CORE_GIT_HASH}), rebuild triggered")
-        file(WRITE ${CORE_HASH_FILE} "${CORE_GIT_HASH}")
-    else()
-        message(STATUS "Core commit unchanged (${CORE_GIT_HASH}), skipping rebuild if no source changed")
-    endif()
+  target_include_directories(vix_core INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+  )
+
+  target_link_libraries(vix_core INTERFACE
+    Vix::utils
+    ${JSON_TARGET}
+  )
+
+  # Définir quand même le flag pour éviter les #if non définis côté headers
+  target_compile_definitions(vix_core INTERFACE VIX_CORE_WITH_MYSQL=0)
 endif()
 
-message(STATUS "vix_core static library configured with ${CORE_SOURCES}")
+# ----------------------------- Summary -------------------------------
+message(STATUS "------------------------------------------------------")
+message(STATUS "Vix::core configured (${PROJECT_VERSION})")
+if (CORE_SOURCES)
+  message(STATUS "Mode: STATIC / sources found")
+else()
+  message(STATUS "Mode: HEADER-ONLY / no sources")
+endif()
+message(STATUS "OpenSSL enabled: ${VIX_CORE_WITH_OPENSSL}")
+message(STATUS "MySQL linkage:   ${VIX_CORE_WITH_MYSQL}")
+message(STATUS "Include dir: ${CMAKE_CURRENT_SOURCE_DIR}/include (for <vix/...>)")
+message(STATUS "------------------------------------------------------")
