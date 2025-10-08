@@ -27,7 +27,7 @@ namespace Vix
 
         // --- Constructors / destructor ---
         IRequestHandler() noexcept = default;
-        virtual ~IRequestHandler() noexcept override = default;
+        virtual ~IRequestHandler() noexcept = default;
 
         // --- Disable copy & move semantics (interfaces are non-owning) ---
         IRequestHandler(const IRequestHandler &) = delete;

@@ -1,6 +1,13 @@
 #include <vix/config/Config.hpp>
 #include <vix/utils/Logger.hpp>
 
+#if VIX_CORE_WITH_MYSQL
+#include <mysql_driver.h>
+#include <mysql_connection.h>
+#include <cppconn/driver.h>
+#include <cppconn/exception.h>
+#endif
+
 #include <fstream>
 #include <cstdlib>
 #include <vector>
@@ -13,7 +20,9 @@ namespace Vix
 
     Config::Config(const fs::path &configPath)
         : configPath_(configPath),
-          db_host(DEFAULT_DB_HOST), db_user(DEFAULT_DB_USER), db_pass(DEFAULT_DB_PASS), db_name(DEFAULT_DB_NAME), db_port(DEFAULT_DB_PORT), server_port(DEFAULT_SERVER_PORT), request_timeout(DEFAULT_REQUEST_TIMEOUT)
+          db_host(DEFAULT_DB_HOST), db_user(DEFAULT_DB_USER), db_pass(DEFAULT_DB_PASS),
+          db_name(DEFAULT_DB_NAME), db_port(DEFAULT_DB_PORT),
+          server_port(DEFAULT_SERVER_PORT), request_timeout(DEFAULT_REQUEST_TIMEOUT)
     {
         auto &log = Vix::Logger::getInstance();
         std::vector<fs::path> candidate_paths;
@@ -31,7 +40,7 @@ namespace Vix
                     .parent_path()               // .../modules/core
                     .parent_path()               // .../modules
                     .parent_path() /
-                "config/config.json"); // .../<root>/config/config.json
+                "config/config.json");
         }
 
         bool found = false;
@@ -59,6 +68,7 @@ namespace Vix
         loadConfig();
     }
 
+    // Singleton simple : le premier appel fixe le chemin (documente-le si besoin)
     Config &Config::getInstance(const fs::path &configPath)
     {
         static Config instance(configPath);
@@ -121,18 +131,11 @@ namespace Vix
         return db_pass;
     }
 
-// -------------- MySQL: impl seulement si activé --------------
 #if VIX_CORE_WITH_MYSQL
-#include <mysql_driver.h>
-#include <mysql_connection.h>
-#include <cppconn/driver.h>
-#include <cppconn/exception.h>
-
     std::shared_ptr<sql::Connection> Config::getDbConnection()
     {
         auto &log = Vix::Logger::getInstance();
 
-        // Connector/C++ 8 legacy interface expose get_driver_instance()
         sql::Driver *driver = sql::mysql::get_driver_instance();
 
         const std::string host = "tcp://" + db_host + ":" + std::to_string(db_port);
@@ -149,12 +152,13 @@ namespace Vix
     }
 #endif // VIX_CORE_WITH_MYSQL
 
-    const std::string &Config::getDbHost() const { return db_host; }
-    const std::string &Config::getDbUser() const { return db_user; }
-    const std::string &Config::getDbName() const { return db_name; }
-    int Config::getDbPort() const { return db_port; }
-    int Config::getServerPort() const { return server_port; }
-    int Config::getRequestTimeout() const { return request_timeout; }
+    // === Getters (définitions, avec noexcept) ===
+    const std::string &Config::getDbHost() const noexcept { return db_host; }
+    const std::string &Config::getDbUser() const noexcept { return db_user; }
+    const std::string &Config::getDbName() const noexcept { return db_name; }
+    int Config::getDbPort() const noexcept { return db_port; }
+    int Config::getServerPort() const noexcept { return server_port; }
+    int Config::getRequestTimeout() const noexcept { return request_timeout; }
 
     void Config::setServerPort(int port)
     {
