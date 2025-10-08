@@ -48,10 +48,10 @@ namespace Vix
         void monitor_metrics();
         void stop_async();
         void join_threads();
-        bool is_stop_requested() const { return stop_requested_; }
+        bool is_stop_requested() const { return stop_requested_.load(); }
+    /
 
-    private:
-        void init_acceptor(unsigned short port);
+        private : void init_acceptor(unsigned short port);
         void handle_client(std::shared_ptr<tcp::socket> socket_ptr, std::shared_ptr<Router> router);
         void close_socket(std::shared_ptr<tcp::socket> socket);
         void start_io_threads();
@@ -64,6 +64,7 @@ namespace Vix
         std::vector<std::thread> io_threads_;
         std::atomic<bool> stop_requested_;
     };
+
 }
 
 #endif // VIX_HTTP_SERVER_HPP

@@ -16,8 +16,13 @@ namespace Vix
     {
         std::unordered_map<std::string, std::unique_ptr<RouteNode>> children;
         std::shared_ptr<IRequestHandler> handler;
-        bool isParam = false;
+        bool isParam;
         std::string paramName;
+
+        RouteNode()
+            : children(), handler(nullptr), isParam(false), paramName()
+        {
+        }
     };
 
     class Router
@@ -53,7 +58,7 @@ namespace Vix
                 start = end + 1;
             }
 
-            node->handler = handler;
+            node->handler = std::move(handler);
         }
 
         bool handle_request(const http::request<http::string_body> &req,

@@ -8,6 +8,7 @@
 #include <memory>
 #include <regex>
 #include <optional>
+#include <chrono>
 
 #include <vix/router/Router.hpp>
 #include <vix/http/Response.hpp>

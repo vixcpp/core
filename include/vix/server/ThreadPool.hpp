@@ -34,6 +34,7 @@ namespace Vix
 
         bool operator<(const Task &other) const
         {
+            // high priority => executed before (so > for priority_queue max-heap)
             return priority > other.priority;
         }
     };
@@ -69,7 +70,7 @@ namespace Vix
         int threadPriority;
         std::size_t maxPeriodicThreads;
         std::atomic<std::size_t> activePeriodicThreads;
-        std::atomic<int> tasksTimedOut{0};
+        std::atomic<int> tasksTimedOut;
 
         void setThreadAffinity(std::size_t id)
         {
@@ -96,7 +97,7 @@ namespace Vix
                         "[ThreadPool][Thread {}] Failed to set thread affinity, error: {}", threadId, ret);
             }
 #else
-            (void)id; // éviter -Wunused-parameter sur autres plateformes
+            (void)id; // avoid -Wunused-parameter on other platforms
 #endif
         }
 
@@ -123,7 +124,8 @@ namespace Vix
                             if (stop && tasks.empty())
                                 return;
 
-                            task = std::move(const_cast<Task &>(tasks.top()));
+                            // priority_queue::top() is const& ; we copy then we pop.
+                            task = tasks.top();
                             tasks.pop();
                         }
 
@@ -152,13 +154,31 @@ namespace Vix
 
     public:
         ThreadPool(std::size_t threadCount, std::size_t maxThreadCount, int priority, std::size_t maxPeriodic = 4)
-            : stop(false),
-              stopPeriodic(false),
-              maxThreads(maxThreadCount),
-              activeTasks(0),
-              threadPriority(priority),
-              maxPeriodicThreads(maxPeriodic),
-              activePeriodicThreads(0)
+            : workers() // vector
+              ,
+              tasks() // priority_queue
+              ,
+              m() // mutex
+              ,
+              condition() // condition_variable
+              ,
+              stop(false) // atomic<bool>
+              ,
+              stopPeriodic(false) // atomic<bool>
+              ,
+              maxThreads(maxThreadCount) // size_t
+              ,
+              activeTasks(0) // atomic<int>
+              ,
+              periodicWorkers() // vector
+              ,
+              threadPriority(priority) // int
+              ,
+              maxPeriodicThreads(maxPeriodic) // size_t
+              ,
+              activePeriodicThreads(0) // atomic<size_t>
+              ,
+              tasksTimedOut(0) // atomic<int>
         {
             for (std::size_t i = 0; i < threadCount; ++i)
                 createThread(i);
@@ -247,7 +267,7 @@ namespace Vix
 
         void periodicTask(int priority, std::function<void()> func, std::chrono::milliseconds interval)
         {
-            // Limiter le nombre de threads périodiques actifs
+            // Limit the number of active periodic threads
             while (activePeriodicThreads.load() >= maxPeriodicThreads)
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
 

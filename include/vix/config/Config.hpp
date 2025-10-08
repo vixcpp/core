@@ -30,12 +30,12 @@ namespace Vix
 
         std::string getDbPasswordFromEnv();
 
-        const std::string &getDbHost() const;
-        const std::string &getDbUser() const;
-        const std::string &getDbName() const;
-        int getDbPort() const;
-        int getServerPort() const;
-        int getRequestTimeout() const;
+        const std::string &getDbHost() const noexcept;
+        const std::string &getDbUser() const noexcept;
+        const std::string &getDbName() const noexcept;
+        int getDbPort() const noexcept;
+        int getServerPort() const noexcept;
+        int getRequestTimeout() const noexcept;
         void setServerPort(int port);
 
     private:

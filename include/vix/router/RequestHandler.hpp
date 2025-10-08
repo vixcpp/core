@@ -18,7 +18,6 @@ namespace Vix
 
     namespace http = boost::beast::http;
 
-    // ---------------- Params extraction ----------------
     inline std::unordered_map<std::string, std::string>
     extract_params_from_path(const std::string &pattern, std::string_view path)
     {
@@ -41,20 +40,21 @@ namespace Vix
             }
             else
             {
-                rpos++;
-                ppos++;
+                ++rpos;
+                ++ppos;
             }
         }
         return params;
     }
 
-    // ---------------- Fluent ResponseWrapper ----------------
     struct ResponseWrapper
     {
         http::response<http::string_body> &res;
 
+        explicit ResponseWrapper(http::response<http::string_body> &r) noexcept : res(r) {}
+
         // Allows chaining: res.status(...).json(...)
-        ResponseWrapper &status(http::status code)
+        ResponseWrapper &status(http::status code) noexcept
         {
             res.result(code);
             return *this;
@@ -63,12 +63,11 @@ namespace Vix
         // nlohmann::json
         ResponseWrapper &json(const nlohmann::json &j)
         {
-            // Use the status already set (res.result())
             Vix::Response::json_response(res, j, res.result());
             return *this;
         }
 
-        // Vix::json::Json (if you use it in your examples)
+        // Vix::json::Json
         template <typename J,
                   typename = std::enable_if_t<!std::is_same_v<J, nlohmann::json>>>
         ResponseWrapper &json(const J &data)
@@ -77,7 +76,7 @@ namespace Vix
             return *this;
         }
 
-        // Plain text — also keeps the current status
+        // Plain text — keeps the current status
         ResponseWrapper &text(std::string_view data)
         {
             Vix::Response::text_response(res, data, res.result());
@@ -85,7 +84,6 @@ namespace Vix
         }
     };
 
-    // ---------------- Templated RequestHandler ----------------
     template <typename Handler>
     class RequestHandler : public IRequestHandler
     {
@@ -117,8 +115,10 @@ namespace Vix
                     static_assert(always_false<Handler>::value, "Unsupported handler signature");
                 }
 
-                bool keep_alive = (req[http::field::connection] == "keep-alive") ||
-                                  (req.version() == 11 && req[http::field::connection].empty());
+                const bool keep_alive =
+                    (req[http::field::connection] == "keep-alive") ||
+                    (req.version() == 11 && req[http::field::connection].empty());
+
                 res.set(http::field::connection, keep_alive ? "keep-alive" : "close");
                 res.prepare_payload();
             }

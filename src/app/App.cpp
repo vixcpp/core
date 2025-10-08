@@ -1,5 +1,5 @@
 #include <vix/app/App.hpp>
-#include <vix/utils/Env.hpp> // env_bool/env_or
+#include <vix/utils/Env.hpp> // env_bool / env_or
 #include <vix/utils/Logger.hpp>
 
 #include <csignal>
@@ -11,19 +11,19 @@
 namespace Vix
 {
     // ------------------------------------------------------
-    // Process-wide state for graceful shutdown on SIGINT
+    // Process-wide state for graceful shutdown on SIGINT/SIGTERM
     // ------------------------------------------------------
     static HTTPServer *g_server_ptr = nullptr;
     static std::atomic<bool> g_stop_flag{false};
     static std::mutex g_stop_mutex;
     static std::condition_variable g_stop_cv;
 
-    static void handle_sigint(int)
+    static void handle_stop_signal(int)
     {
         auto &log = Logger::getInstance();
-        log.log(Logger::Level::INFO, "Received SIGINT, shutting down...");
+        log.log(Logger::Level::INFO, "Received stop signal, shutting down...");
 
-        g_stop_flag = true;
+        g_stop_flag.store(true);
         g_stop_cv.notify_one();
 
         if (g_server_ptr)
@@ -38,6 +38,7 @@ namespace Vix
     // ------------------------------------------------------
     App::App()
         : config_(Config::getInstance()),
+          router_(nullptr),
           server_(config_)
     {
         auto &log = Logger::getInstance();
@@ -66,7 +67,9 @@ namespace Vix
 
         try
         {
+            // Allow external code to pass a path at first getInstance(); if not, load defaults
             config_.loadConfig();
+
             router_ = server_.getRouter();
             if (!router_)
             {
@@ -80,23 +83,28 @@ namespace Vix
     }
 
     // ------------------------------------------------------
-    // App::run: start server, install SIGINT handler, wait until stop
+    // App::run: start server, install signal handlers, wait until stop
     // ------------------------------------------------------
     void App::run(int port)
     {
         auto &log = Logger::getInstance();
+
+        // Validate & set port (Config::setServerPort already validates)
         config_.setServerPort(port);
 
         g_server_ptr = &server_;
 
-        // Register SIGINT only once per process (idempotent enough for typical use)
-        std::signal(SIGINT, handle_sigint);
+        // Register signals (idempotent enough for typical use)
+        std::signal(SIGINT, handle_stop_signal);
+#ifdef SIGTERM
+        std::signal(SIGTERM, handle_stop_signal);
+#endif
 
         // Run the HTTP server in a dedicated thread
         std::thread server_thread([this]()
                                   { server_.run(); });
 
-        // Block the main thread until a stop signal is received
+        // Block the calling thread until a stop signal is received
         {
             std::unique_lock<std::mutex> lock(g_stop_mutex);
             g_stop_cv.wait(lock, []
@@ -112,4 +120,5 @@ namespace Vix
 
         log.log(Logger::Level::INFO, "Application shutdown complete");
     }
-}
+
+} // namespace Vix

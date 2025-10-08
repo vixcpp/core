@@ -22,6 +22,7 @@ namespace Vix
           acceptor_(nullptr),
           router_(std::make_shared<Router>()),
           request_thread_pool_(NUMBER_OF_THREADS, 100, 0, 4),
+          io_threads_(),
           stop_requested_(false)
     {
         auto &log = Logger::getInstance();

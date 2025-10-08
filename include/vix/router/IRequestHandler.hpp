@@ -19,24 +19,22 @@ namespace Vix
         /**
          * @brief Handles an HTTP request and generates a response.
          *
-         * This method is called when the router matches a route to an HTTP request.
-         * It is responsible for creating and populating the appropriate HTTP response.
-         *
          * @param req The incoming HTTP request.
          * @param res The HTTP response to send back to the client.
          */
         virtual void handle_request(const http::request<http::string_body> &req,
                                     http::response<http::string_body> &res) = 0;
 
-        IRequestHandler() = default;
+        // --- Constructors / destructor ---
+        IRequestHandler() noexcept = default;
+        virtual ~IRequestHandler() noexcept override = default;
 
-        // Virtual destructor to ensure proper cleanup of derived objects.
-        virtual ~IRequestHandler() = default;
-
-        // Disable copy constructor and assignment operator.
+        // --- Disable copy & move semantics (interfaces are non-owning) ---
         IRequestHandler(const IRequestHandler &) = delete;
-        void operator=(const IRequestHandler &) = delete;
+        IRequestHandler &operator=(const IRequestHandler &) = delete;
+        IRequestHandler(IRequestHandler &&) noexcept = delete;
+        IRequestHandler &operator=(IRequestHandler &&) noexcept = delete;
     };
-}
+} // namespace Vix
 
-#endif
+#endif // I_REQUEST_HANDLER_HPP

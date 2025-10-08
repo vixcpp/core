@@ -9,7 +9,11 @@ namespace Vix
     const std::regex Session::SQL_PATTERN(R"((\bUNION\b|\bSELECT\b|\bINSERT\b|\bDELETE\b|\bUPDATE\b|\bDROP\b))", std::regex::icase);
 
     Session::Session(std::shared_ptr<tcp::socket> socket, Router &router)
-        : socket_(std::move(socket)), router_(router)
+        : socket_(std::move(socket)), router_(router),
+          buffer_(),
+          req_(),
+          parser_(nullptr),
+          timer_(nullptr)
     {
         boost::system::error_code ec;
         socket_->set_option(tcp::no_delay(true), ec);

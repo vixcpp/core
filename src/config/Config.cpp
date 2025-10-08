@@ -12,13 +12,8 @@ namespace Vix
     using json = nlohmann::json;
 
     Config::Config(const fs::path &configPath)
-        : db_host(DEFAULT_DB_HOST),
-          db_user(DEFAULT_DB_USER),
-          db_pass(DEFAULT_DB_PASS),
-          db_name(DEFAULT_DB_NAME),
-          db_port(DEFAULT_DB_PORT),
-          server_port(DEFAULT_SERVER_PORT),
-          request_timeout(DEFAULT_REQUEST_TIMEOUT)
+        : configPath_(configPath),
+          db_host(DEFAULT_DB_HOST), db_user(DEFAULT_DB_USER), db_pass(DEFAULT_DB_PASS), db_name(DEFAULT_DB_NAME), db_port(DEFAULT_DB_PORT), server_port(DEFAULT_SERVER_PORT), request_timeout(DEFAULT_REQUEST_TIMEOUT)
     {
         auto &log = Vix::Logger::getInstance();
         std::vector<fs::path> candidate_paths;
