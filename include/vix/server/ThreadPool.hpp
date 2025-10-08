@@ -16,6 +16,7 @@
 #include <atomic>
 #include <chrono>
 #include <stdexcept>
+#include <limits>
 #include <pthread.h>
 
 #include <vix/utils/Logger.hpp>
@@ -28,7 +29,7 @@ namespace Vix
         std::function<void()> func;
         int priority;
 
-        Task(std::function<void()> f, int p) : func(f), priority(p) {}
+        Task(std::function<void()> f, int p) : func(std::move(f)), priority(p) {}
         Task() : func(nullptr), priority(0) {}
 
         bool operator<(const Task &other) const
@@ -40,7 +41,7 @@ namespace Vix
     struct TaskGuard
     {
         std::atomic<int> &counter;
-        TaskGuard(std::atomic<int> &c) : counter(c) { ++counter; }
+        explicit TaskGuard(std::atomic<int> &c) : counter(c) { ++counter; }
         ~TaskGuard() { --counter; }
     };
 
@@ -62,15 +63,15 @@ namespace Vix
         std::condition_variable condition;
         std::atomic<bool> stop;
         std::atomic<bool> stopPeriodic;
-        size_t maxThreads;
+        std::size_t maxThreads;
         std::atomic<int> activeTasks;
         std::vector<std::thread> periodicWorkers;
         int threadPriority;
-        size_t maxPeriodicThreads;
-        std::atomic<size_t> activePeriodicThreads;
+        std::size_t maxPeriodicThreads;
+        std::atomic<std::size_t> activePeriodicThreads;
         std::atomic<int> tasksTimedOut{0};
 
-        void setThreadAffinity(int id)
+        void setThreadAffinity(std::size_t id)
         {
 #ifdef __linux__
             if (maxThreads <= 1)
@@ -78,25 +79,36 @@ namespace Vix
 
             cpu_set_t cpuset;
             CPU_ZERO(&cpuset);
-            int core = id % std::thread::hardware_concurrency();
+
+            const unsigned hc = std::thread::hardware_concurrency();
+            const unsigned denom = (hc == 0u) ? 1u : hc;
+
+            const unsigned coreU = static_cast<unsigned>(id % denom);
+            const int core = static_cast<int>(coreU);
+
             CPU_SET(core, &cpuset);
 
-            int ret = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+            const int ret = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
             if (ret != 0)
             {
                 auto &log = Vix::Logger::getInstance();
                 log.log(Vix::Logger::Level::WARN,
-                        "[ThreadPool][Thread {}] Failed to set thread affinity, error: {}", id, ret);
+                        "[ThreadPool][Thread {}] Failed to set thread affinity, error: {}", threadId, ret);
             }
+#else
+            (void)id; // éviter -Wunused-parameter sur autres plateformes
 #endif
         }
 
-        void createThread(int id)
+        void createThread(std::size_t id)
         {
             workers.emplace_back(
                 [this, id]()
                 {
-                    threadId = id;
+                    threadId = (id > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+                                   ? std::numeric_limits<int>::max()
+                                   : static_cast<int>(id);
+
                     setThreadAffinity(id);
                     auto &log = Vix::Logger::getInstance();
 
@@ -107,9 +119,11 @@ namespace Vix
                             std::unique_lock<std::mutex> lock(m);
                             condition.wait(lock, [this]
                                            { return stop || !tasks.empty(); });
+
                             if (stop && tasks.empty())
                                 return;
-                            task = std::move(tasks.top());
+
+                            task = std::move(const_cast<Task &>(tasks.top()));
                             tasks.pop();
                         }
 
@@ -117,7 +131,8 @@ namespace Vix
 
                         try
                         {
-                            task.func();
+                            if (task.func)
+                                task.func();
                         }
                         catch (const std::exception &e)
                         {
@@ -136,7 +151,7 @@ namespace Vix
         }
 
     public:
-        ThreadPool(size_t threadCount, size_t maxThreadCount, int priority, size_t maxPeriodic = 4)
+        ThreadPool(std::size_t threadCount, std::size_t maxThreadCount, int priority, std::size_t maxPeriodic = 4)
             : stop(false),
               stopPeriodic(false),
               maxThreads(maxThreadCount),
@@ -145,7 +160,7 @@ namespace Vix
               maxPeriodicThreads(maxPeriodic),
               activePeriodicThreads(0)
         {
-            for (size_t i = 0; i < threadCount; ++i)
+            for (std::size_t i = 0; i < threadCount; ++i)
                 createThread(i);
         }
 
@@ -177,7 +192,7 @@ namespace Vix
                     [task, timeout, this]()
                     {
                         auto &log = Vix::Logger::getInstance();
-                        auto start = std::chrono::steady_clock::now();
+                        const auto start = std::chrono::steady_clock::now();
 
                         try
                         {
@@ -196,7 +211,7 @@ namespace Vix
 
                         if (timeout.count() > 0)
                         {
-                            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                                 std::chrono::steady_clock::now() - start);
                             if (elapsed.count() > timeout.count())
                             {
@@ -232,6 +247,7 @@ namespace Vix
 
         void periodicTask(int priority, std::function<void()> func, std::chrono::milliseconds interval)
         {
+            // Limiter le nombre de threads périodiques actifs
             while (activePeriodicThreads.load() >= maxPeriodicThreads)
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
@@ -239,36 +255,36 @@ namespace Vix
 
             periodicWorkers.emplace_back([this, priority, func, interval]()
                                          {
-            auto &log = Vix::Logger::getInstance();
+                auto &log = Vix::Logger::getInstance();
 
-            while (!stopPeriodic)
-            {
-                try
+                while (!stopPeriodic)
                 {
-                    auto future = enqueue(priority, func);
-
-                    if (future.wait_for(interval) == std::future_status::timeout)
+                    try
                     {
-                        log.log(Vix::Logger::Level::WARN,
-                                "[ThreadPool][PeriodicTimeout] Thread {} periodic task exceeded interval of {} ms",
-                                threadId, interval.count());
+                        auto future = enqueue(priority, func);
+
+                        if (future.wait_for(interval) == std::future_status::timeout)
+                        {
+                            log.log(Vix::Logger::Level::WARN,
+                                    "[ThreadPool][PeriodicTimeout] Thread {} periodic task exceeded interval of {} ms",
+                                    threadId, interval.count());
+                        }
                     }
-                }
-                catch (const std::exception &e)
-                {
-                    log.log(Vix::Logger::Level::ERROR,
-                            "[ThreadPool][PeriodicException] Exception in periodic task: {}", e.what());
-                }
-                catch (...)
-                {
-                    log.log(Vix::Logger::Level::ERROR,
-                            "[ThreadPool][PeriodicException] Unknown exception in periodic task");
+                    catch (const std::exception &e)
+                    {
+                        log.log(Vix::Logger::Level::ERROR,
+                                "[ThreadPool][PeriodicException] Exception in periodic task: {}", e.what());
+                    }
+                    catch (...)
+                    {
+                        log.log(Vix::Logger::Level::ERROR,
+                                "[ThreadPool][PeriodicException] Unknown exception in periodic task");
+                    }
+
+                    std::this_thread::sleep_for(interval);
                 }
 
-                std::this_thread::sleep_for(interval);
-            }
-
-            activePeriodicThreads.fetch_sub(1); });
+                activePeriodicThreads.fetch_sub(1); });
         }
 
         bool isIdle()
