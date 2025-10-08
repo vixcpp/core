@@ -84,7 +84,7 @@ namespace Vix
                                     std::string_view content_type = "application/json")
         {
             res.result(status);
-            res.set(http::field::content_type, content_type);
+            res.set(http::field::content_type, std::string(content_type));
             res.body() = nlohmann::json{{"message", message}}.dump();
             common_headers(res);
             res.prepare_payload();
@@ -117,7 +117,7 @@ namespace Vix
                                       std::string_view location)
         {
             res.result(http::status::found);
-            res.set(http::field::location, location);
+            res.set(http::field::location, std::string(location));
             res.set(http::field::content_type, "application/json");
             res.body() = nlohmann::json{{"message", std::string("Redirecting to ") + std::string(location)}}.dump();
             common_headers(res);
@@ -142,7 +142,7 @@ namespace Vix
                                   http::status status = http::status::ok)
         {
             res.result(status);
-            res.set(http::field::content_type, "text/plain");
+            res.set(http::field::content_type, std::string("text/plain"));
             res.body() = std::string(data);
             common_headers(res);
             res.prepare_payload();
