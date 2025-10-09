@@ -23,13 +23,9 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Release)
-endif()
-
 set(GLOBAL_CXX_FLAGS "-Wall -Wextra -Wshadow -Weffc++")
 set(CMAKE_CXX_FLAGS_RELEASE "${GLOBAL_CXX_FLAGS} -O2 -DNDEBUG")
-set(CMAKE_CXX_FLAGS_DEBUG   "${GLOBAL_CXX_FLAGS} -g -fsanitize=address -fsanitize=undefined -D_GLIBCXX_DEBUG")
+set(CMAKE_CXX_FLAGS_DEBUG   "${GLOBAL_CXX_FLAGS} -g")
 
 option(VIX_CORE_WITH_OPENSSL "Enable HTTPS/TLS support using OpenSSL" ON)
 option(VIX_CORE_WITH_MYSQL   "Enable MySQL client linkage" OFF)
@@ -51,12 +47,26 @@ if (NOT TARGET ${JSON_TARGET})
   endif()
 endif()
 
+# Helper: appliquer sanitizers selon type de cible (STATIC vs INTERFACE)
+function(vix_core_apply_sanitizers tgt scope)
+  if (VIX_ENABLE_SANITIZERS AND TARGET ${tgt})
+    message(STATUS "[core] enabling sanitizers on ${tgt} (${scope})")
+    if (${scope} STREQUAL "PRIVATE")
+      target_compile_options(${tgt} PRIVATE -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined)
+      target_link_options(   ${tgt} PRIVATE                       -fsanitize=address,undefined)
+    else() # INTERFACE
+      target_compile_options(${tgt} INTERFACE -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined)
+      target_link_options(   ${tgt} INTERFACE                       -fsanitize=address,undefined)
+    endif()
+  endif()
+endfunction()
+
 # ============================== STATIC ===============================
 if (CORE_SOURCES)
   message(STATUS "[core] Building STATIC library with detected sources.")
 
   find_package(Boost 1.78 REQUIRED COMPONENTS filesystem system)
-  # spdlog may already come from utils; keep this for standalone builds.
+  # spdlog peut déjà venir de utils, mais on garde pour build autonome
   find_package(spdlog REQUIRED)
 
   if (VIX_CORE_WITH_OPENSSL)
@@ -67,7 +77,12 @@ if (CORE_SOURCES)
   add_library(Vix::core ALIAS vix_core)
   target_compile_features(vix_core PUBLIC cxx_std_20)
 
-  # Public headers for installed-style includes: #include <vix/...>
+  # Debug-only: activer libstdc++ debug mode si souhaité
+  if (CMAKE_BUILD_TYPE MATCHES "Debug")
+    target_compile_definitions(vix_core PRIVATE -D_GLIBCXX_DEBUG)
+  endif()
+
+  # Public headers pour #include <vix/...>
   target_include_directories(vix_core
     PUBLIC
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -105,6 +120,9 @@ if (CORE_SOURCES)
   else()
     target_compile_definitions(vix_core PUBLIC VIX_CORE_WITH_MYSQL=0)
   endif()
+
+  # Sanitizers (uniquement si activés au top-level)
+  vix_core_apply_sanitizers(vix_core PRIVATE)
 
   set_target_properties(vix_core PROPERTIES
     OUTPUT_NAME vix_core
@@ -147,6 +165,9 @@ else()
 
   # Définir quand même le flag pour éviter les #if non définis côté headers
   target_compile_definitions(vix_core INTERFACE VIX_CORE_WITH_MYSQL=0)
+
+  # Sanitizers : propager aux consommateurs si activés
+  vix_core_apply_sanitizers(vix_core INTERFACE)
 endif()
 
 # ----------------------------- Summary -------------------------------
@@ -160,4 +181,6 @@ endif()
 message(STATUS "OpenSSL enabled: ${VIX_CORE_WITH_OPENSSL}")
 message(STATUS "MySQL linkage:   ${VIX_CORE_WITH_MYSQL}")
 message(STATUS "Include dir: ${CMAKE_CURRENT_SOURCE_DIR}/include (for <vix/...>)")
+message(STATUS "Sanitizers (inherited): ${VIX_ENABLE_SANITIZERS}")
+message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "------------------------------------------------------")

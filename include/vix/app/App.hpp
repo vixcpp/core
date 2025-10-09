@@ -37,7 +37,7 @@ namespace Vix
         App &operator=(App &&) = delete;
 
         // Start the HTTP server, block until SIGINT/SIGTERM triggers a graceful stop
-        void run(int port);
+        void run(int port = 8080);
 
         // ----------- Express-like helpers -----------
         template <typename Handler>

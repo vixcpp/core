@@ -20,6 +20,7 @@
 #include <atomic>
 
 #include <vix/router/IRequestHandler.hpp>
+#include <vix/router/Router.hpp>
 #include <vix/session/Session.hpp>
 #include <vix/http/Response.hpp>
 #include <vix/config/Config.hpp>
@@ -65,6 +66,6 @@ namespace Vix
         std::atomic<bool> stop_requested_;
     };
 
-}
+} // namespace Vix
 
 #endif // VIX_HTTP_SERVER_HPP
