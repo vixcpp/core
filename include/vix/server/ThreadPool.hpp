@@ -1,10 +1,3 @@
-#ifndef VIX_THREADPOOL_HPP
-#define VIX_THREADPOOL_HPP
-
-#ifndef _GNU_SOURCE
-#define _GNU_SOURCE
-#endif
-
 /**
  * @file ThreadPool.hpp
  * @brief Priority-based, production-ready task executor used across Vix.cpp.
@@ -41,14 +34,14 @@
  *
  * Usage example
  * @code{.cpp}
- * Vix::ThreadPool pool(/*threads*/4, /*maxThreads*/8, /*defaultPrio*/1);
-*auto fut = pool.enqueue(10, std::chrono::milliseconds(200), [] { /* work */ });
-*fut.get(); // wait for completion
-**pool.periodicTask(1, [] { /* metrics */ }, std::chrono::seconds(5));
-* // ... later
-    *pool.stopPeriodicTasks();
-*@endcode
-        * /
+ * Vix::ThreadPool pool(4, 8, 1); // threads, maxThreads, defaultPrio
+ * auto fut = pool.enqueue(10, std::chrono::milliseconds(200), [] {}); // do work
+ * fut.get(); // wait for completion
+ * pool.periodicTask(1, [] {}, std::chrono::seconds(5)); // metrics/housekeeping
+ * // ... later
+ * pool.stopPeriodicTasks();
+ * @endcode
+ */
 
 #include <iostream>
 #include <vector>
@@ -66,7 +59,7 @@
 
 #include <vix/utils/Logger.hpp>
 
-    namespace Vix
+namespace Vix
 {
     /**
      * @brief Unit of scheduled work with a monotonic priority.
