@@ -12,11 +12,37 @@
 
 #include <vix/router/IRequestHandler.hpp>
 #include <vix/http/Response.hpp>
+#include <vix/json/Simple.hpp>
 
 namespace Vix
 {
 
     namespace http = boost::beast::http;
+
+    inline nlohmann::json kvs_to_nlohmann(const json::kvs &list)
+    {
+        nlohmann::json obj = nlohmann::json::object();
+        const auto &a = list.flat;
+        // Si impair, on ignore le dernier (ou throw en debug).
+        for (size_t i = 0; i + 1 < a.size(); i += 2)
+        {
+            const auto &k = a[i].v;
+            const auto &v = a[i + 1].v;
+            if (!std::holds_alternative<std::string>(k))
+                continue;
+            const std::string &key = std::get<std::string>(k);
+
+            nlohmann::json jv = nullptr;
+            std::visit([&](auto &&val)
+                       {
+            using T = std::decay_t<decltype(val)>;
+            if constexpr (std::is_same_v<T, std::monostate>) jv = nullptr;
+            else jv = val; }, v);
+
+            obj[key] = std::move(jv);
+        }
+        return obj;
+    }
 
     inline std::unordered_map<std::string, std::string>
     extract_params_from_path(const std::string &pattern, std::string_view path)
@@ -80,6 +106,21 @@ namespace Vix
         ResponseWrapper &text(std::string_view data)
         {
             Vix::Response::text_response(res, data, res.result());
+            return *this;
+        }
+
+        // status numérique (style Express)
+        ResponseWrapper &status(int code) noexcept
+        {
+            res.result(static_cast<http::status>(code));
+            return *this;
+        }
+
+        // json({ "k","v", ... })
+        ResponseWrapper &json(const Vix::json::kvs &kv)
+        {
+            auto j = kvs_to_nlohmann(kv);
+            Vix::Response::json_response(res, j, res.result());
             return *this;
         }
     };
