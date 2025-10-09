@@ -1,3 +1,5 @@
+#ifndef VIX_THREAD_POOL
+#define VIX_THREAD_POOL
 /**
  * @file ThreadPool.hpp
  * @brief Priority-based, production-ready task executor used across Vix.cpp.
