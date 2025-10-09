@@ -13,11 +13,40 @@
 #include <vector>
 #include <sstream>
 
+/**
+ * @file Config.cpp
+ * @brief Implementation notes for Vix::Config (maintainers-focused docs).
+ *
+ * Responsibilities and design choices:
+ *  - Resolve a configuration file path with sensible defaults and log each probe.
+ *  - Load a JSON document with a conservative schema and default fallbacks.
+ *  - Provide noexcept getters for hot-path usage after initialization.
+ *  - Optionally construct a MySQL connection (behind VIX_CORE_WITH_MYSQL).
+ *  - Support environment override for sensitive values (DB password).
+ *
+ * Path discovery strategy
+ *  - If a path is provided to the constructor, prefer it.
+ *  - Otherwise, probe a repo-relative default: <repo_root>/config/config.json
+ *    (walks up from this source file's directory).
+ *
+ * Error handling
+ *  - Missing config file: warning + fall back to built-in defaults.
+ *  - JSON parse errors / IO failures: escalate via Logger::throwError (terminates or throws).
+ *  - Out-of-range server port in setServerPort(): throw via Logger.
+ *
+ * Thread-safety
+ *  - The object is expected to be fully configured before concurrent access.
+ *  - Getters are noexcept and read-only.
+ */
+
 namespace Vix
 {
     namespace fs = std::filesystem;
     using json = nlohmann::json;
 
+    /**
+     * @brief Construct and attempt to locate a config file; load if found.
+     */
     Config::Config(const fs::path &configPath)
         : configPath_(configPath),
           db_host(DEFAULT_DB_HOST), db_user(DEFAULT_DB_USER), db_pass(DEFAULT_DB_PASS),
@@ -68,13 +97,18 @@ namespace Vix
         loadConfig();
     }
 
-    // Singleton simple : le premier appel fixe le chemin (documente-le si besoin)
+    /**
+     * @brief Singleton accessor; first call fixes the path.
+     */
     Config &Config::getInstance(const fs::path &configPath)
     {
         static Config instance(configPath);
         return instance;
     }
 
+    /**
+     * @brief Load configuration JSON and apply defaults for missing keys.
+     */
     void Config::loadConfig()
     {
         auto &log = Vix::Logger::getInstance();
@@ -119,6 +153,9 @@ namespace Vix
         log.log(Vix::Logger::Level::INFO, "Config loaded from {}", configPath_.string());
     }
 
+    /**
+     * @brief Prefer DB password from environment when available.
+     */
     std::string Config::getDbPasswordFromEnv()
     {
         auto &log = Vix::Logger::getInstance();
@@ -132,6 +169,13 @@ namespace Vix
     }
 
 #if VIX_CORE_WITH_MYSQL
+    /**
+     * @brief Establish a new MySQL connection using current config values.
+     *
+     * Notes:
+     *  - Uses driver instance from Connector/C++. Exceptions may propagate.
+     *  - If `db_name` is set, selects schema immediately after connect.
+     */
     std::shared_ptr<sql::Connection> Config::getDbConnection()
     {
         auto &log = Vix::Logger::getInstance();
@@ -152,7 +196,7 @@ namespace Vix
     }
 #endif // VIX_CORE_WITH_MYSQL
 
-    // === Getters (définitions, avec noexcept) ===
+    // --- Getters (definitions) ---------------------------------------------------
     const std::string &Config::getDbHost() const noexcept { return db_host; }
     const std::string &Config::getDbUser() const noexcept { return db_user; }
     const std::string &Config::getDbName() const noexcept { return db_name; }
@@ -160,6 +204,9 @@ namespace Vix
     int Config::getServerPort() const noexcept { return server_port; }
     int Config::getRequestTimeout() const noexcept { return request_timeout; }
 
+    /**
+     * @brief Validate and set the HTTP server port at runtime.
+     */
     void Config::setServerPort(int port)
     {
         auto &log = Vix::Logger::getInstance();

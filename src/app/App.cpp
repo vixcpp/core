@@ -8,8 +8,28 @@
 #include <condition_variable>
 #include <mutex>
 
+/**
+ * @file App.cpp
+ * @brief Implementation notes for Vix::App (maintainers-focused).
+ *
+ * Responsibilities:
+ *  - Initialize logging (pattern, level, async mode via env).
+ *  - Load configuration and wire `Router` from `HTTPServer`.
+ *  - Install POSIX signal handlers (SIGINT/SIGTERM) for graceful shutdown.
+ *  - Coordinate server thread run/stop/join lifecycle.
+ *
+ * Shutdown model:
+ *  - Signals trigger `handle_stop_signal()` which:
+ *     1) sets a process-wide stop flag and notifies a condition variable,
+ *     2) calls `HTTPServer::stop_async()` (non-blocking) via a global pointer.
+ *  - `App::run()` waits on the CV, joins the server thread, then calls
+ *    `HTTPServer::join_threads()` to ensure a clean teardown.
+ */
+
 namespace Vix
 {
+    using Level = Logger::Level;
+
     // ------------------------------------------------------
     // Process-wide state for graceful shutdown on SIGINT/SIGTERM
     // ------------------------------------------------------
@@ -18,10 +38,18 @@ namespace Vix
     static std::mutex g_stop_mutex;
     static std::condition_variable g_stop_cv;
 
+    /**
+     * @brief POSIX signal handler for coordinated shutdown.
+     *
+     * Notes:
+     *  - Minimal work inside the handler: set atomic flag, notify CV,
+     *    request server stop via non-blocking API.
+     *  - Logging is best-effort; avoid heavy operations here.
+     */
     static void handle_stop_signal(int)
     {
         auto &log = Logger::getInstance();
-        log.log(Logger::Level::INFO, "Received stop signal, shutting down...");
+        log.log(Level::INFO, "Received stop signal, shutting down...");
 
         g_stop_flag.store(true);
         g_stop_cv.notify_one();
@@ -36,6 +64,14 @@ namespace Vix
     // ------------------------------------------------------
     // App: configure logger, load config, acquire router/server
     // ------------------------------------------------------
+    /**
+     * @brief Construct the application: configure logger, load config, wire router.
+     *
+     * Logger defaults:
+     *  - Level: WARN (overridable at runtime if needed).
+     *  - Pattern: "[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v".
+     *  - Async mode toggled by env `VIX_LOG_ASYNC` (default: true).
+     */
     App::App()
         : config_(Config::getInstance()),
           router_(nullptr),
@@ -44,7 +80,7 @@ namespace Vix
         auto &log = Logger::getInstance();
 
         // Minimal, production-friendly defaults
-        log.setLevel(Logger::Level::WARN);
+        log.setLevel(Level::WARN);
         log.setPattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
 
         // Toggle async logging by environment (default ON in production)
@@ -52,12 +88,12 @@ namespace Vix
         if (utils::env_bool("VIX_LOG_ASYNC", true))
         {
             log.setAsync(true);
-            log.log(Logger::Level::INFO, "Logger initialized in ASYNC mode");
+            log.log(Level::INFO, "Logger initialized in ASYNC mode");
         }
         else
         {
             log.setAsync(false);
-            log.log(Logger::Level::INFO, "Logger initialized in SYNC mode");
+            log.log(Level::INFO, "Logger initialized in SYNC mode");
         }
 
         // Optional context for better observability (module tag)
@@ -85,6 +121,16 @@ namespace Vix
     // ------------------------------------------------------
     // App::run: start server, install signal handlers, wait until stop
     // ------------------------------------------------------
+    /**
+     * @brief Start server on the given port, handle signals, and tear down.
+     *
+     * Steps:
+     *  1) Validate & set port (via Config::setServerPort).
+     *  2) Install SIGINT (+SIGTERM when available).
+     *  3) Launch `HTTPServer::run()` in a background thread.
+     *  4) Wait on a condition variable until a stop signal arrives.
+     *  5) Join the server thread and call `server_.join_threads()`.
+     */
     void App::run(int port)
     {
         auto &log = Logger::getInstance();
@@ -118,7 +164,7 @@ namespace Vix
         // Ensure all worker threads complete before returning
         server_.join_threads();
 
-        log.log(Logger::Level::INFO, "Application shutdown complete");
+        log.log(Level::INFO, "Application shutdown complete");
     }
 
 } // namespace Vix

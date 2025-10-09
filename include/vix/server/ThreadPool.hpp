@@ -5,6 +5,51 @@
 #define _GNU_SOURCE
 #endif
 
+/**
+ * @file ThreadPool.hpp
+ * @brief Priority-based, production-ready task executor used across Vix.cpp.
+ *
+ * @details
+ * `Vix::ThreadPool` provides a bounded, grow-on-demand pool of worker threads
+ * that execute submitted tasks according to **priority**. It exposes a
+ * futures-based `enqueue()` API for regular tasks and a `periodicTask()` API
+ * for recurring jobs (metrics, housekeeping, etc.). The pool is safe for use
+ * from multiple producer threads.
+ *
+ * Key features
+ * - **Priority scheduling**: higher `priority` values run before lower ones.
+ * - **Futures API**: `enqueue()` returns `std::future<R>` of the callable.
+ * - **Timeout telemetry**: optional per-task timeout window logs slow tasks and
+ *   increments a global `timedOutTasks` counter (non-cancelling).
+ * - **Elastic sizing**: the pool can spawn additional workers up to
+ *   `maxThreads` when the queue is under pressure.
+ * - **Periodic jobs**: a capped set of dedicated periodic threads schedule
+ *   recurring work by reusing the pool (no long blocking inside workers).
+ *
+ * Threading model
+ * - **Workers**: vector of `std::thread` that pop from a priority queue.
+ * - **Periodic schedulers**: separate threads that submit work into the pool at
+ *   a fixed interval (limited by `maxPeriodicThreads`).
+ * - **Mutex/condvar**: protect the priority queue and coordinate producers
+ *   vs. consumers without busy-waiting.
+ *
+ * Lifetime & shutdown
+ * - The destructor requests stop, wakes all waiters, and joins workers and
+ *   periodic threads. In-flight tasks are allowed to finish.
+ * - Call `stopPeriodicTasks()` to stop only periodic schedulers (workers keep
+ *   running) when the application wants to quiesce background jobs.
+ *
+ * Usage example
+ * @code{.cpp}
+ * Vix::ThreadPool pool(/*threads*/4, /*maxThreads*/8, /*defaultPrio*/1);
+*auto fut = pool.enqueue(10, std::chrono::milliseconds(200), [] { /* work */ });
+*fut.get(); // wait for completion
+**pool.periodicTask(1, [] { /* metrics */ }, std::chrono::seconds(5));
+* // ... later
+    *pool.stopPeriodicTasks();
+*@endcode
+        * /
+
 #include <iostream>
 #include <vector>
 #include <queue>
@@ -21,17 +66,24 @@
 
 #include <vix/utils/Logger.hpp>
 
-namespace Vix
+    namespace Vix
 {
-
+    /**
+     * @brief Unit of scheduled work with a monotonic priority.
+     * @note Larger `priority` means earlier execution.
+     */
     struct Task
     {
-        std::function<void()> func;
-        int priority;
+        std::function<void()> func; //!< Work to execute.
+        int priority;               //!< Higher runs sooner.
 
         Task(std::function<void()> f, int p) : func(std::move(f)), priority(p) {}
         Task() : func(nullptr), priority(0) {}
 
+        /**
+         * @brief Ordering for std::priority_queue (max-heap by priority).
+         * Higher priority comes first, hence the inverted comparison.
+         */
         bool operator<(const Task &other) const
         {
             // high priority => executed before (so > for priority_queue max-heap)
@@ -39,6 +91,7 @@ namespace Vix
         }
     };
 
+    /** @brief RAII helper to track currently running tasks. */
     struct TaskGuard
     {
         std::atomic<int> &counter;
@@ -46,32 +99,51 @@ namespace Vix
         ~TaskGuard() { --counter; }
     };
 
+    /** @brief Lightweight, snapshot-style metrics exposed by the pool. */
     struct Metrics
     {
-        int pendingTasks;
-        int activeTasks;
-        int timedOutTasks;
+        int pendingTasks;  //!< Number of tasks currently queued.
+        int activeTasks;   //!< Number of tasks currently executing.
+        int timedOutTasks; //!< Cumulative count of tasks that exceeded their configured timeout.
     };
 
+    /**
+     * @brief Thread-local identifier assigned by the pool for logging/telemetry.
+     * @details Extern is defined in the corresponding implementation unit.
+     */
     extern thread_local int threadId;
 
+    /**
+     * @class ThreadPool
+     * @brief Priority-based task executor with futures API and periodic scheduling.
+     *
+     * @section config Configuration knobs
+     * - `threadCount`: initial number of worker threads to spawn.
+     * - `maxThreadCount` (aka `maxThreads`): hard ceiling for worker threads;
+     *   the pool may grow lazily up to this limit on pressure.
+     * - `priority`: default priority used by `enqueue(f, args...)` overload.
+     * - `maxPeriodic`: maximum simultaneously active periodic scheduler threads.
+     */
     class ThreadPool
     {
     private:
-        std::vector<std::thread> workers;
-        std::priority_queue<Task> tasks;
-        std::mutex m;
-        std::condition_variable condition;
-        std::atomic<bool> stop;
-        std::atomic<bool> stopPeriodic;
-        std::size_t maxThreads;
-        std::atomic<int> activeTasks;
-        std::vector<std::thread> periodicWorkers;
-        int threadPriority;
-        std::size_t maxPeriodicThreads;
-        std::atomic<std::size_t> activePeriodicThreads;
-        std::atomic<int> tasksTimedOut;
+        std::vector<std::thread> workers;               //!< Worker threads.
+        std::priority_queue<Task> tasks;                //!< Ready queue (highest priority first).
+        std::mutex m;                                   //!< Protects `tasks` and growth decisions.
+        std::condition_variable condition;              //!< Producer/consumer coordination.
+        std::atomic<bool> stop;                         //!< Global stop for workers.
+        std::atomic<bool> stopPeriodic;                 //!< Stop flag for periodic schedulers.
+        std::size_t maxThreads;                         //!< Upper bound for worker count.
+        std::atomic<int> activeTasks;                   //!< Number of tasks executing right now.
+        std::vector<std::thread> periodicWorkers;       //!< Periodic scheduler threads.
+        int threadPriority;                             //!< Default priority for enqueue(f,...).
+        std::size_t maxPeriodicThreads;                 //!< Cap for concurrent periodic schedulers.
+        std::atomic<std::size_t> activePeriodicThreads; //!< Current number of running periodic schedulers.
+        std::atomic<int> tasksTimedOut;                 //!< Cumulative timeout counter.
 
+        /**
+         * @brief Best-effort CPU affinity (Linux only). No-op elsewhere.
+         */
         void setThreadAffinity(std::size_t id)
         {
 #ifdef __linux__
@@ -83,7 +155,6 @@ namespace Vix
 
             const unsigned hc = std::thread::hardware_concurrency();
             const unsigned denom = (hc == 0u) ? 1u : hc;
-
             const unsigned coreU = static_cast<unsigned>(id % denom);
             const int core = static_cast<int>(coreU);
 
@@ -101,6 +172,9 @@ namespace Vix
 #endif
         }
 
+        /**
+         * @brief Spawn a single worker thread that consumes tasks until stop.
+         */
         void createThread(std::size_t id)
         {
             workers.emplace_back(
@@ -153,37 +227,25 @@ namespace Vix
         }
 
     public:
+        /**
+         * @brief Construct a thread pool.
+         * @param threadCount    Initial number of worker threads to spawn.
+         * @param maxThreadCount Upper bound on worker threads; pool may grow up to this.
+         * @param priority       Default priority used by the simpler `enqueue()` overloads.
+         * @param maxPeriodic    Maximum concurrently active periodic scheduler threads.
+         */
         ThreadPool(std::size_t threadCount, std::size_t maxThreadCount, int priority, std::size_t maxPeriodic = 4)
-            : workers() // vector
-              ,
-              tasks() // priority_queue
-              ,
-              m() // mutex
-              ,
-              condition() // condition_variable
-              ,
-              stop(false) // atomic<bool>
-              ,
-              stopPeriodic(false) // atomic<bool>
-              ,
-              maxThreads(maxThreadCount) // size_t
-              ,
-              activeTasks(0) // atomic<int>
-              ,
-              periodicWorkers() // vector
-              ,
-              threadPriority(priority) // int
-              ,
-              maxPeriodicThreads(maxPeriodic) // size_t
-              ,
-              activePeriodicThreads(0) // atomic<size_t>
-              ,
-              tasksTimedOut(0) // atomic<int>
+            : workers(), tasks(), m(), condition(), stop(false), stopPeriodic(false),
+              maxThreads(maxThreadCount), activeTasks(0), periodicWorkers(), threadPriority(priority),
+              maxPeriodicThreads(maxPeriodic), activePeriodicThreads(0), tasksTimedOut(0)
         {
             for (std::size_t i = 0; i < threadCount; ++i)
                 createThread(i);
         }
 
+        /**
+         * @brief Snapshot pool metrics (non-blocking).
+         */
         Metrics getMetrics()
         {
             std::lock_guard<std::mutex> lock(m);
@@ -194,6 +256,16 @@ namespace Vix
             };
         }
 
+        /**
+         * @brief Enqueue a callable with explicit priority and timeout.
+         * @tparam F Callable type (invoked with `Args...`).
+         * @tparam Args Parameter pack forwarded to the callable.
+         * @param priority Higher executes sooner relative to other tasks.
+         * @param timeout  Soft budget for execution time; if exceeded, a warning
+         *                 is logged and `timedOutTasks` is incremented. The task
+         *                 is not preempted or cancelled.
+         * @return `std::future<R>` where `R = std::invoke_result_t<F, Args...>`.
+         */
         template <class F, class... Args>
         auto enqueue(int priority, std::chrono::milliseconds timeout, F &&f, Args &&...args)
             -> std::future<typename std::invoke_result<F, Args...>::type>
@@ -252,12 +324,14 @@ namespace Vix
             return res;
         }
 
+        /** @overload Enqueue with explicit priority and no timeout. */
         template <class F, class... Args>
         auto enqueue(int priority, F &&f, Args &&...args)
         {
             return enqueue(priority, std::chrono::milliseconds(0), std::forward<F>(f), std::forward<Args>(args)...);
         }
 
+        /** @overload Enqueue using the pool's default priority. */
         template <class F, class... Args>
         auto enqueue(F &&f, Args &&...args)
             -> std::future<typename std::invoke_result<F, Args...>::type>
@@ -265,6 +339,17 @@ namespace Vix
             return enqueue(threadPriority, std::forward<F>(f), std::forward<Args>(args)...);
         }
 
+        /**
+         * @brief Schedule a recurring task executed via the pool at a fixed interval.
+         * @param priority Priority used for each scheduled run.
+         * @param func     Callable to run.
+         * @param interval Period between successive runs.
+         *
+         * @details Spawns (at most) `maxPeriodicThreads` scheduler threads.
+         * Each scheduler submits work using `enqueue()` and then sleeps for
+         * `interval`. If a run exceeds `interval`, a warning is logged, but the
+         * next run is not skipped (simple fixed-delay schedule).
+         */
         void periodicTask(int priority, std::function<void()> func, std::chrono::milliseconds interval)
         {
             // Limit the number of active periodic threads
@@ -307,18 +392,27 @@ namespace Vix
                 activePeriodicThreads.fetch_sub(1); });
         }
 
+        /** @brief True if no task is executing and the queue is empty. */
         bool isIdle()
         {
             std::lock_guard<std::mutex> lock(m);
             return activeTasks.load() == 0 && tasks.empty();
         }
 
+        /** @brief Stop only periodic schedulers; workers remain available. */
         void stopPeriodicTasks()
         {
             stopPeriodic = true;
             condition.notify_all();
         }
 
+        /**
+         * @brief Destructor: cooperatively stop and join all threads.
+         *
+         * @details Signals `stop` and `stopPeriodic`, wakes all waiting
+         * workers, then joins both worker and periodic threads. In-flight
+         * tasks are allowed to complete.
+         */
         ~ThreadPool()
         {
             {
@@ -340,4 +434,4 @@ namespace Vix
 
 } // namespace Vix
 
-#endif
+#endif // VIX_THREADPOOL_HPP

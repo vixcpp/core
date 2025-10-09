@@ -1,26 +1,80 @@
 #include <vix/server/HTTPServer.hpp>
 #include <vix/utils/Logger.hpp>
 
+/**
+ * @file HTTPServer.cpp
+ * @brief Implementation details for Vix::HTTPServer.
+ *
+ * @section impl_overview Overview (for contributors)
+ * The HTTP server coordinates:
+ *  1) TCP accept on a listening socket (Boost.Asio),
+ *  2) HTTP read/parse/write (delegated to Session which wraps Boost.Beast),
+ *  3) Route resolution (Router), and
+ *  4) CPU-bound user handler execution (ThreadPool).
+ *
+ * The I/O loop remains responsive because user work is offloaded to a
+ * dedicated thread-pool. This file documents lifecycle, error-handling,
+ * threading, and shutdown semantics.
+ *
+ *  - Lifecycle: ctor → init_acceptor() → run() → {start_accept(), monitor_metrics(), start_io_threads()} → stop_async() → join_threads() → dtor.
+ *  - Threading: N I/O threads run io_context_. Request handling is queued on
+ *    request_thread_pool_.
+ *  - Shutdown: stop_async() is cooperative and thread-safe; it closes the
+ *    acceptor, stops io_context_, and lets the pool drain. Call join_threads()
+ *    from the control thread for deterministic shutdown.
+ *
+ * @note Public API and behavioral contract live in the header docs. This file
+ *       focuses on maintainers' notes and rationale.
+ */
+
+#if defined(__linux__)
+#include <pthread.h>
+#include <sched.h>
+#endif
+
 namespace Vix
 {
+    /**
+     * @brief Pin the current thread to a CPU core on Linux.
+     *
+     * @details Useful on systems where CPU affinity can improve cache locality
+     * and reduce context switches for high-throughput servers. No-ops on
+     * non-Linux platforms.
+     *
+     * @param thread_id 0-based index of the worker attempting affinity.
+     */
     void set_affinity(int thread_id)
     {
 #ifdef __linux__
         unsigned int hc = std::thread::hardware_concurrency();
         if (hc == 0)
-            hc = 1;
+            hc = 1; // Fallback to 1 when unknown
         cpu_set_t cpuset;
         CPU_ZERO(&cpuset);
         CPU_SET(thread_id % hc, &cpuset);
+        // Best-effort: failure is non-fatal.
         pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
 #endif
     }
 
+    /**
+     * @brief Construct the HTTP server and install default routing + safety rails.
+     *
+     * @throws std::invalid_argument when port is outside [1024, 65535].
+     * @throws std::system_error for bind/listen errors inside init_acceptor().
+     *
+     * Implementation notes:
+     *  - Creates a shared io_context_ to be driven by start_io_threads().
+     *  - Instantiates a Router with a JSON 404 fallback, including proper HEAD
+     *    semantics (no body, correct Content-Length).
+     *  - Initializes the acceptor on the configured port.
+     */
     HTTPServer::HTTPServer(Config &config)
         : config_(config),
           io_context_(std::make_shared<net::io_context>()),
           acceptor_(nullptr),
           router_(std::make_shared<Router>()),
+          // ThreadPool(capacityThreads, queueLimit, minSpare, maxSpare)
           request_thread_pool_(NUMBER_OF_THREADS, 100, 0, 4),
           io_threads_(),
           stop_requested_(false)
@@ -28,21 +82,20 @@ namespace Vix
         auto &log = Logger::getInstance();
         try
         {
-            // ---- Fallback 404 JSON propre sur le Router ----
+            // ---- Router: structured JSON 404 fallback (incl. HEAD handling) ----
             router_->setNotFoundHandler(
                 [](const http::request<http::string_body> &req,
                    http::response<http::string_body> &res)
                 {
                     res.result(http::status::not_found);
 
-                    // Réponse différente pour HEAD (pas de body, mais Content-Length correct)
                     if (req.method() == http::verb::head)
                     {
-                        // corps vide mais en-têtes JSON cohérents
+                        // HEAD → no body, consistent headers
                         res.set(http::field::content_type, "application/json");
                         res.set(http::field::connection, "close");
                         res.body().clear();
-                        res.prepare_payload(); // -> Content-Length: 0
+                        res.prepare_payload(); // Content-Length: 0
                         return;
                     }
 
@@ -53,11 +106,12 @@ namespace Vix
                         {"path", std::string(req.target())}};
 
                     Vix::Response::json_response(res, j, res.result());
-                    // Forcer la fermeture pour éviter que des clients attendent indéfiniment
+                    // Force close to avoid clients lingering for keep-alive.
                     res.set(http::field::connection, "close");
-                    res.prepare_payload(); // -> Content-Length correct
+                    res.prepare_payload();
                 });
 
+            // ---- Validate and bind port ----
             int port = config_.getServerPort();
             if (port < 1024 || port > 65535)
             {
@@ -73,13 +127,24 @@ namespace Vix
         }
         catch (const std::exception &e)
         {
+            // Propagate after logging to aid early-boot diagnostics
             log.log(Logger::Level::ERROR, "Error initializing HTTPServer: {}", e.what());
             throw;
         }
     }
 
+    /**
+     * @brief Dtor: currently default. Ensure control path calls stop_async() and join_threads().
+     */
     HTTPServer::~HTTPServer() = default;
 
+    /**
+     * @brief Create/bind/listen the acceptor.
+     * @throws std::system_error on any socket operation failure.
+     *
+     * Rationale: we fail-fast during boot rather than defer bind/listen errors
+     * into the accept loop.
+     */
     void HTTPServer::init_acceptor(unsigned short port)
     {
         auto &log = Logger::getInstance();
@@ -106,6 +171,13 @@ namespace Vix
         log.log(Logger::Level::INFO, "Acceptor initialized on port {}", port);
     }
 
+    /**
+     * @brief Launch I/O workers that drive io_context_->run().
+     *
+     * Each thread optionally sets CPU affinity (Linux only) and then runs the
+     * I/O loop. Exceptions inside run() are logged and the thread exits
+     * gracefully.
+     */
     void HTTPServer::start_io_threads()
     {
         auto &log = Logger::getInstance();
@@ -130,6 +202,18 @@ namespace Vix
         }
     }
 
+    /**
+     * @brief Bring the server online.
+     *
+     * Sequence:
+     *  1) start_accept()  — install the accept-loop callback,
+     *  2) monitor_metrics() — schedule periodic pool metrics logging,
+     *  3) start_io_threads() — spawn I/O workers that execute the loop.
+     *
+     * @note run() is non-blocking here because the I/O is driven by background
+     *       threads. The control thread can install signal handlers and wait,
+     *       or proceed to do other coordination before calling stop_async().
+     */
     void HTTPServer::run()
     {
         start_accept();
@@ -137,13 +221,29 @@ namespace Vix
         start_io_threads();
     }
 
+    /**
+     * @brief Compute how many I/O threads to spawn.
+     *
+     * Heuristic: max(1, hardware_concurrency/2). This balances context-switch
+     * pressure with ability to parallelize kernel I/O completions.
+     */
     int HTTPServer::calculate_io_thread_count()
     {
         unsigned int hc = std::thread::hardware_concurrency();
-        // au moins 1, souvent hc/2 est un bon compromis
         return std::max(1u, hc ? hc / 2 : 1u);
     }
 
+    /**
+     * @brief Install an async_accept loop that dispatches sessions to the pool.
+     *
+     * On each accept:
+     *  - If success and not stopping, queue a task on request_thread_pool_ to
+     *    handle the newly accepted socket via handle_client().
+     *  - Immediately re-arm accept for the next connection unless stopping.
+     *
+     * @warning The accept callback runs on an I/O thread; heavy work must be
+     *          delegated to the pool (as done here) to keep the I/O loop light.
+     */
     void HTTPServer::start_accept()
     {
         auto socket = std::make_shared<tcp::socket>(*io_context_);
@@ -160,15 +260,22 @@ namespace Vix
             if (!stop_requested_) start_accept(); });
     }
 
+    /**
+     * @brief Per-connection session lifecycle.
+     *
+     * Delegates to Session (which owns the Beast HTTP read/write loop) and
+     * eventually calls Router::handle_request(). The NotFound handler installed
+     * in the constructor guarantees a consistent JSON 404 for unmatched routes.
+     */
     void HTTPServer::handle_client(std::shared_ptr<tcp::socket> socket_ptr, std::shared_ptr<Router> router)
     {
-        // La Session se charge de lire/écrire et appelle Router::handle_request().
-        // Comme on a configuré le notFoundHandler ci-dessus, toute route non matchée
-        // aura une réponse JSON 404 bien formée avec Connection: close.
         auto session = std::make_shared<Session>(socket_ptr, *router);
         session->run();
     }
 
+    /**
+     * @brief Best-effort socket close utility.
+     */
     void HTTPServer::close_socket(std::shared_ptr<tcp::socket> socket)
     {
         boost::system::error_code ec;
@@ -176,6 +283,15 @@ namespace Vix
         socket->close(ec);
     }
 
+    /**
+     * @brief Request cooperative shutdown from any thread.
+     *
+     * Steps:
+     *  1) Mark stop_requested_,
+     *  2) Close acceptor_ (unblocks async_accept),
+     *  3) Stop io_context_ (lets run() exit on all I/O threads),
+     *  4) The request pool is expected to drain queued work.
+     */
     void HTTPServer::stop_async()
     {
         stop_requested_ = true;
@@ -184,6 +300,9 @@ namespace Vix
         io_context_->stop();
     }
 
+    /**
+     * @brief Join I/O worker threads. Call from the control thread after stop_async().
+     */
     void HTTPServer::join_threads()
     {
         for (auto &t : io_threads_)
@@ -191,6 +310,12 @@ namespace Vix
                 t.join();
     }
 
+    /**
+     * @brief Periodically log request thread-pool metrics.
+     *
+     * Uses ThreadPool::periodicTask to schedule a 5-second interval reporter.
+     * The exact metrics structure is defined by ThreadPool::getMetrics().
+     */
     void HTTPServer::monitor_metrics()
     {
         request_thread_pool_.periodicTask(0, [this]()

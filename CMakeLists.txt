@@ -1,18 +1,29 @@
 # ====================================================================
-# Vix.cpp — Core Module
+# Vix.cpp — Core Module (Documented)
 # ====================================================================
 # Purpose:
-#   - HTTP server, routing, config, session, etc.
-#   - If sources exist in ./src, build a static library.
-#     Otherwise, fallback to header-only (INTERFACE).
+#   Build configuration for the Vix core module (HTTP server, routing,
+#   config, session, etc.). When sources exist under ./src, we build a
+#   STATIC library; otherwise we fall back to a header-only INTERFACE
+#   target (suitable for embedding or quick prototyping).
 #
-# Targets:
-#   - vix_core   (real target)
-#   - Vix::core  (alias)
+# Public Targets:
+#   - vix_core   : The actual library target (STATIC or INTERFACE)
+#   - Vix::core  : Namespaced alias for consumers
 #
 # Dependencies:
 #   - PUBLIC: Vix::utils, Vix::json
-#   - STATIC mode adds Boost (filesystem, system), optionally OpenSSL/MySQL.
+#   - STATIC mode: Boost::filesystem, Boost::system (and optionally OpenSSL/MySQL)
+#
+# Options:
+#   - VIX_CORE_WITH_OPENSSL : Enable TLS (default ON)
+#   - VIX_CORE_WITH_MYSQL   : Link MySQL client (default OFF)
+#   - VIX_ENABLE_SANITIZERS : Inherit sanitizers from parent project
+#
+# Notes:
+#   - This CMake file is usable standalone or from a superproject.
+#   - In standalone mode, install/export rules are provided.
+#   - We select the JSON backend target dynamically (Vix::json / vix::json / vix_json).
 # ====================================================================
 
 cmake_minimum_required(VERSION 3.20)
@@ -31,9 +42,11 @@ option(VIX_CORE_WITH_OPENSSL "Enable HTTPS/TLS support using OpenSSL" ON)
 option(VIX_CORE_WITH_MYSQL   "Enable MySQL client linkage" OFF)
 
 # ------------------------ Sources discovery --------------------------
+# If any .cpp exists under src/, we switch to STATIC build mode.
 file(GLOB_RECURSE CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
 # ------------------------ Resolve JSON target ------------------------
+# Pick the first existing target name among common aliases.
 set(JSON_TARGET "Vix::json")
 if (NOT TARGET ${JSON_TARGET})
   if (TARGET vix::json)
@@ -47,7 +60,8 @@ if (NOT TARGET ${JSON_TARGET})
   endif()
 endif()
 
-# Helper: appliquer sanitizers selon type de cible (STATIC vs INTERFACE)
+# ------------------------ Helper: Sanitizers -------------------------
+# Apply -fsanitize flags either PRIVATELY (for STATIC) or as INTERFACE (header-only).
 function(vix_core_apply_sanitizers tgt scope)
   if (VIX_ENABLE_SANITIZERS AND TARGET ${tgt})
     message(STATUS "[core] enabling sanitizers on ${tgt} (${scope})")
@@ -65,8 +79,9 @@ endfunction()
 if (CORE_SOURCES)
   message(STATUS "[core] Building STATIC library with detected sources.")
 
+  # Required runtime deps when compiling sources
   find_package(Boost 1.78 REQUIRED COMPONENTS filesystem system)
-  # spdlog peut déjà venir de utils, mais on garde pour build autonome
+  # spdlog may already be brought by Vix::utils; keep for standalone builds
   find_package(spdlog REQUIRED)
 
   if (VIX_CORE_WITH_OPENSSL)
@@ -77,12 +92,12 @@ if (CORE_SOURCES)
   add_library(Vix::core ALIAS vix_core)
   target_compile_features(vix_core PUBLIC cxx_std_20)
 
-  # Debug-only: activer libstdc++ debug mode si souhaité
+  # Debug-mode safety: enable libstdc++ debug iterators if desired
   if (CMAKE_BUILD_TYPE MATCHES "Debug")
     target_compile_definitions(vix_core PRIVATE -D_GLIBCXX_DEBUG)
   endif()
 
-  # Public headers pour #include <vix/...>
+  # Public headers for #include <vix/...>
   target_include_directories(vix_core
     PUBLIC
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -101,9 +116,9 @@ if (CORE_SOURCES)
     target_link_libraries(vix_core PUBLIC OpenSSL::SSL OpenSSL::Crypto)
   endif()
 
-  # ----- MySQL (optionnel) -----
+  # ----- Optional: MySQL linkage -----
   if (VIX_CORE_WITH_MYSQL)
-    # On essaie d'abord le Connector/C++ 8 (X DevAPI), puis le legacy.
+    # Prefer Connector/C++ 8 (X DevAPI); fallback to legacy if needed
     find_library(MYSQLCPP_CONN8_LIB mysqlcppconn8)
     if (MYSQLCPP_CONN8_LIB)
       target_link_libraries(vix_core PRIVATE ${MYSQLCPP_CONN8_LIB})
@@ -121,7 +136,7 @@ if (CORE_SOURCES)
     target_compile_definitions(vix_core PUBLIC VIX_CORE_WITH_MYSQL=0)
   endif()
 
-  # Sanitizers (uniquement si activés au top-level)
+  # Sanitizers (only if enabled at top-level)
   vix_core_apply_sanitizers(vix_core PRIVATE)
 
   set_target_properties(vix_core PROPERTIES
@@ -131,7 +146,7 @@ if (CORE_SOURCES)
     EXPORT_NAME core
   )
 
-  # N’installe/exporte que si on build ce module seul (pas via superproject)
+  # Install/export only in standalone mode
   if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     install(TARGETS vix_core
       EXPORT vix_coreTargets
@@ -163,10 +178,10 @@ else()
     ${JSON_TARGET}
   )
 
-  # Définir quand même le flag pour éviter les #if non définis côté headers
+  # Define the feature macro for header-only consumers as well
   target_compile_definitions(vix_core INTERFACE VIX_CORE_WITH_MYSQL=0)
 
-  # Sanitizers : propager aux consommateurs si activés
+  # Propagate sanitizers to dependents if requested
   vix_core_apply_sanitizers(vix_core INTERFACE)
 endif()
 
