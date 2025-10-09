@@ -1,13 +1,34 @@
 #include <vix/session/Session.hpp>
 
+/**
+ * @file Session.cpp
+ * @brief Implementation notes for Vix::Session (maintainers-focused docs).
+ *
+ * Responsibilities covered here:
+ *  - Socket options and timer lifecycle
+ *  - Request parsing, error mapping, and size limits
+ *  - WAF checks (XSS / SQLi) before dispatch
+ *  - Keep‑alive vs. close semantics
+ *  - Exception boundaries around Router handlers
+ */
+
 namespace Vix
 {
     using Level = Logger::Level;
     static Logger &logger = Logger::getInstance();
 
+    // --- Regex rules for the lightweight WAF ---
+    // Intentionally conservative, aimed at catching trivial exploit payloads
+    // without deep parsing. Keep these in sync with docs and tests.
     const std::regex Session::XSS_PATTERN(R"(<script.*?>.*?</script>)", std::regex::icase);
     const std::regex Session::SQL_PATTERN(R"((\bUNION\b|\bSELECT\b|\bINSERT\b|\bDELETE\b|\bUPDATE\b|\bDROP\b))", std::regex::icase);
 
+    /**
+     * @brief Configure the accepted socket and initialize members.
+     *
+     * - Disables Nagle (TCP_NODELAY) to reduce latency for small responses.
+     * - Parser and timer objects are created lazily per‑request.
+     */
     Session::Session(std::shared_ptr<tcp::socket> socket, Router &router)
         : socket_(std::move(socket)), router_(router),
           buffer_(),
@@ -21,12 +42,21 @@ namespace Vix
             logger.log(Level::WARN, "[Session] Failed to disable Nagle: {}", ec.message());
     }
 
+    /**
+     * @brief Entry point: kick off the first async read.
+     */
     void Session::run()
     {
         logger.log(Level::DEBUG, "[Session] Starting new session");
         read_request();
     }
 
+    /**
+     * @brief Arm a per‑request timeout.
+     *
+     * We use a weak_ptr to avoid accessing a canceled/destroyed timer on late
+     * completions. On expiration (no error), the socket is closed gracefully.
+     */
     void Session::start_timer()
     {
         timer_ = std::make_shared<net::steady_timer>(socket_->get_executor());
@@ -37,7 +67,7 @@ namespace Vix
         timer_->async_wait([this, self, weak_timer](const boost::system::error_code &ec)
                            {
             auto t = weak_timer.lock();
-            if (!t) return;
+            if (!t) return; // timer already destroyed
 
             if (!ec)
             {
@@ -46,6 +76,7 @@ namespace Vix
             } });
     }
 
+    /** @brief Cancel an active timer; ignore benign errors. */
     void Session::cancel_timer()
     {
         if (timer_)
@@ -55,6 +86,14 @@ namespace Vix
         }
     }
 
+    /**
+     * @brief Prepare parser, enforce body limit, and read the request.
+     *
+     * On read completion:
+     *  - Maps connection errors (EOF/reset) to DEBUG; other errors to ERROR.
+     *  - Releases the parsed request from Beast's parser and defers to
+     *    handle_request() for dispatch.
+     */
     void Session::read_request()
     {
         if (!socket_ || !socket_->is_open())
@@ -111,6 +150,15 @@ namespace Vix
             });
     }
 
+    /**
+     * @brief Perform WAF, size checks, and dispatch to the Router.
+     *
+     * - Rejects absent requests (safety) and over‑limit bodies.
+     * - Applies simple WAF regexes on URL and body.
+     * - Calls `router_.handle_request(req_, res)` under exception boundary.
+     * - Forces a non‑OK result to an error if the router failed and left OK.
+     * - Sets `Connection: keep-alive|close` and writes the response.
+     */
     void Session::handle_request(const boost::system::error_code &ec,
                                  std::optional<http::request<http::string_body>> parsed_req)
     {
@@ -164,6 +212,8 @@ namespace Vix
 
         if (!ok)
         {
+            // If a handler signaled failure but forgot to set an error status,
+            // downgrade OK to 400 to avoid sending a misleading success.
             if (res.result() == http::status::ok)
                 res.result(http::status::bad_request);
         }
@@ -172,6 +222,9 @@ namespace Vix
         send_response(std::move(res));
     }
 
+    /**
+     * @brief Async write response and manage keep‑alive re‑arm.
+     */
     void Session::send_response(http::response<http::string_body> res)
     {
         if (!socket_ || !socket_->is_open())
@@ -201,10 +254,15 @@ namespace Vix
                                   read_request();
                               }
                               else
+                              {
                                   close_socket_gracefully();
+                              }
                           });
     }
 
+    /**
+     * @brief Build and send a JSON error response, then close.
+     */
     void Session::send_error(http::status status, const std::string &msg)
     {
         http::response<http::string_body> res;
@@ -213,6 +271,9 @@ namespace Vix
         send_response(std::move(res));
     }
 
+    /**
+     * @brief Shutdown both directions and close the socket, ignoring benign errors.
+     */
     void Session::close_socket_gracefully()
     {
         if (!socket_ || !socket_->is_open())
@@ -225,6 +286,11 @@ namespace Vix
         logger.log(Level::DEBUG, "[Session] Socket closed");
     }
 
+    /**
+     * @brief Minimal WAF: block suspiciously long URIs and trivial XSS/SQLi.
+     *
+     * @return true if request passes the checks; false otherwise.
+     */
     bool Session::waf_check_request(const http::request<http::string_body> &req)
     {
         if (req.target().size() > 4096)
@@ -255,4 +321,5 @@ namespace Vix
 
         return true;
     }
+
 } // namespace Vix

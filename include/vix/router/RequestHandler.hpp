@@ -1,6 +1,36 @@
 #ifndef VIX_REQUEST_HANDLER_HPP
 #define VIX_REQUEST_HANDLER_HPP
 
+/**
+ * @file RequestHandler.hpp
+ * @brief Functional adapter between user-defined handlers and the Vix routing system.
+ *
+ * @details
+ * `Vix::RequestHandler` enables developers to register simple lambdas or callable
+ * objects as route handlers without manually subclassing `IRequestHandler`.
+ * It provides:
+ * - Automatic **parameter extraction** from route patterns (e.g. `/users/{id}`).
+ * - A lightweight **ResponseWrapper** offering Express-like chaining (e.g. `res.status(200).json({...})`).
+ * - JSON conversion utilities bridging between `Vix::json` tokens and `nlohmann::json`.
+ *
+ * ### Supported handler signatures
+ * ```cpp
+ * void handler(const http::request<http::string_body>& req, ResponseWrapper& res);
+ * void handler(const http::request<http::string_body>& req, ResponseWrapper& res,
+ *              std::unordered_map<std::string, std::string>& params);
+ * ```
+ *
+ * ### Example
+ * ```cpp
+ * router.add_route(http::verb::get, "/users/{id}",
+ *     std::make_shared<RequestHandler>("/users/{id}",
+ *         [](const auto& req, Vix::ResponseWrapper& res, auto& params){
+ *             res.status(200).json({{"id", params["id"]}, {"ok", true}});
+ *         }
+ *     ));
+ * ```
+ */
+
 #include <string>
 #include <string_view>
 #include <memory>
@@ -16,24 +46,25 @@
 
 #include <vix/router/IRequestHandler.hpp>
 #include <vix/http/Response.hpp>
-#include <vix/json/Simple.hpp> // token/kvs/array_t + helpers obj()/array()
+#include <vix/json/Simple.hpp>
 
 namespace Vix
 {
     namespace http = boost::beast::http;
 
     // ------------------------------------------------------------------
-    // Conversion helpers (Vix::json -> nlohmann::json)
+    // JSON conversion utilities (Vix::json → nlohmann::json)
     // ------------------------------------------------------------------
 
     inline nlohmann::json token_to_nlohmann(const Vix::json::token &t);
 
+    /**
+     * @brief Convert Vix::json::kvs (flat key/value pairs) to nlohmann::json.
+     */
     inline nlohmann::json kvs_to_nlohmann(const Vix::json::kvs &list)
     {
         nlohmann::json obj = nlohmann::json::object();
         const auto &a = list.flat;
-
-        // ignorer proprement le dernier élément si liste impaire
         const size_t n = a.size() - (a.size() % 2);
 
         for (size_t i = 0; i < n; i += 2)
@@ -41,7 +72,6 @@ namespace Vix
             const auto &k = a[i].v;
             const auto &v = a[i + 1];
 
-            // clé doit être string
             if (!std::holds_alternative<std::string>(k))
                 continue;
             const std::string &key = std::get<std::string>(k);
@@ -81,8 +111,15 @@ namespace Vix
     }
 
     // ------------------------------------------------------------------
-    // Path params extraction: pattern "/users/{id}/posts/{pid}"
+    // Path parameter extraction from route pattern
     // ------------------------------------------------------------------
+    /**
+     * @brief Extract named parameters from a route pattern and a request path.
+     *
+     * @param pattern e.g. "/users/{id}/posts/{pid}"
+     * @param path    Actual request path (e.g. "/users/42/posts/7")
+     * @return A map {"id" → "42", "pid" → "7"}
+     */
     inline std::unordered_map<std::string, std::string>
     extract_params_from_path(const std::string &pattern, std::string_view path)
     {
@@ -114,35 +151,39 @@ namespace Vix
     }
 
     // ------------------------------------------------------------------
-    // ResponseWrapper: Express-like chaining
+    // ResponseWrapper — Express-like response builder
     // ------------------------------------------------------------------
+    /**
+     * @brief Provides an ergonomic API for building HTTP responses.
+     *
+     * Example:
+     * ```cpp
+     * res.status(201).json({{"ok", true}, {"id", 7}});
+     * ```
+     */
     struct ResponseWrapper
     {
         http::response<http::string_body> &res;
 
         explicit ResponseWrapper(http::response<http::string_body> &r) noexcept : res(r) {}
 
-        // status(http::status) & status(int)
         ResponseWrapper &status(http::status code) noexcept
         {
             res.result(code);
             return *this;
         }
-
         ResponseWrapper &status(int code) noexcept
         {
             res.result(static_cast<http::status>(code));
             return *this;
         }
 
-        // text/plain (garde le status courant)
         ResponseWrapper &text(std::string_view data)
         {
             Vix::Response::text_response(res, data, res.result());
             return *this;
         }
 
-        // JSON — braced-list plate → préféré par l’overload resolution
         ResponseWrapper &json(std::initializer_list<Vix::json::token> list)
         {
             auto j = kvs_to_nlohmann(Vix::json::kvs{list});
@@ -150,7 +191,6 @@ namespace Vix
             return *this;
         }
 
-        // JSON — Vix::json::kvs (objets plats ou imbriqués via token)
         ResponseWrapper &json(const Vix::json::kvs &kv)
         {
             auto j = kvs_to_nlohmann(kv);
@@ -158,20 +198,16 @@ namespace Vix
             return *this;
         }
 
-        // JSON — nlohmann::json direct
         ResponseWrapper &json(const nlohmann::json &j)
         {
             Vix::Response::json_response(res, j, res.result());
             return *this;
         }
 
-        // JSON — template générique (évite les collisions via SFINAE)
-        template <
-            typename J,
-            typename = std::enable_if_t<
-                !std::is_same_v<std::decay_t<J>, nlohmann::json> &&
-                !std::is_same_v<std::decay_t<J>, Vix::json::kvs> &&
-                !std::is_same_v<std::decay_t<J>, std::initializer_list<Vix::json::token>>>>
+        template <typename J,
+                  typename = std::enable_if_t<!std::is_same_v<std::decay_t<J>, nlohmann::json> &&
+                                              !std::is_same_v<std::decay_t<J>, Vix::json::kvs> &&
+                                              !std::is_same_v<std::decay_t<J>, std::initializer_list<Vix::json::token>>>>
         ResponseWrapper &json(const J &data)
         {
             Vix::Response::json_response(res, data, res.result());
@@ -180,11 +216,14 @@ namespace Vix
     };
 
     // ------------------------------------------------------------------
-    // RequestHandler<Handler> : adapte les lambdas utilisateur
-    //   Signatures supportées:
-    //     (req, res, params)  — avec params {name -> value}
-    //     (req, res)
+    // RequestHandler<Handler> — generic adapter
     // ------------------------------------------------------------------
+    /**
+     * @tparam Handler User-provided callable (lambda, functor, etc.).
+     *
+     * @brief Bridges user handlers to the internal IRequestHandler interface.
+     * Supports both (req, res) and (req, res, params) signatures.
+     */
     template <typename Handler>
     class RequestHandler : public IRequestHandler
     {

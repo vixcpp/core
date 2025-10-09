@@ -1,6 +1,57 @@
 #ifndef VIX_ROUTER_HPP
 #define VIX_ROUTER_HPP
 
+/**
+ * @file Router.hpp
+ * @brief Trie-based HTTP router with method-aware paths and pluggable 404 handler.
+ *
+ * @details
+ * `Vix::Router` maps HTTP requests to handlers using a compact trie keyed by
+ * **method-prefixed path segments**. Each node may represent a literal segment
+ * or a **parameter segment** (e.g., `{id}`), allowing routes like:
+ *
+ * - `GET /users` → list users
+ * - `GET /users/{id}` → fetch by id
+ * - `POST /users` → create user
+ *
+ * A default **NotFound** callback may be installed to customize 404 responses
+ * (e.g., JSON body, diagnostics, or API version hints). Otherwise, a built-in
+ * JSON 404 is returned.
+ *
+ * ### Path matching model
+ * The router builds keys by concatenating the method string and the path, then
+ * splitting on `/`. Parameter segments are stored with the wildcard key `*`.
+ * Extraction of parameter values is delegated to request handlers
+ * (e.g., `RequestHandler<T>`), which can decode token names from the
+ * route pattern they were registered with.
+ *
+ * ### CORS preflight
+ * `OPTIONS` requests are answered directly by `handle_request()` with
+ * `204 No Content` and permissive CORS headers. Application code does not need
+ * to register a handler for preflight.
+ *
+ * ### Thread-safety
+ * Route registration is typically done at startup **before** serving traffic.
+ * If you mutate the route table after `HTTPServer::run()`, ensure external
+ * synchronization.
+ *
+ * ### Usage example
+ * @code{.cpp}
+ * Router r;
+ * r.setNotFoundHandler([](const http::request<http::string_body>& req,
+ *                         http::response<http::string_body>& res){
+ *   res.result(http::status::not_found);
+ *   Vix::Response::text(res, "Not found", res.result());
+ * });
+ *
+ * auto show = std::make_shared<RequestHandler<ShowUser>>();
+ * r.add_route(http::verb::get, "/users/{id}", show);
+ *
+ * http::response<http::string_body> res;
+ * bool ok = r.handle_request(req, res);
+ * @endcode
+ */
+
 #include <vix/http/Response.hpp>
 #include <vix/router/IRequestHandler.hpp>
 #include <vix/router/RequestHandler.hpp>
@@ -16,6 +67,12 @@ namespace Vix
 {
     namespace http = boost::beast::http;
 
+    /**
+     * @brief Trie node representing a path segment.
+     * - `children` maps segment token → next node.
+     * - `isParam` marks wildcard (parameter) segments (stored under key `*`).
+     * - `paramName` holds the token name (e.g., "id") for handlers that need it.
+     */
     struct RouteNode
     {
         std::unordered_map<std::string, std::unique_ptr<RouteNode>> children;
@@ -24,18 +81,40 @@ namespace Vix
         std::string paramName;
     };
 
+    /**
+     * @class Router
+     * @brief HTTP router resolving requests to `IRequestHandler` instances.
+     */
     class Router
     {
     public:
+        /**
+         * @brief Signature for the user-provided NotFound handler.
+         */
         using NotFoundHandler = std::function<void(
             const http::request<http::string_body> &,
             http::response<http::string_body> &)>;
 
+        /** @brief Construct an empty router with a fresh trie root. */
         Router() : root_(std::make_unique<RouteNode>()) {}
 
-        // Permet de personnaliser la réponse 404
+        /**
+         * @brief Install a custom 404 callback.
+         * @param h Functor that fills `res` (status/body/headers). It should
+         *          call `prepare_payload()` or use helpers like `Response::json_response()`.
+         */
         void setNotFoundHandler(NotFoundHandler h) { notFound_ = std::move(h); }
 
+        /**
+         * @brief Register a route.
+         * @param method HTTP method (e.g., `http::verb::get`).
+         * @param path   Path pattern (may include `{param}` segments).
+         * @param handler Shared pointer to an `IRequestHandler` implementation.
+         *
+         * @details Splits `method_to_string(method)+path` on `/` and inserts
+         * nodes, marking `{param}` segments as wildcard (`*`). Parameter value
+         * extraction is left to the handler implementation.
+         */
         void add_route(http::verb method, const std::string &path, std::shared_ptr<IRequestHandler> handler)
         {
             std::string full_path = method_to_string(method) + path;
@@ -67,7 +146,18 @@ namespace Vix
             node->handler = std::move(handler);
         }
 
-        // Retourne true si une route a géré la requête (même si 204/404)
+        /**
+         * @brief Resolve and invoke a handler for the request.
+         * @return `true` if a response was produced (including 204/404), otherwise `false`.
+         *
+         * @details
+         * - CORS preflight (`OPTIONS`) is auto-answered with `204` and standard
+         *   headers.
+         * - If a matching handler is found, it is invoked. The router ensures
+         *   `prepare_payload()` is called when needed.
+         * - If not found, the custom `notFound_` is invoked if present; else a
+         *   default JSON 404 is sent.
+         */
         bool handle_request(const http::request<http::string_body> &req,
                             http::response<http::string_body> &res)
         {
@@ -105,8 +195,7 @@ namespace Vix
                 else if (node->children.count("*"))
                 {
                     node = node->children.at("*").get();
-                    // NB: les params sont extraits dans RequestHandler<> via le pattern de route
-                    // Ici, on n’en a pas besoin.
+                    // NB: parameter extraction is handled inside RequestHandler<>
                 }
                 else
                 {
@@ -120,18 +209,16 @@ namespace Vix
             if (node && node->handler)
             {
                 node->handler->handle_request(req, res);
-                // Assure un payload préparé (au cas où un handler “oublie”)
+                // Ensure payload prepared (if handler forgot)
                 if (res.need_eof() || res.body().size() || res.find(http::field::content_length) != res.end())
                     res.prepare_payload();
                 return true;
             }
 
-            // --- Fallback 404 JSON propre ---
+            // --- Fallback 404 JSON ---
             if (notFound_)
             {
                 notFound_(req, res);
-                // Le notFound_ peut avoir déjà préparé le payload;
-                // on assure quand même le coup.
                 res.prepare_payload();
             }
             else
@@ -142,17 +229,19 @@ namespace Vix
                     {"method", std::string(req.method_string())},
                     {"path", std::string(req.target())}};
                 Vix::Response::json_response(res, j, res.result());
-                // pour éviter que certains clients attendent indéfiniment :
                 res.set(http::field::connection, "close");
-                res.prepare_payload(); // -> Content-Length correct
+                res.prepare_payload();
             }
-            return true; // on a géré la requête (404)
+            return true; // handled (404)
         }
 
     private:
         std::unique_ptr<RouteNode> root_;
         NotFoundHandler notFound_{};
 
+        /**
+         * @brief Convert HTTP verb to uppercase string used in the trie root.
+         */
         std::string method_to_string(http::verb method) const
         {
             switch (method)
