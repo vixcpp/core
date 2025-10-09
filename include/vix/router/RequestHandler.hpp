@@ -53,7 +53,6 @@ namespace Vix
 
     inline nlohmann::json token_to_nlohmann(const Vix::json::token &t)
     {
-        using V = Vix::json::token::value_t;
         nlohmann::json j = nullptr;
         std::visit([&](auto &&val)
                    {
@@ -166,11 +165,13 @@ namespace Vix
             return *this;
         }
 
-        // JSON — template générique (exclut les types déjà couverts)
-        template <typename J>
-            requires(!std::is_same_v<std::decay_t<J>, nlohmann::json> &&
-                     !std::is_same_v<std::decay_t<J>, Vix::json::kvs> &&
-                     !std::is_same_v<std::decay_t<J>, std::initializer_list<Vix::json::token>>)
+        // JSON — template générique (évite les collisions via SFINAE)
+        template <
+            typename J,
+            typename = std::enable_if_t<
+                !std::is_same_v<std::decay_t<J>, nlohmann::json> &&
+                !std::is_same_v<std::decay_t<J>, Vix::json::kvs> &&
+                !std::is_same_v<std::decay_t<J>, std::initializer_list<Vix::json::token>>>>
         ResponseWrapper &json(const J &data)
         {
             Vix::Response::json_response(res, data, res.result());

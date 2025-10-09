@@ -2,11 +2,15 @@
 #define VIX_ROUTER_HPP
 
 #include <vix/http/Response.hpp>
+#include <vix/router/IRequestHandler.hpp>
 #include <vix/router/RequestHandler.hpp>
+
 #include <boost/beast/http.hpp>
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <functional>
+#include <nlohmann/json.hpp>
 
 namespace Vix
 {
@@ -16,19 +20,21 @@ namespace Vix
     {
         std::unordered_map<std::string, std::unique_ptr<RouteNode>> children;
         std::shared_ptr<IRequestHandler> handler;
-        bool isParam;
+        bool isParam = false;
         std::string paramName;
-
-        RouteNode()
-            : children(), handler(nullptr), isParam(false), paramName()
-        {
-        }
     };
 
     class Router
     {
     public:
+        using NotFoundHandler = std::function<void(
+            const http::request<http::string_body> &,
+            http::response<http::string_body> &)>;
+
         Router() : root_(std::make_unique<RouteNode>()) {}
+
+        // Permet de personnaliser la réponse 404
+        void setNotFoundHandler(NotFoundHandler h) { notFound_ = std::move(h); }
 
         void add_route(http::verb method, const std::string &path, std::shared_ptr<IRequestHandler> handler)
         {
@@ -43,8 +49,8 @@ namespace Vix
                     end = full_path.size();
                 std::string segment = full_path.substr(start, end - start);
 
-                bool isParam = !segment.empty() && segment.front() == '{' && segment.back() == '}';
-                std::string key = isParam ? "*" : segment;
+                const bool isParam = !segment.empty() && segment.front() == '{' && segment.back() == '}';
+                const std::string key = isParam ? "*" : segment;
 
                 if (!node->children.count(key))
                 {
@@ -61,20 +67,23 @@ namespace Vix
             node->handler = std::move(handler);
         }
 
+        // Retourne true si une route a géré la requête (même si 204/404)
         bool handle_request(const http::request<http::string_body> &req,
                             http::response<http::string_body> &res)
         {
+            // CORS preflight
             if (req.method() == http::verb::options)
             {
                 res.result(http::status::no_content);
                 res.set(http::field::access_control_allow_origin, "*");
                 res.set(http::field::access_control_allow_methods, "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD");
                 res.set(http::field::access_control_allow_headers, "Content-Type, Authorization");
+                res.set(http::field::connection, "close");
+                res.prepare_payload(); // Content-Length: 0
                 return true;
             }
 
             std::string full_path = method_to_string(req.method()) + std::string(req.target());
-            std::unordered_map<std::string, std::string> params;
 
             auto *node = root_.get();
             size_t start = 0;
@@ -83,6 +92,7 @@ namespace Vix
             {
                 if (start == full_path.size())
                     break;
+
                 size_t end = full_path.find('/', start);
                 if (end == std::string::npos)
                     end = full_path.size();
@@ -95,7 +105,8 @@ namespace Vix
                 else if (node->children.count("*"))
                 {
                     node = node->children.at("*").get();
-                    params[node->paramName] = segment;
+                    // NB: les params sont extraits dans RequestHandler<> via le pattern de route
+                    // Ici, on n’en a pas besoin.
                 }
                 else
                 {
@@ -108,26 +119,39 @@ namespace Vix
 
             if (node && node->handler)
             {
-                auto *rh = dynamic_cast<RequestHandler<std::function<void(const http::request<http::string_body> &, ResponseWrapper &, std::unordered_map<std::string, std::string> &)>> *>(node->handler.get());
-                if (rh)
-                {
-                    rh->handle_request(req, res);
-                }
-                else
-                {
-                    node->handler->handle_request(req, res);
-                }
+                node->handler->handle_request(req, res);
+                // Assure un payload préparé (au cas où un handler “oublie”)
+                if (res.need_eof() || res.body().size() || res.find(http::field::content_length) != res.end())
+                    res.prepare_payload();
                 return true;
             }
 
-            res.result(http::status::not_found);
-            res.set(http::field::content_type, "application/json");
-            res.body() = R"({"message":"Route not found"})";
-            return false;
+            // --- Fallback 404 JSON propre ---
+            if (notFound_)
+            {
+                notFound_(req, res);
+                // Le notFound_ peut avoir déjà préparé le payload;
+                // on assure quand même le coup.
+                res.prepare_payload();
+            }
+            else
+            {
+                res.result(http::status::not_found);
+                nlohmann::json j{
+                    {"error", "Route not found"},
+                    {"method", std::string(req.method_string())},
+                    {"path", std::string(req.target())}};
+                Vix::Response::json_response(res, j, res.result());
+                // pour éviter que certains clients attendent indéfiniment :
+                res.set(http::field::connection, "close");
+                res.prepare_payload(); // -> Content-Length correct
+            }
+            return true; // on a géré la requête (404)
         }
 
     private:
         std::unique_ptr<RouteNode> root_;
+        NotFoundHandler notFound_{};
 
         std::string method_to_string(http::verb method) const
         {
@@ -141,6 +165,16 @@ namespace Vix
                 return "PUT";
             case http::verb::delete_:
                 return "DELETE";
+            case http::verb::patch:
+                return "PATCH";
+            case http::verb::head:
+                return "HEAD";
+            case http::verb::options:
+                return "OPTIONS";
+            case http::verb::trace:
+                return "TRACE";
+            case http::verb::connect:
+                return "CONNECT";
             default:
                 return "OTHER";
             }

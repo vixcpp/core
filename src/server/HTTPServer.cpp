@@ -28,6 +28,36 @@ namespace Vix
         auto &log = Logger::getInstance();
         try
         {
+            // ---- Fallback 404 JSON propre sur le Router ----
+            router_->setNotFoundHandler(
+                [](const http::request<http::string_body> &req,
+                   http::response<http::string_body> &res)
+                {
+                    res.result(http::status::not_found);
+
+                    // Réponse différente pour HEAD (pas de body, mais Content-Length correct)
+                    if (req.method() == http::verb::head)
+                    {
+                        // corps vide mais en-têtes JSON cohérents
+                        res.set(http::field::content_type, "application/json");
+                        res.set(http::field::connection, "close");
+                        res.body().clear();
+                        res.prepare_payload(); // -> Content-Length: 0
+                        return;
+                    }
+
+                    nlohmann::json j{
+                        {"error", "Route not found"},
+                        {"hint", "Check path, method, or API version"},
+                        {"method", std::string(req.method_string())},
+                        {"path", std::string(req.target())}};
+
+                    Vix::Response::json_response(res, j, res.result());
+                    // Forcer la fermeture pour éviter que des clients attendent indéfiniment
+                    res.set(http::field::connection, "close");
+                    res.prepare_payload(); // -> Content-Length correct
+                });
+
             int port = config_.getServerPort();
             if (port < 1024 || port > 65535)
             {
@@ -60,12 +90,15 @@ namespace Vix
         acceptor_->open(endpoint.protocol(), ec);
         if (ec)
             throw std::system_error(ec, "open acceptor");
+
         acceptor_->set_option(boost::asio::socket_base::reuse_address(true), ec);
         if (ec)
             throw std::system_error(ec, "reuse_address");
+
         acceptor_->bind(endpoint, ec);
         if (ec)
             throw std::system_error(ec, "bind acceptor");
+
         acceptor_->listen(boost::asio::socket_base::max_connections, ec);
         if (ec)
             throw std::system_error(ec, "listen acceptor");
@@ -76,23 +109,24 @@ namespace Vix
     void HTTPServer::start_io_threads()
     {
         auto &log = Logger::getInstance();
-        std::size_t num_threads = calculate_io_thread_count();
+        std::size_t num_threads = static_cast<std::size_t>(calculate_io_thread_count());
 
         for (std::size_t i = 0; i < num_threads; ++i)
         {
             io_threads_.emplace_back(
                 [this, i, &log]()
                 {
-                try
-                {
-                    set_affinity(i);
-                    io_context_->run();
-                }
-                catch (const std::exception &e)
-                {
-                    log.log(Logger::Level::ERROR, "Error in io_context thread {}: {}", i, e.what());
-                }
-                log.log(Logger::Level::INFO, "IO thread {} finished", i); });
+                    try
+                    {
+                        set_affinity(static_cast<int>(i));
+                        io_context_->run();
+                    }
+                    catch (const std::exception &e)
+                    {
+                        log.log(Logger::Level::ERROR, "Error in io_context thread {}: {}", i, e.what());
+                    }
+                    log.log(Logger::Level::INFO, "IO thread {} finished", i);
+                });
         }
     }
 
@@ -106,7 +140,8 @@ namespace Vix
     int HTTPServer::calculate_io_thread_count()
     {
         unsigned int hc = std::thread::hardware_concurrency();
-        return std::max(1, static_cast<int>(hc > 0 ? hc / 2 : 1));
+        // au moins 1, souvent hc/2 est un bon compromis
+        return std::max(1u, hc ? hc / 2 : 1u);
     }
 
     void HTTPServer::start_accept()
@@ -118,13 +153,18 @@ namespace Vix
             {
                 auto timeout = std::chrono::milliseconds(config_.getRequestTimeout());
                 request_thread_pool_.enqueue(1, timeout, [this, socket]()
-                                            { handle_client(socket, router_); });
+                {
+                    handle_client(socket, router_);
+                });
             }
             if (!stop_requested_) start_accept(); });
     }
 
     void HTTPServer::handle_client(std::shared_ptr<tcp::socket> socket_ptr, std::shared_ptr<Router> router)
     {
+        // La Session se charge de lire/écrire et appelle Router::handle_request().
+        // Comme on a configuré le notFoundHandler ci-dessus, toute route non matchée
+        // aura une réponse JSON 404 bien formée avec Connection: close.
         auto session = std::make_shared<Session>(socket_ptr, *router);
         session->run();
     }
@@ -160,4 +200,5 @@ namespace Vix
                 "ThreadPool Metrics -> Pending: {}, Active: {}, TimedOut: {}",
                 metrics.pendingTasks, metrics.activeTasks, metrics.timedOutTasks); }, std::chrono::seconds(5));
     }
-}
+
+} // namespace Vix
