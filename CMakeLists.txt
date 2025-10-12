@@ -1,39 +1,54 @@
 # ====================================================================
-# Vix.cpp — Core Module (Documented)
+# Vix.cpp — Core Module
 # ====================================================================
 # Purpose:
 #   Build configuration for the Vix core module (HTTP server, routing,
-#   config, session, etc.). When sources exist under ./src, we build a
-#   STATIC library; otherwise we fall back to a header-only INTERFACE
-#   target (suitable for embedding or quick prototyping).
+#   configuration, sessions, etc.). If any sources are found under ./src,
+#   we build a STATIC library; otherwise we fall back to a header-only
+#   INTERFACE target (useful for embedding or quick prototyping).
 #
 # Public Targets:
 #   - vix_core   : The actual library target (STATIC or INTERFACE)
 #   - Vix::core  : Namespaced alias for consumers
 #
-# Dependencies:
-#   - PUBLIC: Vix::utils, Vix::json
-#   - STATIC mode: Boost::filesystem, Boost::system (and optionally OpenSSL/MySQL)
+# Public Dependencies:
+#   - Vix::utils
+#   - Vix::json  (resolved dynamically among common aliases)
+#
+# Additional Dependencies in STATIC mode:
+#   - Boost::filesystem, Boost::system
+#   - OpenSSL::SSL, OpenSSL::Crypto (optional via VIX_CORE_WITH_OPENSSL)
+#   - MySQL client (optional via VIX_CORE_WITH_MYSQL; detected as mysqlcppconn8 or mysqlcppconn)
 #
 # Options:
 #   - VIX_CORE_WITH_OPENSSL : Enable TLS (default ON)
 #   - VIX_CORE_WITH_MYSQL   : Link MySQL client (default OFF)
-#   - VIX_ENABLE_SANITIZERS : Inherit sanitizers from parent project
+#   - VIX_ENABLE_SANITIZERS : Inherit sanitizers from the parent project
+#
+# Installation/Export:
+#   This module installs its target and headers and contributes to the
+#   top-level export-set `VixTargets`. Consumers can then use:
+#
+#       find_package(Vix CONFIG REQUIRED)
+#       target_link_libraries(app PRIVATE Vix::core)
 #
 # Notes:
-#   - This CMake file is usable standalone or from a superproject.
-#   - In standalone mode, install/export rules are provided.
-#   - We select the JSON backend target dynamically (Vix::json / vix::json / vix_json).
+#   - This file is designed to be included from a superproject (preferred).
+#   - Avoids per-module export-sets; relies on the umbrella’s `VixTargets`.
+#   - The JSON backend target is selected dynamically (Vix::json / vix::json / vix_json).
 # ====================================================================
 
 cmake_minimum_required(VERSION 3.20)
 project(vix_core VERSION 0.2.0 LANGUAGES CXX)
+
+include(GNUInstallDirs)
 
 # ------------------------ Global settings ----------------------------
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# Friendly warnings (tunable)
 set(GLOBAL_CXX_FLAGS "-Wall -Wextra -Wshadow -Weffc++")
 set(CMAKE_CXX_FLAGS_RELEASE "${GLOBAL_CXX_FLAGS} -O2 -DNDEBUG")
 set(CMAKE_CXX_FLAGS_DEBUG   "${GLOBAL_CXX_FLAGS} -g")
@@ -56,7 +71,7 @@ if (NOT TARGET ${JSON_TARGET})
   else()
     message(FATAL_ERROR
       "JSON module target not found. Expected one of: Vix::json, vix::json, vix_json. "
-      "Ensure modules/json defines an exported target and alias.")
+      "Ensure the json module defines an exported target and alias.")
   endif()
 endif()
 
@@ -81,7 +96,7 @@ if (CORE_SOURCES)
 
   # Required runtime deps when compiling sources
   find_package(Boost 1.78 REQUIRED COMPONENTS filesystem system)
-  # spdlog may already be brought by Vix::utils; keep for standalone builds
+  # spdlog may already be brought by Vix::utils; remains harmless here
   find_package(spdlog REQUIRED)
 
   if (VIX_CORE_WITH_OPENSSL)
@@ -92,7 +107,7 @@ if (CORE_SOURCES)
   add_library(Vix::core ALIAS vix_core)
   target_compile_features(vix_core PUBLIC cxx_std_20)
 
-  # Debug-mode safety: enable libstdc++ debug iterators if desired
+  # Optional debug-iterator safety in Debug builds (libstdc++)
   if (CMAKE_BUILD_TYPE MATCHES "Debug")
     target_compile_definitions(vix_core PRIVATE -D_GLIBCXX_DEBUG)
   endif()
@@ -101,7 +116,7 @@ if (CORE_SOURCES)
   target_include_directories(vix_core
     PUBLIC
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-      $<INSTALL_INTERFACE:include>
+      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
   )
 
   target_link_libraries(vix_core
@@ -146,31 +161,28 @@ if (CORE_SOURCES)
     EXPORT_NAME core
   )
 
-  # Install/export only in standalone mode
-  if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
-    install(TARGETS vix_core
-      EXPORT vix_coreTargets
-      ARCHIVE DESTINATION lib
-      LIBRARY DESTINATION lib
-      RUNTIME DESTINATION bin
-      INCLUDES DESTINATION include
-    )
-    install(DIRECTORY include/ DESTINATION include)
-    export(EXPORT vix_coreTargets
-      FILE "${CMAKE_CURRENT_BINARY_DIR}/vix_coreTargets.cmake"
-      NAMESPACE Vix::
-    )
-  endif()
+  # ---- INSTALL: join the umbrella export-set (VixTargets) ----
+  install(TARGETS vix_core
+    EXPORT VixTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  )
+  install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+          FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h")
 
 # ============================ HEADER-ONLY ============================
 else()
+  message(STATUS "[core] Building HEADER-ONLY library (no sources).")
+
   add_library(vix_core INTERFACE)
   add_library(Vix::core ALIAS vix_core)
   target_compile_features(vix_core INTERFACE cxx_std_20)
 
   target_include_directories(vix_core INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
   )
 
   target_link_libraries(vix_core INTERFACE
@@ -178,11 +190,19 @@ else()
     ${JSON_TARGET}
   )
 
-  # Define the feature macro for header-only consumers as well
+  # Feature macro parity
   target_compile_definitions(vix_core INTERFACE VIX_CORE_WITH_MYSQL=0)
 
   # Propagate sanitizers to dependents if requested
   vix_core_apply_sanitizers(vix_core INTERFACE)
+
+  # ---- INSTALL: join the umbrella export-set (VixTargets) ----
+  install(TARGETS vix_core
+    EXPORT VixTargets
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  )
+  install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+          FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h")
 endif()
 
 # ----------------------------- Summary -------------------------------
