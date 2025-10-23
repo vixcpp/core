@@ -176,6 +176,8 @@ namespace Vix
         /** @return Whether a stop request has been issued. */
         bool is_stop_requested() const { return stop_requested_.load(); }
 
+        void stop_blocking();
+
     private:
         /**
          * @brief Create and bind the listening acceptor.

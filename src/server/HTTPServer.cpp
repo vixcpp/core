@@ -300,6 +300,13 @@ namespace Vix
         io_context_->stop();
     }
 
+    void HTTPServer::stop_blocking()
+    {
+        request_thread_pool_.stopPeriodicTasks();
+        request_thread_pool_.waitUntilIdle();
+        join_threads();
+    }
+
     /**
      * @brief Join I/O worker threads. Call from the control thread after stop_async().
      */
