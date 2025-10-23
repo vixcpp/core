@@ -135,34 +135,40 @@ namespace Vix
     {
         auto &log = Logger::getInstance();
 
-        // Validate & set port (Config::setServerPort already validates)
+        // 1) Configure the port (already validated in Config::setServerPort)
         config_.setServerPort(port);
 
+        // 2) Expose server pointer to the signal handler
         g_server_ptr = &server_;
 
-        // Register signals (idempotent enough for typical use)
+        // 3) Set up SIGINT / SIGTERM handlers
         std::signal(SIGINT, handle_stop_signal);
 #ifdef SIGTERM
         std::signal(SIGTERM, handle_stop_signal);
 #endif
 
-        // Run the HTTP server in a dedicated thread
+        // 4) Start the server (run() is non-blocking)
         std::thread server_thread([this]()
                                   { server_.run(); });
 
-        // Block the calling thread until a stop signal is received
+        // 5) Wait for a stop signal (from handle_stop_signal)
         {
             std::unique_lock<std::mutex> lock(g_stop_mutex);
             g_stop_cv.wait(lock, []
-                           { return g_stop_flag.load(); });
+                           { return g_stop_flag.load(std::memory_order_relaxed); });
         }
 
-        // Join server thread
+        // 6) Graceful shutdown sequence (idempotent)
+        //    - just in case: if the handler hasn't run or ran partially
+        server_.stop_async();
+        server_.stop_blocking(); // stop periodic tasks + waitUntilIdle + join I/O threads
+
+        // 7) Join the thread that started run()
         if (server_thread.joinable())
             server_thread.join();
 
-        // Ensure all worker threads complete before returning
-        server_.join_threads();
+        // 8) Cleanup
+        g_server_ptr = nullptr;
 
         log.log(Level::INFO, "Application shutdown complete");
     }
