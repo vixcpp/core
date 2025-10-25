@@ -1,5 +1,7 @@
 #include <vix/server/HTTPServer.hpp>
 #include <vix/utils/Logger.hpp>
+#include <vix/timers/interval.hpp>
+#include <vix/executor/Metrics.hpp>
 
 /**
  * @file HTTPServer.cpp
@@ -306,11 +308,7 @@ namespace Vix
 
     void HTTPServer::stop_blocking()
     {
-        // request_thread_pool_.stopPeriodicTasks();
-        // request_thread_pool_.waitUntilIdle();
-        // join_threads();
-
-        executor_wait_idle();
+        executor_->wait_idle();
         join_threads();
     }
 
@@ -332,19 +330,12 @@ namespace Vix
      */
     void HTTPServer::monitor_metrics()
     {
-        // request_thread_pool_.periodicTask(0, [this]()
-        //                                   {
-        //     auto metrics = request_thread_pool_.getMetrics();
-        //     Logger::getInstance().log(Logger::Level::INFO,
-        //         "ThreadPool Metrics -> Pending: {}, Active: {}, TimedOut: {}",
-        //         metrics.pendingTasks, metrics.activeTasks, metrics.timedOutTasks); }, std::chrono::seconds(5));
-
         Vix::timers::interval(*executor_, std::chrono::seconds(5), [this]()
                               {
-            auto metrics = executor_->metrics();
-            Logger::getInstance().log(Logger::Level::INFO,
-                "Executor Metrics -> Pending: {}, Active: {}, TimedOut: {}",
-                metrics.pending, metrics.active, metrics.timed_out); });
+        const auto m = executor_->metrics();
+        Logger::getInstance().log(Logger::Level::INFO,
+            "Executor Metrics -> Pending: {}, Active: {}, TimedOut: {}",
+            m.pending, m.active, m.timed_out); });
     }
 
 } // namespace Vix

@@ -16,7 +16,7 @@ namespace Vix
         virtual ~IExecutor() = default;
 
         virtual bool post(std::function<void()> fn, TaskOptions opt = {}) = 0;
-        virtual Metrics metrics() const = 0;
+        virtual Vix::executor::Metrics metrics() const = 0;
         virtual void wait_idle() = 0;
 
         template <class F, class... Args>

@@ -28,10 +28,10 @@ namespace Vix::experimental
         }
     }
 
-    Vix::Metrics ThreadPoolExecutor::metrics() const
+    Vix::executor::Metrics ThreadPoolExecutor::metrics() const
     {
         auto m = pool_->getMetrics();
-        return Vix::Metrics{m.pendingTasks, m.activeTasks, m.timedOutTasks};
+        return Vix::executor::Metrics{m.pendingTasks, m.activeTasks, m.timedOutTasks};
     }
 
     void ThreadPoolExecutor::wait_idle()

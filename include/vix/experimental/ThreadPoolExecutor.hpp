@@ -18,14 +18,13 @@ namespace Vix::experimental
                                     int defaultPriority);
 
         bool post(std::function<void()> fn, Vix::TaskOptions opt = {}) override;
-        Vix::Metrics metrics() const override;
+        Vix::executor::Metrics metrics() const override;
         void wait_idle() override;
 
     private:
         std::unique_ptr<ThreadPool> pool_;
     };
 
-    // Fabrique simple (pour DI)
     std::unique_ptr<Vix::IExecutor> make_threadpool_executor(std::size_t threads,
                                                              std::size_t maxThreads,
                                                              int defaultPriority);
