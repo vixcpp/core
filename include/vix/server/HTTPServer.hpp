@@ -83,6 +83,8 @@
 #include <vix/config/Config.hpp>
 #include <vix/server/ThreadPool.hpp>
 
+#include <vix/executor/IExecutor.hpp>
+
 namespace Vix
 {
     namespace beast = boost::beast;
@@ -113,7 +115,7 @@ namespace Vix
          *  - `server.request_threads` (integer, optional) — size of the worker
          *    pool for user handlers; defaults to `NUMBER_OF_THREADS`.
          */
-        explicit HTTPServer(Config &config);
+        explicit HTTPServer(Config &config, std::shared_ptr<Vix::IExecutor> exec);
 
         /** @brief Destructor; requests stop and joins owned threads if needed. */
         ~HTTPServer();
@@ -209,9 +211,10 @@ namespace Vix
         std::shared_ptr<net::io_context> io_context_; //!< Shared I/O context.
         std::unique_ptr<tcp::acceptor> acceptor_;     //!< Listening socket.
         std::shared_ptr<Router> router_;              //!< HTTP router for request dispatch.
-        Vix::ThreadPool request_thread_pool_;         //!< Worker pool for user handlers.
-        std::vector<std::thread> io_threads_;         //!< Threads running `io_context_`.
-        std::atomic<bool> stop_requested_{false};     //!< Cooperative stop flag.
+        // Vix::ThreadPool request_thread_pool_;         //!< Worker pool for user handlers.
+        std::shared_ptr<Vix::IExecutor> executor_;
+        std::vector<std::thread> io_threads_;     //!< Threads running `io_context_`.
+        std::atomic<bool> stop_requested_{false}; //!< Cooperative stop flag.
     };
 
 } // namespace Vix

@@ -51,6 +51,9 @@
 #include <vix/router/RequestHandler.hpp>
 #include <vix/utils/Logger.hpp>
 
+#include <vix/executor/IExecutor.hpp>
+#include <vix/experimental/ThreadPoolExecutor.hpp>
+
 namespace Vix
 {
     namespace http = boost::beast::http;
@@ -119,7 +122,8 @@ namespace Vix
     private:
         Config &config_;                 ///< Global configuration reference
         std::shared_ptr<Router> router_; ///< Shared router (injected into HTTPServer)
-        HTTPServer server_;              ///< Core HTTP server
+        std::shared_ptr<Vix::IExecutor> executor_;
+        HTTPServer server_; ///< Core HTTP server
 
         /**
          * @brief Internal helper for adding a typed route handler.
