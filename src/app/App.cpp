@@ -75,7 +75,11 @@ namespace Vix
     App::App()
         : config_(Config::getInstance()),
           router_(nullptr),
-          server_(config_)
+          // 1) créer un executor concret (ThreadPoolExecutor) — valeurs par défaut raisonnables
+          executor_(std::make_shared<Vix::experimental::ThreadPoolExecutor>(
+              /*threads*/ 4, /*maxThreads*/ 8, /*defaultPriority*/ 1)),
+          // 2) injecter l’executor dans le HTTPServer
+          server_(config_, executor_)
     {
         auto &log = Logger::getInstance();
 

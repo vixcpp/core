@@ -69,13 +69,14 @@ namespace Vix
      *    semantics (no body, correct Content-Length).
      *  - Initializes the acceptor on the configured port.
      */
-    HTTPServer::HTTPServer(Config &config)
+    HTTPServer::HTTPServer(Config &config, std::shared_ptr<Vix::IExecutor> exec)
         : config_(config),
           io_context_(std::make_shared<net::io_context>()),
           acceptor_(nullptr),
           router_(std::make_shared<Router>()),
+          executor_(std::move(exec)),
           // ThreadPool(capacityThreads, queueLimit, minSpare, maxSpare)
-          request_thread_pool_(NUMBER_OF_THREADS, 100, 0, 4),
+          //   request_thread_pool_(NUMBER_OF_THREADS, 100, 0, 4),
           io_threads_(),
           stop_requested_(false)
     {
@@ -252,10 +253,13 @@ namespace Vix
             if (!ec && !stop_requested_)
             {
                 auto timeout = std::chrono::milliseconds(config_.getRequestTimeout());
-                request_thread_pool_.enqueue(1, timeout, [this, socket]()
-                {
+                // request_thread_pool_.enqueue(1, timeout, [this, socket]()
+                // {
+                //     handle_client(socket, router_);
+                // });
+              executor_->post([this, socket]() {
                     handle_client(socket, router_);
-                });
+              }, Vix::TaskOptions{.priority = 1, .timeout = timeout});
             }
             if (!stop_requested_) start_accept(); });
     }
@@ -302,8 +306,11 @@ namespace Vix
 
     void HTTPServer::stop_blocking()
     {
-        request_thread_pool_.stopPeriodicTasks();
-        request_thread_pool_.waitUntilIdle();
+        // request_thread_pool_.stopPeriodicTasks();
+        // request_thread_pool_.waitUntilIdle();
+        // join_threads();
+
+        executor_wait_idle();
         join_threads();
     }
 
@@ -325,12 +332,19 @@ namespace Vix
      */
     void HTTPServer::monitor_metrics()
     {
-        request_thread_pool_.periodicTask(0, [this]()
-                                          {
-            auto metrics = request_thread_pool_.getMetrics();
+        // request_thread_pool_.periodicTask(0, [this]()
+        //                                   {
+        //     auto metrics = request_thread_pool_.getMetrics();
+        //     Logger::getInstance().log(Logger::Level::INFO,
+        //         "ThreadPool Metrics -> Pending: {}, Active: {}, TimedOut: {}",
+        //         metrics.pendingTasks, metrics.activeTasks, metrics.timedOutTasks); }, std::chrono::seconds(5));
+
+        Vix::timers::interval(*executor_, std::chrono::seconds(5), [this]()
+                              {
+            auto metrics = executor_->metrics();
             Logger::getInstance().log(Logger::Level::INFO,
-                "ThreadPool Metrics -> Pending: {}, Active: {}, TimedOut: {}",
-                metrics.pendingTasks, metrics.activeTasks, metrics.timedOutTasks); }, std::chrono::seconds(5));
+                "Executor Metrics -> Pending: {}, Active: {}, TimedOut: {}",
+                metrics.pending, metrics.active, metrics.timed_out); });
     }
 
 } // namespace Vix
