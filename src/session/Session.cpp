@@ -301,7 +301,8 @@ namespace Vix
 
         try
         {
-            if (std::regex_search(req.target().to_string(), XSS_PATTERN))
+            const std::string target{req.target().data(), req.target().size()};
+            if (std::regex_search(target, XSS_PATTERN))
             {
                 logger.log(Level::WARN, "[WAF] XSS pattern detected in URL");
                 return false;
