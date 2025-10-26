@@ -39,7 +39,7 @@
 # ====================================================================
 
 cmake_minimum_required(VERSION 3.20)
-project(vix_core VERSION 0.2.0 LANGUAGES CXX)
+project(vix_core VERSION 1.4.2 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 
