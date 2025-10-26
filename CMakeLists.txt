@@ -60,20 +60,71 @@ option(VIX_CORE_WITH_MYSQL   "Enable MySQL client linkage" OFF)
 # If any .cpp exists under src/, we switch to STATIC build mode.
 file(GLOB_RECURSE CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
-# ------------------------ Resolve JSON target ------------------------
-# Pick the first existing target name among common aliases.
-set(JSON_TARGET "Vix::json")
-if (NOT TARGET ${JSON_TARGET})
-  if (TARGET vix::json)
-    set(JSON_TARGET vix::json)
-  elseif (TARGET vix_json)
-    set(JSON_TARGET vix_json)
+# ------------------------ Utils dependency (robust) ------------------
+# We need Vix::utils. Try:
+# 1) already defined, 2) umbrella ../utils, 3) FetchContent, else fail.
+option(VIX_CORE_FETCH_UTILS "Auto-fetch Vix::utils if missing" ON)
+
+if (NOT TARGET Vix::utils AND NOT TARGET vix::utils)
+  if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../utils/CMakeLists.txt")
+    message(STATUS "[core] Adding utils from umbrella: ../utils")
+    add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../utils" "utils")
+  elseif (VIX_CORE_FETCH_UTILS)
+    include(FetchContent)
+    message(STATUS "[core] Fetching Vix::utils via FetchContent")
+    # ⚠️ Aligne le tag avec ta release umbrella
+    FetchContent_Declare(vix_utils
+      GIT_REPOSITORY https://github.com/vixcpp/utils.git
+      GIT_TAG        v1.7.1
+    )
+    FetchContent_MakeAvailable(vix_utils)
   else()
-    message(FATAL_ERROR
-      "JSON module target not found. Expected one of: Vix::json, vix::json, vix_json. "
-      "Ensure the json module defines an exported target and alias.")
+    message(FATAL_ERROR "Vix::utils not found. Enable VIX_CORE_FETCH_UTILS=ON or provide the target before core.")
   endif()
 endif()
+
+# Normalize the utils target name into VIX_UTILS_TARGET
+set(VIX_UTILS_TARGET Vix::utils)
+if (NOT TARGET ${VIX_UTILS_TARGET} AND TARGET vix::utils)
+  set(VIX_UTILS_TARGET vix::utils)
+endif()
+
+# ------------------------ JSON linkage policy ------------------------
+# AUTO: link if a known JSON target exists, else compile with VIX_CORE_NO_JSON
+# ON  : require JSON target (error if absent)
+# OFF : never link JSON, define VIX_CORE_NO_JSON
+set(VIX_CORE_WITH_JSON "AUTO" CACHE STRING "Link JSON backend (AUTO|ON|OFF)")
+set_property(CACHE VIX_CORE_WITH_JSON PROPERTY STRINGS AUTO ON OFF)
+
+# Helper to optionally link JSON or define VIX_CORE_NO_JSON
+function(vix_core_try_link_json onto link_scope)
+  if (VIX_CORE_WITH_JSON STREQUAL "OFF")
+    message(STATUS "[core] JSON disabled (OFF)")
+    target_compile_definitions(${onto} ${link_scope} VIX_CORE_NO_JSON=1)
+    return()
+  endif()
+
+  set(_json_candidates Vix::json vix::json vix_json)
+  set(_json_found "")
+  foreach(t IN LISTS _json_candidates)
+    if (TARGET ${t})
+      set(_json_found ${t})
+      break()
+    endif()
+  endforeach()
+
+  if (_json_found)
+    message(STATUS "[core] JSON backend: ${_json_found}")
+    target_link_libraries(${onto} ${link_scope} ${_json_found})
+  else()
+    if (VIX_CORE_WITH_JSON STREQUAL "ON")
+      message(FATAL_ERROR "JSON required but not found (expected: Vix::json, vix::json, or vix_json).")
+    else()
+      message(STATUS "[core] No JSON backend detected; building without JSON.")
+      target_compile_definitions(${onto} ${link_scope} VIX_CORE_NO_JSON=1)
+    endif()
+  endif()
+endfunction()
 
 # ------------------------ Helper: Sanitizers -------------------------
 # Apply -fsanitize flags either PRIVATELY (for STATIC) or as INTERFACE (header-only).
@@ -121,11 +172,13 @@ if (CORE_SOURCES)
 
   target_link_libraries(vix_core
     PUBLIC
-      Vix::utils
-      ${JSON_TARGET}
+      ${VIX_UTILS_TARGET}
       Boost::filesystem
       Boost::system
   )
+
+  # JSON (optional: AUTO/ON/OFF)
+  vix_core_try_link_json(vix_core PUBLIC)
 
   if (VIX_CORE_WITH_OPENSSL)
     target_link_libraries(vix_core PUBLIC OpenSSL::SSL OpenSSL::Crypto)
@@ -186,9 +239,11 @@ else()
   )
 
   target_link_libraries(vix_core INTERFACE
-    Vix::utils
-    ${JSON_TARGET}
+    ${VIX_UTILS_TARGET}
   )
+
+  # JSON (optional: AUTO/ON/OFF)
+  vix_core_try_link_json(vix_core INTERFACE)
 
   # Feature macro parity
   target_compile_definitions(vix_core INTERFACE VIX_CORE_WITH_MYSQL=0)
@@ -215,6 +270,8 @@ else()
 endif()
 message(STATUS "OpenSSL enabled: ${VIX_CORE_WITH_OPENSSL}")
 message(STATUS "MySQL linkage:   ${VIX_CORE_WITH_MYSQL}")
+message(STATUS "JSON policy:     ${VIX_CORE_WITH_JSON}")
+message(STATUS "Utils target:    ${VIX_UTILS_TARGET}")
 message(STATUS "Include dir: ${CMAKE_CURRENT_SOURCE_DIR}/include (for <vix/...>)")
 message(STATUS "Sanitizers (inherited): ${VIX_ENABLE_SANITIZERS}")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
