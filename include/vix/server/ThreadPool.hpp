@@ -198,7 +198,7 @@ namespace Vix
             const unsigned coreU = static_cast<unsigned>(id % denom);
             const int core = static_cast<int>(coreU);
 
-            CPU_SET(core, &cpuset);
+            CPU_SET(static_cast<int>(core), &cpuset);
 
             const int ret = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
             if (ret != 0)

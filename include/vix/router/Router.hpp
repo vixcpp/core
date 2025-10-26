@@ -79,6 +79,11 @@ namespace Vix
         std::shared_ptr<IRequestHandler> handler;
         bool isParam = false;
         std::string paramName;
+
+        RouteNode()
+            : children(), handler(nullptr), paramName()
+        {
+        }
     };
 
     /**
