@@ -26,7 +26,7 @@
  *    `HTTPServer::join_threads()` to ensure a clean teardown.
  */
 
-namespace vix::app
+namespace vix
 {
     using Logger = vix::utils::Logger;
 

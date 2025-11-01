@@ -53,8 +53,8 @@
  */
 
 #include <vix/http/Response.hpp>
-#include <vix/router/IRequestHandler.hpp>
-#include <vix/router/RequestHandler.hpp>
+#include <vix/http/IRequestHandler.hpp>
+#include <vix/http/RequestHandler.hpp>
 
 #include <boost/beast/http.hpp>
 #include <memory>
@@ -76,7 +76,7 @@ namespace vix::router
     struct RouteNode
     {
         std::unordered_map<std::string, std::unique_ptr<RouteNode>> children;
-        std::shared_ptr<vix::http::IRequestHandler> handler;
+        std::shared_ptr<vix::vhttp::IRequestHandler> handler;
         bool isParam = false;
         std::string paramName;
 
@@ -120,7 +120,7 @@ namespace vix::router
          * nodes, marking `{param}` segments as wildcard (`*`). Parameter value
          * extraction is left to the handler implementation.
          */
-        void add_route(http::verb method, const std::string &path, std::shared_ptr<vix::http::IRequestHandler> handler)
+        void add_route(http::verb method, const std::string &path, std::shared_ptr<vix::vhttp::IRequestHandler> handler)
         {
             std::string full_path = method_to_string(method) + path;
             auto *node = root_.get();
@@ -233,7 +233,7 @@ namespace vix::router
                     {"error", "Route not found"},
                     {"method", std::string(req.method_string())},
                     {"path", std::string(req.target())}};
-                vix::http::Response::json_response(res, j, res.result());
+                vix::vhttp::Response::json_response(res, j, res.result());
                 res.set(http::field::connection, "close");
                 res.prepare_payload();
             }

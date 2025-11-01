@@ -76,7 +76,7 @@ namespace vix::server
         : config_(config),
           io_context_(std::make_shared<net::io_context>()),
           acceptor_(nullptr),
-          router_(std::make_shared<Router>()),
+          router_(std::make_shared<vix::router::Router>()),
           executor_(std::move(exec)),
           io_threads_(),
           stop_requested_(false)
@@ -107,7 +107,7 @@ namespace vix::server
                         {"method", std::string(req.method_string())},
                         {"path", std::string(req.target())}};
 
-                    vix::http::Response::json_response(res, j, res.result());
+                    vix::vhttp::Response::json_response(res, j, res.result());
                     // Force close to avoid clients lingering for keep-alive.
                     res.set(http::field::connection, "close");
                     res.prepare_payload();
@@ -256,7 +256,7 @@ namespace vix::server
                 auto timeout = std::chrono::milliseconds(config_.getRequestTimeout());
               executor_->post([this, socket]() {
                     handle_client(socket, router_);
-              }, vix::TaskOptions{.priority = 1, .timeout = timeout});
+              }, vix::executor::TaskOptions{.priority = 1, .timeout = timeout});
             }
             if (!stop_requested_) start_accept(); });
     }
@@ -268,9 +268,9 @@ namespace vix::server
      * eventually calls Router::handle_request(). The NotFound handler installed
      * in the constructor guarantees a consistent JSON 404 for unmatched routes.
      */
-    void HTTPServer::handle_client(std::shared_ptr<tcp::socket> socket_ptr, std::shared_ptr<Router> router)
+    void HTTPServer::handle_client(std::shared_ptr<tcp::socket> socket_ptr, std::shared_ptr<vix::router::Router> router)
     {
-        auto session = std::make_shared<Session>(socket_ptr, *router);
+        auto session = std::make_shared<vix::session::Session>(socket_ptr, *router);
         session->run();
     }
 

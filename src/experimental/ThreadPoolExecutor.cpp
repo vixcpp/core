@@ -19,7 +19,6 @@ namespace vix::experimental
             {
                 (void)pool_->enqueue(opt.priority, std::move(fn));
             }
-
             return true;
         }
         catch (...)
@@ -39,8 +38,10 @@ namespace vix::experimental
         pool_->waitUntilIdle();
     }
 
-    std::unique_ptr<vix::executor::IExecutor> make_threadpool_executor(std::size_t threads, std::size_t maxThreads, int defaultPriority)
+    std::unique_ptr<vix::executor::IExecutor>
+    make_threadpool_executor(std::size_t threads, std::size_t maxThreads, int defaultPriority)
     {
-        return std::make_unique<ThreadPoolExecutor>(threads, maxThreads, defaultPriority);
+        return std::unique_ptr<vix::executor::IExecutor>(
+            new ThreadPoolExecutor(threads, maxThreads, defaultPriority));
     }
 }

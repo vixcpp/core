@@ -3,7 +3,7 @@
 
 #include <memory>
 #include <vix/executor/IExecutor.hpp>
-#include <vix/server/ThreadPool.hpp>
+#include <vix/threadpool/ThreadPool.hpp>
 
 #include <vix/executor/TaskOptions.hpp>
 #include <vix/executor/Metrics.hpp>
@@ -22,7 +22,7 @@ namespace vix::experimental
         void wait_idle() override;
 
     private:
-        std::unique_ptr<vix::http::ThreadPool> pool_;
+        std::unique_ptr<vix::threadpool::ThreadPool> pool_;
     };
 
     std::unique_ptr<vix::executor::IExecutor> make_threadpool_executor(std::size_t threads,

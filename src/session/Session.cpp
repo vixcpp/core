@@ -103,13 +103,13 @@ namespace vix::session
         }
 
         buffer_.consume(buffer_.size());
-        parser_ = std::make_unique<http::request_parser<http::string_body>>();
+        parser_ = std::make_unique<bhttp::request_parser<bhttp::string_body>>();
         parser_->body_limit(MAX_REQUEST_BODY_SIZE);
 
         start_timer();
 
         auto self = shared_from_this();
-        http::async_read(
+        bhttp::async_read(
             *socket_, buffer_, *parser_,
             [this, self](boost::system::error_code ec, std::size_t)
             {
@@ -117,7 +117,7 @@ namespace vix::session
 
                 if (ec)
                 {
-                    if (ec == http::error::end_of_stream ||
+                    if (ec == bhttp::error::end_of_stream ||
                         ec == boost::asio::error::connection_reset)
                     {
                         logger.log(Logger::Level::DEBUG,
@@ -133,7 +133,7 @@ namespace vix::session
                     return;
                 }
 
-                std::optional<http::request<http::string_body>> parsed;
+                std::optional<bhttp::request<bhttp::string_body>> parsed;
                 try
                 {
                     parsed = parser_->release();
@@ -160,7 +160,7 @@ namespace vix::session
      * - Sets `Connection: keep-alive|close` and writes the response.
      */
     void Session::handle_request(const boost::system::error_code &ec,
-                                 std::optional<http::request<http::string_body>> parsed_req)
+                                 std::optional<bhttp::request<bhttp::string_body>> parsed_req)
     {
         if (ec)
         {
@@ -181,14 +181,14 @@ namespace vix::session
         if (!waf_check_request(req_))
         {
             logger.log(Logger::Level::WARN, "[WAF] Request blocked by rules");
-            send_error(http::status::bad_request, "Request blocked (security)");
+            send_error(bhttp::status::bad_request, "Request blocked (security)");
             return;
         }
 
 #if defined(BOOST_BEAST_VERSION) && BOOST_BEAST_VERSION >= 315
         constexpr auto too_large_status = http::status::payload_too_large;
 #else
-        constexpr auto too_large_status = static_cast<http::status>(413);
+        constexpr auto too_large_status = static_cast<bhttp::status>(413);
 #endif
         if (req_.body().size() > MAX_REQUEST_BODY_SIZE)
         {
@@ -197,7 +197,7 @@ namespace vix::session
             return;
         }
 
-        http::response<http::string_body> res;
+        bhttp::response<bhttp::string_body> res;
         bool ok = false;
         try
         {
@@ -206,7 +206,7 @@ namespace vix::session
         catch (const std::exception &ex)
         {
             logger.log(Logger::Level::ERROR, "[Router] Exception: {}", ex.what());
-            send_error(http::status::internal_server_error, "Internal server error");
+            send_error(bhttp::status::internal_server_error, "Internal server error");
             return;
         }
 
@@ -214,18 +214,18 @@ namespace vix::session
         {
             // If a handler signaled failure but forgot to set an error status,
             // downgrade OK to 400 to avoid sending a misleading success.
-            if (res.result() == http::status::ok)
-                res.result(http::status::bad_request);
+            if (res.result() == bhttp::status::ok)
+                res.result(bhttp::status::bad_request);
         }
 
-        res.set(http::field::connection, req_.keep_alive() ? "keep-alive" : "close");
+        res.set(bhttp::field::connection, req_.keep_alive() ? "keep-alive" : "close");
         send_response(std::move(res));
     }
 
     /**
      * @brief Async write response and manage keep‑alive re‑arm.
      */
-    void Session::send_response(http::response<http::string_body> res)
+    void Session::send_response(bhttp::response<bhttp::string_body> res)
     {
         if (!socket_ || !socket_->is_open())
         {
@@ -234,40 +234,40 @@ namespace vix::session
         }
 
         auto self = shared_from_this();
-        auto res_ptr = std::make_shared<http::response<http::string_body>>(std::move(res));
+        auto res_ptr = std::make_shared<bhttp::response<bhttp::string_body>>(std::move(res));
 
-        http::async_write(*socket_, *res_ptr,
-                          [this, self, res_ptr](boost::system::error_code ec, std::size_t)
-                          {
-                              if (ec)
-                              {
-                                  logger.log(Logger::Level::WARN, "[Session] Write error: {}", ec.message());
-                                  close_socket_gracefully();
-                                  return;
-                              }
+        bhttp::async_write(*socket_, *res_ptr,
+                           [this, self, res_ptr](boost::system::error_code ec, std::size_t)
+                           {
+                               if (ec)
+                               {
+                                   logger.log(Logger::Level::WARN, "[Session] Write error: {}", ec.message());
+                                   close_socket_gracefully();
+                                   return;
+                               }
 
-                              logger.log(Logger::Level::DEBUG, "[Session] Response sent ({} bytes)", res_ptr->body().size());
+                               logger.log(Logger::Level::DEBUG, "[Session] Response sent ({} bytes)", res_ptr->body().size());
 
-                              if (res_ptr->keep_alive())
-                              {
-                                  parser_.reset();
-                                  read_request();
-                              }
-                              else
-                              {
-                                  close_socket_gracefully();
-                              }
-                          });
+                               if (res_ptr->keep_alive())
+                               {
+                                   parser_.reset();
+                                   read_request();
+                               }
+                               else
+                               {
+                                   close_socket_gracefully();
+                               }
+                           });
     }
 
     /**
      * @brief Build and send a JSON error response, then close.
      */
-    void Session::send_error(http::status status, const std::string &msg)
+    void Session::send_error(bhttp::status status, const std::string &msg)
     {
-        http::response<http::string_body> res;
-        vix::http::Response::error_response(res, status, msg);
-        res.set(http::field::connection, "close");
+        bhttp::response<bhttp::string_body> res;
+        vix::vhttp::Response::error_response(res, status, msg);
+        res.set(bhttp::field::connection, "close");
         send_response(std::move(res));
     }
 
@@ -291,7 +291,7 @@ namespace vix::session
      *
      * @return true if request passes the checks; false otherwise.
      */
-    bool Session::waf_check_request(const http::request<http::string_body> &req)
+    bool Session::waf_check_request(const bhttp::request<bhttp::string_body> &req)
     {
         if (req.target().size() > 4096)
         {

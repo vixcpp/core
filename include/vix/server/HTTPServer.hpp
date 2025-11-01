@@ -76,7 +76,7 @@
 #include <boost/filesystem.hpp>
 #include <atomic>
 
-#include <vix/router/IRequestHandler.hpp>
+#include <vix/http/IRequestHandler.hpp>
 #include <vix/router/Router.hpp>
 #include <vix/session/Session.hpp>
 #include <vix/http/Response.hpp>
@@ -115,7 +115,7 @@ namespace vix::server
          *  - `server.request_threads` (integer, optional) — size of the worker
          *    pool for user handlers; defaults to `NUMBER_OF_THREADS`.
          */
-        explicit HTTPServer(Config &config, std::shared_ptr<vix::executor::IExecutor> exec);
+        explicit HTTPServer(vix::config::Config &config, std::shared_ptr<vix::executor::IExecutor> exec);
 
         /** @brief Destructor; requests stop and joins owned threads if needed. */
         ~HTTPServer();
@@ -207,7 +207,7 @@ namespace vix::server
         void start_io_threads();
 
     private:
-        Config &config_;                              //!< Server configuration (non‑owning).
+        vix::config::Config &config_;                 //!< Server configuration (non‑owning).
         std::shared_ptr<net::io_context> io_context_; //!< Shared I/O context.
         std::unique_ptr<tcp::acceptor> acceptor_;     //!< Listening socket.
         std::shared_ptr<vix::router::Router> router_; //!< HTTP router for request dispatch.

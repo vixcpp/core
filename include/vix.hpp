@@ -2,6 +2,6 @@
 #define VIX_VIX_HPP
 
 #include <vix/app/App.hpp>
-#include <vix/router/RequestHandler.hpp>
+#include <vix/http/RequestHandler.hpp>
 
 #endif

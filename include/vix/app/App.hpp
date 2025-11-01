@@ -48,13 +48,13 @@
 
 #include <vix/config/Config.hpp>
 #include <vix/server/HTTPServer.hpp>
-#include <vix/router/RequestHandler.hpp>
+#include <vix/http/RequestHandler.hpp>
 #include <vix/utils/Logger.hpp>
 
 #include <vix/executor/IExecutor.hpp>
 #include <vix/experimental/ThreadPoolExecutor.hpp>
 
-namespace vix::app
+namespace vix
 {
     namespace http = boost::beast::http;
     using Logger = vix::utils::Logger;
@@ -141,7 +141,7 @@ namespace vix::app
                 log.throwError("Router is not initialized in App");
             }
 
-            auto request_handler = std::make_shared<RequestHandler<Handler>>(path, std::move(handler));
+            auto request_handler = std::make_shared<vix::vhttp::RequestHandler<Handler>>(path, std::move(handler));
             router_->add_route(method, path, request_handler);
 
             log.logf(Logger::Level::DEBUG, "Route registered", "method", static_cast<int>(method), "path", path.c_str());

@@ -63,7 +63,7 @@
 
 namespace vix::session
 {
-    namespace http = boost::beast::http;
+    namespace bhttp = boost::beast::http;
     namespace net = boost::asio;
     namespace beast = boost::beast;
     using tcp = net::ip::tcp;
@@ -123,20 +123,20 @@ namespace vix::session
          * - Catches and logs any exceptions raised by route handlers.
          */
         void handle_request(const boost::system::error_code &ec,
-                            std::optional<http::request<http::string_body>> parsed_req);
+                            std::optional<bhttp::request<bhttp::string_body>> parsed_req);
 
         /**
          * @brief Send a serialized HTTP response.
          * @param res Response to write back to the client.
          */
-        void send_response(http::response<http::string_body> res);
+        void send_response(bhttp::response<bhttp::string_body> res);
 
         /**
          * @brief Send an error response (JSON-encoded message).
          * @param status HTTP status code.
          * @param msg    Error message to return.
          */
-        void send_error(http::status status, const std::string &msg);
+        void send_error(bhttp::status status, const std::string &msg);
 
         /** @brief Close the socket gracefully (shutdown+close). */
         void close_socket_gracefully();
@@ -148,15 +148,15 @@ namespace vix::session
          * @details Scans request body and target URI for suspicious patterns
          *          (XSS or SQLi). Blocks obvious injections early.
          */
-        bool waf_check_request(const http::request<http::string_body> &req);
+        bool waf_check_request(const bhttp::request<bhttp::string_body> &req);
 
     private:
-        std::shared_ptr<tcp::socket> socket_;                             //!< Underlying TCP connection.
-        vix::router::Router &router_;                                     //!< Router reference for dispatch.
-        beast::flat_buffer buffer_;                                       //!< Read buffer for Beast.
-        http::request<http::string_body> req_;                            //!< Current parsed request.
-        std::unique_ptr<http::request_parser<http::string_body>> parser_; //!< HTTP request parser.
-        std::shared_ptr<net::steady_timer> timer_;                        //!< Per-request timeout timer.
+        std::shared_ptr<tcp::socket> socket_;                               //!< Underlying TCP connection.
+        vix::router::Router &router_;                                       //!< Router reference for dispatch.
+        beast::flat_buffer buffer_;                                         //!< Read buffer for Beast.
+        bhttp::request<bhttp::string_body> req_;                            //!< Current parsed request.
+        std::unique_ptr<bhttp::request_parser<bhttp::string_body>> parser_; //!< HTTP request parser.
+        std::shared_ptr<net::steady_timer> timer_;                          //!< Per-request timeout timer.
 
         static const std::regex XSS_PATTERN; //!< Regex for basic XSS detection.
         static const std::regex SQL_PATTERN; //!< Regex for basic SQL injection detection.

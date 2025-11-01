@@ -3,10 +3,10 @@
 
 #include <boost/beast/http.hpp>
 
-namespace http = boost::beast::http;
-
-namespace vix::http
+namespace vix::vhttp
 {
+
+    namespace http = boost::beast::http;
     /**
      * @file IRequestHandler.hpp
      * @brief Base interface for all HTTP route handlers in Vix.cpp.

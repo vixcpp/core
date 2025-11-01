@@ -6,7 +6,7 @@
  * @brief Functional adapter between user-defined handlers and the Vix routing system.
  *
  * @details
- * `vix::RequestHandler` enables developers to register simple lambdas or callable
+ * `vix::http::RequestHandler` enables developers to register simple lambdas or callable
  * objects as route handlers without manually subclassing `IRequestHandler`.
  * It provides:
  * - Automatic **parameter extraction** from route patterns (e.g. `/users/{id}`).
@@ -19,16 +19,6 @@
  * void handler(const http::request<http::string_body>& req, ResponseWrapper& res,
  *              std::unordered_map<std::string, std::string>& params);
  * ```
- *
- * ### Example
- * ```cpp
- * router.add_route(http::verb::get, "/users/{id}",
- *     std::make_shared<RequestHandler>("/users/{id}",
- *         [](const auto& req, vix::ResponseWrapper& res, auto& params){
- *             res.status(200).json({{"id", params["id"]}, {"ok", true}});
- *         }
- *     ));
- * ```
  */
 
 #include <string>
@@ -40,46 +30,178 @@
 #include <variant>
 #include <vector>
 #include <utility>
+#include <concepts>  // C++20 concepts
+#include <cassert>   // assert in Debug
+#include <stdexcept> // std::range_error
 
 #include <boost/beast/http.hpp>
 #include <nlohmann/json.hpp>
 
 #include <vix/http/IRequestHandler.hpp>
 #include <vix/http/Response.hpp>
-#include <vix/json/Simple.hpp>
+#include <vix/http/Status.hpp>  // to_status(int), status_to_string(int)
+#include <vix/json/Simple.hpp>  // vix::json::token / kvs
+#include <vix/utils/Logger.hpp> // vix::utils::Logger
 
-namespace vix::http
+namespace vix::vhttp
 {
     namespace http = boost::beast::http;
+
+    // --------------------------------------------------------------
+    // Forward declarations (used by ResponseWrapper)
+    // --------------------------------------------------------------
+    inline nlohmann::json token_to_nlohmann(const vix::json::token &t);
+    inline nlohmann::json kvs_to_nlohmann(const vix::json::kvs &list);
+
+    // ------------------------------------------------------------------
+    // ResponseWrapper — Express-like response builder
+    // ------------------------------------------------------------------
+    struct ResponseWrapper
+    {
+        http::response<http::string_body> &res;
+
+        explicit ResponseWrapper(http::response<http::string_body> &r) noexcept : res(r) {}
+
+        /**
+         * @brief Set HTTP status from enum and keep chaining.
+         */
+        ResponseWrapper &status(http::status code) noexcept
+        {
+            res.result(code);
+            return *this;
+        }
+
+        /**
+         * @brief Set HTTP status from integer (Express-like).
+         *
+         * - Debug: assert on invalid range and also throw a range_error to bubble into the global handler.
+         * - Release: throw a range_error on invalid range so it is **not** silent; the global handler
+         *            will log the error and format a proper error response (HTML in Debug builds of the server,
+         *            JSON in Release).
+         */
+        ResponseWrapper &status(int code)
+        {
+            if (code < 100 || code > 599)
+            {
+#ifndef NDEBUG
+                assert(false && "Invalid HTTP status code [100..599]");
+#endif
+                throw std::range_error("Invalid HTTP status code: " + std::to_string(code) +
+                                       ". Status code must be between 100 and 599.");
+            }
+            res.result(static_cast<http::status>(code));
+            return *this;
+        }
+
+        /**
+         * @brief Set status and immediately send a short textual payload
+         *        like Express's res.sendStatus().
+         */
+        ResponseWrapper &sendStatus(int code)
+        {
+            status(code);
+            const auto s = vix::vhttp::status_to_string(static_cast<int>(res.result()));
+            vix::vhttp::Response::text_response(res, s, res.result());
+            return *this;
+        }
+
+        /**
+         * @brief Send plain text with current status.
+         */
+        ResponseWrapper &text(std::string_view data)
+        {
+            vix::vhttp::Response::text_response(res, data, res.result());
+            return *this;
+        }
+
+        /**
+         * @brief Send JSON from key-value tokens (initializer list).
+         */
+        ResponseWrapper &json(std::initializer_list<vix::json::token> list)
+        {
+            auto j = kvs_to_nlohmann(vix::json::kvs{list});
+            vix::vhttp::Response::json_response(res, j, res.result());
+            return *this;
+        }
+
+        /**
+         * @brief Send JSON from key-value sequence.
+         */
+        ResponseWrapper &json(const vix::json::kvs &kv)
+        {
+            auto j = kvs_to_nlohmann(kv);
+            vix::vhttp::Response::json_response(res, j, res.result());
+            return *this;
+        }
+
+        /**
+         * @brief Send prebuilt nlohmann::json.
+         */
+        ResponseWrapper &json(const nlohmann::json &j)
+        {
+            vix::vhttp::Response::json_response(res, j, res.result());
+            return *this;
+        }
+
+        /**
+         * @brief Send any serializable type as JSON.
+         * @note Compile-time error if J is not serializable by Response::json_response.
+         */
+        template <typename J>
+            requires(!std::is_same_v<std::decay_t<J>, nlohmann::json> &&
+                     !std::is_same_v<std::decay_t<J>, vix::json::kvs> &&
+                     !std::is_same_v<std::decay_t<J>, std::initializer_list<vix::json::token>>)
+        ResponseWrapper &json(const J &data)
+        {
+            vix::vhttp::Response::json_response(res, data, res.result());
+            return *this;
+        }
+
+        // ----------------------------------------------------------
+        // Express-like helpers (ergonomic chaining)
+        // ----------------------------------------------------------
+        ResponseWrapper &ok() { return status(http::status::ok); }
+        ResponseWrapper &created() { return status(http::status::created); }
+        ResponseWrapper &accepted() { return status(http::status::accepted); }
+        ResponseWrapper &no_content() { return status(http::status::no_content); }
+
+        ResponseWrapper &bad_request() { return status(http::status::bad_request); }
+        ResponseWrapper &unauthorized() { return status(http::status::unauthorized); }
+        ResponseWrapper &forbidden() { return status(http::status::forbidden); }
+        ResponseWrapper &not_found() { return status(http::status::not_found); }
+        ResponseWrapper &conflict() { return status(http::status::conflict); }
+
+        ResponseWrapper &internal_error() { return status(http::status::internal_server_error); }
+        ResponseWrapper &not_implemented() { return status(http::status::not_implemented); }
+        ResponseWrapper &bad_gateway() { return status(http::status::bad_gateway); }
+        ResponseWrapper &service_unavailable() { return status(http::status::service_unavailable); }
+    };
+
+    // ------------------------------------------------------------------
+    // Concepts — on exige les signatures avec requête const&
+    // (évite les faux négatifs et force une API sûre)
+    // ------------------------------------------------------------------
+    template <class H>
+    concept HandlerReqRes =
+        std::is_invocable_r_v<void,
+                              H,
+                              const http::request<http::string_body> &,
+                              vix::vhttp::ResponseWrapper &>;
+
+    template <class H>
+    concept HandlerReqResParams =
+        std::is_invocable_r_v<void,
+                              H,
+                              const http::request<http::string_body> &,
+                              vix::vhttp::ResponseWrapper &,
+                              std::unordered_map<std::string, std::string> &>;
+
+    template <class H>
+    concept ValidHandler = HandlerReqRes<H> || HandlerReqResParams<H>;
 
     // ------------------------------------------------------------------
     // JSON conversion utilities (vix::json → nlohmann::json)
     // ------------------------------------------------------------------
-
-    inline nlohmann::json token_to_nlohmann(const vix::json::token &t);
-
-    /**
-     * @brief Convert vix::json::kvs (flat key/value pairs) to nlohmann::json.
-     */
-    inline nlohmann::json kvs_to_nlohmann(const vix::json::kvs &list)
-    {
-        nlohmann::json obj = nlohmann::json::object();
-        const auto &a = list.flat;
-        const size_t n = a.size() - (a.size() % 2);
-
-        for (size_t i = 0; i < n; i += 2)
-        {
-            const auto &k = a[i].v;
-            const auto &v = a[i + 1];
-
-            if (!std::holds_alternative<std::string>(k))
-                continue;
-            const std::string &key = std::get<std::string>(k);
-
-            obj[key] = token_to_nlohmann(v);
-        }
-        return obj;
-    }
 
     inline nlohmann::json token_to_nlohmann(const vix::json::token &t)
     {
@@ -87,7 +209,6 @@ namespace vix::http
         std::visit([&](auto &&val)
                    {
             using T = std::decay_t<decltype(val)>;
-
             if constexpr (std::is_same_v<T, std::monostate>) {
                 j = nullptr;
             } else if constexpr (std::is_same_v<T, bool> ||
@@ -110,16 +231,29 @@ namespace vix::http
         return j;
     }
 
+    inline nlohmann::json kvs_to_nlohmann(const vix::json::kvs &list)
+    {
+        nlohmann::json obj = nlohmann::json::object();
+        const auto &a = list.flat;
+        const size_t n = a.size() - (a.size() % 2);
+
+        for (size_t i = 0; i < n; i += 2)
+        {
+            const auto &k = a[i].v;
+            const auto &v = a[i + 1];
+
+            if (!std::holds_alternative<std::string>(k))
+                continue;
+            const std::string &key = std::get<std::string>(k);
+
+            obj[key] = token_to_nlohmann(v);
+        }
+        return obj;
+    }
+
     // ------------------------------------------------------------------
-    // Path parameter extraction from route pattern
+    // Path parameter extraction
     // ------------------------------------------------------------------
-    /**
-     * @brief Extract named parameters from a route pattern and a request path.
-     *
-     * @param pattern e.g. "/users/{id}/posts/{pid}"
-     * @param path    Actual request path (e.g. "/users/42/posts/7")
-     * @return A map {"id" → "42", "pid" → "7"}
-     */
     inline std::unordered_map<std::string, std::string>
     extract_params_from_path(const std::string &pattern, std::string_view path)
     {
@@ -151,85 +285,48 @@ namespace vix::http
     }
 
     // ------------------------------------------------------------------
-    // ResponseWrapper — Express-like response builder
+    // Utility: Dev HTML error page (Express-like) for invalid status or handler errors.
+    // Only used in Debug builds to aid DX. In Release, we return JSON.
     // ------------------------------------------------------------------
-    /**
-     * @brief Provides an ergonomic API for building HTTP responses.
-     *
-     * Example:
-     * ```cpp
-     * res.status(201).json({{"ok", true}, {"id", 7}});
-     * ```
-     */
-    struct ResponseWrapper
+    inline std::string make_dev_error_html(const std::string &title, const std::string &detail,
+                                           const std::string &route_pattern,
+                                           const std::string &method,
+                                           const std::string &path)
     {
-        http::response<http::string_body> &res;
-
-        explicit ResponseWrapper(http::response<http::string_body> &r) noexcept : res(r) {}
-
-        ResponseWrapper &status(http::status code) noexcept
-        {
-            res.result(code);
-            return *this;
-        }
-        ResponseWrapper &status(int code) noexcept
-        {
-            res.result(static_cast<http::status>(code));
-            return *this;
-        }
-
-        ResponseWrapper &text(std::string_view data)
-        {
-            vix::http::Response::text_response(res, data, res.result());
-            return *this;
-        }
-
-        ResponseWrapper &json(std::initializer_list<vix::json::token> list)
-        {
-            auto j = kvs_to_nlohmann(vix::json::kvs{list});
-            vix::http::Response::json_response(res, j, res.result());
-            return *this;
-        }
-
-        ResponseWrapper &json(const vix::json::kvs &kv)
-        {
-            auto j = kvs_to_nlohmann(kv);
-            vix::http::Response::json_response(res, j, res.result());
-            return *this;
-        }
-
-        ResponseWrapper &json(const nlohmann::json &j)
-        {
-            vix::http::Response::json_response(res, j, res.result());
-            return *this;
-        }
-
-        template <typename J,
-                  typename = std::enable_if_t<!std::is_same_v<std::decay_t<J>, nlohmann::json> &&
-                                              !std::is_same_v<std::decay_t<J>, vix::json::kvs> &&
-                                              !std::is_same_v<std::decay_t<J>, std::initializer_list<vix::json::token>>>>
-        ResponseWrapper &json(const J &data)
-        {
-            vix::http::Response::json_response(res, data, res.result());
-            return *this;
-        }
-    };
+        std::string html;
+        html.reserve(1024);
+        html += "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Error</title></head><body><pre>";
+        html += title;
+        html += ": ";
+        html += detail;
+        html += "\nRoute: ";
+        html += route_pattern;
+        html += "\nMethod: ";
+        html += method;
+        html += "\nPath: ";
+        html += path;
+        html += "\n</pre></body></html>";
+        return html;
+    }
 
     // ------------------------------------------------------------------
-    // RequestHandler<Handler> — generic adapter
+    // RequestHandler<Handler> — generic adapter avec checks compile-time
     // ------------------------------------------------------------------
-    /**
-     * @tparam Handler User-provided callable (lambda, functor, etc.).
-     *
-     * @brief Bridges user handlers to the internal IRequestHandler interface.
-     * Supports both (req, res) and (req, res, params) signatures.
-     */
-    template <typename Handler>
+    template <ValidHandler Handler>
     class RequestHandler : public IRequestHandler
     {
+        static_assert(ValidHandler<Handler>,
+                      "Invalid handler signature. Expected:\n"
+                      "  void (const request<string_body>&, ResponseWrapper&)\n"
+                      "  or\n"
+                      "  void (const request<string_body>&, ResponseWrapper&, unordered_map<string,string>&)");
+
     public:
         RequestHandler(std::string route_pattern, Handler handler)
-            : route_pattern_(std::move(route_pattern)), handler_(std::move(handler)) {}
+            : route_pattern_(std::move(route_pattern)), handler_(std::move(handler))
+        {
+            static_assert(sizeof(Handler) > 0, "Handler type must be complete here.");
+        }
 
         void handle_request(const http::request<http::string_body> &req,
                             http::response<http::string_body> &res) override
@@ -240,20 +337,17 @@ namespace vix::http
                 auto params = extract_params_from_path(
                     route_pattern_, std::string_view(req.target().data(), req.target().size()));
 
-                if constexpr (std::is_invocable_v<Handler,
-                                                  decltype(req), ResponseWrapper &, std::unordered_map<std::string, std::string> &>)
+                if constexpr (HandlerReqResParams<Handler>)
                 {
                     handler_(req, wrapped, params);
                 }
-                else if constexpr (std::is_invocable_v<Handler,
-                                                       decltype(req), ResponseWrapper &>)
+                else if constexpr (HandlerReqRes<Handler>)
                 {
                     handler_(req, wrapped);
                 }
                 else
                 {
-                    static_assert(always_false<Handler>::value,
-                                  "Unsupported handler signature. Use (req,res) or (req,res,params).");
+                    static_assert(ValidHandler<Handler>, "Unsupported handler signature.");
                 }
 
                 const bool keep_alive =
@@ -263,22 +357,65 @@ namespace vix::http
                 res.set(http::field::connection, keep_alive ? "keep-alive" : "close");
                 res.prepare_payload();
             }
-            catch (const std::exception &)
+            catch (const std::range_error &e)
             {
-                vix::http::Response::error_response(res, http::status::internal_server_error, "Internal Server Error");
+                // Explicit developer error (e.g., invalid status code). Log loudly and format Express-like Debug HTML.
+                auto &log = vix::utils::Logger::getInstance();
+                log.log(vix::utils::Logger::Level::ERROR,
+                        "Route '{}' threw range_error: {} (method={}, path={})",
+                        route_pattern_, e.what(),
+                        std::string(req.method_string()), std::string(req.target()));
+
+#ifndef NDEBUG
+                res.result(http::status::internal_server_error);
+                res.set(http::field::content_type, "text/html; charset=utf-8");
+                res.set(http::field::x_content_type_options, "nosniff");
+                const auto html = make_dev_error_html(
+                    "RangeError", e.what(), route_pattern_,
+                    std::string(req.method_string()), std::string(req.target()));
+                res.body() = html;
+                res.prepare_payload();
+#else
+                // In Release, return a compact JSON with a clear developer-facing hint.
+                nlohmann::json j{
+                    {"error", "Internal Server Error"},
+                    {"hint", "Invalid status code passed by handler. See server logs."},
+                    {"code", "E_INVALID_STATUS"}};
+                vix::vhttp::Response::json_response(res, j, http::status::internal_server_error);
+                res.prepare_payload();
+#endif
+            }
+            catch (const std::exception &e)
+            {
+                auto &log = vix::utils::Logger::getInstance();
+                log.log(vix::utils::Logger::Level::ERROR,
+                        "Route '{}' threw exception: {} (method={}, path={})",
+                        route_pattern_, e.what(),
+                        std::string(req.method_string()), std::string(req.target()));
+
+#ifndef NDEBUG
+                // Debug: rich HTML like Express
+                res.result(http::status::internal_server_error);
+                res.set(http::field::content_type, "text/html; charset=utf-8");
+                res.set(http::field::x_content_type_options, "nosniff");
+                const auto html = make_dev_error_html(
+                    "Error", e.what(), route_pattern_,
+                    std::string(req.method_string()), std::string(req.target()));
+                res.body() = html;
+                res.prepare_payload();
+#else
+                // Release: minimal JSON
+                vix::vhttp::Response::error_response(
+                    res, http::status::internal_server_error, "Internal Server Error");
+#endif
             }
         }
 
     private:
         std::string route_pattern_;
         Handler handler_;
-
-        template <typename T>
-        struct always_false : std::false_type
-        {
-        };
     };
 
-} // namespace vix::router
+} // namespace vix::vhttp
 
 #endif // VIX_REQUEST_HANDLER_HPP
