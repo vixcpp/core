@@ -369,7 +369,7 @@ namespace vix::vhttp
 #ifndef NDEBUG
                 res.result(http::status::internal_server_error);
                 res.set(http::field::content_type, "text/html; charset=utf-8");
-                res.set(http::field::x_content_type_options, "nosniff");
+                res.set("X-Content-Type-Options", "nosniff");
                 const auto html = make_dev_error_html(
                     "RangeError", e.what(), route_pattern_,
                     std::string(req.method_string()), std::string(req.target()));
@@ -397,7 +397,8 @@ namespace vix::vhttp
                 // Debug: rich HTML like Express
                 res.result(http::status::internal_server_error);
                 res.set(http::field::content_type, "text/html; charset=utf-8");
-                res.set(http::field::x_content_type_options, "nosniff");
+                res.set("X-Content-Type-Options", "nosniff");
+
                 const auto html = make_dev_error_html(
                     "Error", e.what(), route_pattern_,
                     std::string(req.method_string()), std::string(req.target()));
