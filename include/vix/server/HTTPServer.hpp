@@ -6,8 +6,8 @@
  * @brief High‑performance HTTP server for Vix.cpp built on Boost.Asio/Beast.
  *
  * @details
- * The `Vix::HTTPServer` coordinates network I/O (via Boost.Asio), HTTP parsing
- * (via Boost.Beast), request routing (via `Vix::Router`), and execution of user
+ * The `vix::HTTPServer` coordinates network I/O (via Boost.Asio), HTTP parsing
+ * (via Boost.Beast), request routing (via `vix::Router`), and execution of user
  * handlers (via a dedicated `ThreadPool`). It is designed to be:
  *
  *  - **Event‑driven**: a single `io_context` dispatches async accept/read/write.
@@ -20,7 +20,7 @@
  * - **I/O threads**: N threads (computed by `calculate_io_thread_count()`) run
  *   the `io_context` and execute asynchronous accept/read/write operations.
  * - **Request workers**: application callbacks are delegated to
- *   `Vix::ThreadPool` to isolate CPU‑bound work from the I/O loop.
+ *   `vix::ThreadPool` to isolate CPU‑bound work from the I/O loop.
  *
  * ### Lifetime & ownership
  * - `HTTPServer` owns the `io_context_`, the listening `acceptor_`, the
@@ -76,16 +76,16 @@
 #include <boost/filesystem.hpp>
 #include <atomic>
 
-#include <vix/router/IRequestHandler.hpp>
+#include <vix/http/IRequestHandler.hpp>
 #include <vix/router/Router.hpp>
 #include <vix/session/Session.hpp>
 #include <vix/http/Response.hpp>
 #include <vix/config/Config.hpp>
-#include <vix/server/ThreadPool.hpp>
+#include <vix/threadpool/ThreadPool.hpp>
 
 #include <vix/executor/IExecutor.hpp>
 
-namespace Vix
+namespace vix::server
 {
     namespace beast = boost::beast;
     namespace http = boost::beast::http;
@@ -115,7 +115,7 @@ namespace Vix
          *  - `server.request_threads` (integer, optional) — size of the worker
          *    pool for user handlers; defaults to `NUMBER_OF_THREADS`.
          */
-        explicit HTTPServer(Config &config, std::shared_ptr<Vix::IExecutor> exec);
+        explicit HTTPServer(vix::config::Config &config, std::shared_ptr<vix::executor::IExecutor> exec);
 
         /** @brief Destructor; requests stop and joins owned threads if needed. */
         ~HTTPServer();
@@ -148,7 +148,7 @@ namespace Vix
          *          server is actively handling traffic unless your `Router`
          *          implementation is designed for concurrent mutation.
          */
-        std::shared_ptr<Router> getRouter() { return router_; }
+        std::shared_ptr<vix::router::Router> getRouter() { return router_; }
 
         /**
          * @brief Periodically collect and log runtime metrics.
@@ -198,7 +198,7 @@ namespace Vix
          * back to the client.
          */
         void handle_client(std::shared_ptr<tcp::socket> socket_ptr,
-                           std::shared_ptr<Router> router);
+                           std::shared_ptr<vix::router::Router> router);
 
         /** @brief Close the given socket, ignoring benign errors. */
         void close_socket(std::shared_ptr<tcp::socket> socket);
@@ -207,16 +207,15 @@ namespace Vix
         void start_io_threads();
 
     private:
-        Config &config_;                              //!< Server configuration (non‑owning).
+        vix::config::Config &config_;                 //!< Server configuration (non‑owning).
         std::shared_ptr<net::io_context> io_context_; //!< Shared I/O context.
         std::unique_ptr<tcp::acceptor> acceptor_;     //!< Listening socket.
-        std::shared_ptr<Router> router_;              //!< HTTP router for request dispatch.
-        // Vix::ThreadPool request_thread_pool_;         //!< Worker pool for user handlers.
-        std::shared_ptr<Vix::IExecutor> executor_;
+        std::shared_ptr<vix::router::Router> router_; //!< HTTP router for request dispatch.
+        std::shared_ptr<vix::executor::IExecutor> executor_;
         std::vector<std::thread> io_threads_;     //!< Threads running `io_context_`.
         std::atomic<bool> stop_requested_{false}; //!< Cooperative stop flag.
     };
 
-} // namespace Vix
+} // namespace vix
 
 #endif // VIX_HTTP_SERVER_HPP

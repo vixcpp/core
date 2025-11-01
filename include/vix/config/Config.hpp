@@ -6,7 +6,7 @@
  * @brief Application-wide configuration loader and accessor for Vix.cpp.
  *
  * @details
- * `Vix::Config` centralizes runtime configuration for the HTTP server and
+ * `vix::Config` centralizes runtime configuration for the HTTP server and
  * optional subsystems (e.g., SQL). It supports:
  *  - Loading from a JSON file on disk (path provided at construction).
  *  - Reasonable **defaults** for all fields when values are missing.
@@ -15,7 +15,7 @@
  *
  * ### Typical usage
  * @code{.cpp}
- * using namespace Vix;
+ * using namespace vix;
  * Config cfg{"/etc/vix/config.json"};
  * cfg.loadConfig();
  *
@@ -51,7 +51,7 @@
 #include <filesystem>
 #include <nlohmann/json.hpp>
 
-namespace Vix
+namespace vix::config
 {
     /**
      * @class Config

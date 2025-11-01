@@ -79,7 +79,7 @@ cmake --build build -j$(nproc)
 #include <vix/core.h>
 
 int main() {
-    Vix::App app;
+    vix::App app;
 
     app.get("/hello", [](auto&, auto& res) {
         res.json({{"message", "Hello, World!"}});
@@ -133,7 +133,7 @@ Transfer/sec: 18.25MB
 | `VIX_CORE_WITH_OPENSSL` | ON      | Enable HTTPS/TLS support         |
 | `VIX_CORE_WITH_MYSQL`   | OFF     | Link MySQL C++ Connector         |
 | `VIX_CORE_WITH_JSON`    | AUTO    | AUTO / ON / OFF                  |
-| `VIX_CORE_FETCH_UTILS`  | ON      | Auto-fetch Vix::utils if missing |
+| `VIX_CORE_FETCH_UTILS`  | ON      | Auto-fetch vix::utils if missing |
 
 ---
 

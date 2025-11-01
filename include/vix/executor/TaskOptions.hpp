@@ -3,7 +3,7 @@
 
 #include <chrono>
 
-namespace Vix
+namespace vix::executor
 {
     struct TaskOptions
     {

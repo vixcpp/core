@@ -3,31 +3,31 @@
 
 #include <memory>
 #include <vix/executor/IExecutor.hpp>
-#include <vix/server/ThreadPool.hpp>
+#include <vix/threadpool/ThreadPool.hpp>
 
 #include <vix/executor/TaskOptions.hpp>
 #include <vix/executor/Metrics.hpp>
 
-namespace Vix::experimental
+namespace vix::experimental
 {
-    class ThreadPoolExecutor final : public Vix::IExecutor
+    class ThreadPoolExecutor final : public vix::executor::IExecutor
     {
     public:
         explicit ThreadPoolExecutor(std::size_t threads,
                                     std::size_t maxThreads,
                                     int defaultPriority);
 
-        bool post(std::function<void()> fn, Vix::TaskOptions opt = {}) override;
-        Vix::executor::Metrics metrics() const override;
+        bool post(std::function<void()> fn, vix::executor::TaskOptions opt = {}) override;
+        vix::executor::Metrics metrics() const override;
         void wait_idle() override;
 
     private:
-        std::unique_ptr<ThreadPool> pool_;
+        std::unique_ptr<vix::threadpool::ThreadPool> pool_;
     };
 
-    std::unique_ptr<Vix::IExecutor> make_threadpool_executor(std::size_t threads,
-                                                             std::size_t maxThreads,
-                                                             int defaultPriority);
+    std::unique_ptr<vix::executor::IExecutor> make_threadpool_executor(std::size_t threads,
+                                                                       std::size_t maxThreads,
+                                                                       int defaultPriority);
 }
 
 #endif

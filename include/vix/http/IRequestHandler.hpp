@@ -3,10 +3,10 @@
 
 #include <boost/beast/http.hpp>
 
-namespace http = boost::beast::http;
-
-namespace Vix
+namespace vix::vhttp
 {
+
+    namespace http = boost::beast::http;
     /**
      * @file IRequestHandler.hpp
      * @brief Base interface for all HTTP route handlers in Vix.cpp.
@@ -20,12 +20,12 @@ namespace Vix
      * outgoing response reference.
      *
      * Typically, developers do not implement this interface directly; instead,
-     * they use the templated adapter `Vix::RequestHandler<Handler>` to wrap
+     * they use the templated adapter `vix::RequestHandler<Handler>` to wrap
      * lambdas or functors.
      *
      * ### Example
      * ```cpp
-     * class MyHandler : public Vix::IRequestHandler {
+     * class MyHandler : public vix::IRequestHandler {
      * public:
      *     void handle_request(const http::request<http::string_body>& req,
      *                         http::response<http::string_body>& res) override {
@@ -51,7 +51,7 @@ namespace Vix
          * @param res The HTTP response to populate (body, headers, status).
          *
          * @note Implementations must always call `res.prepare_payload()` or use
-         * the helpers in `Vix::Response` to ensure correct Content-Length and
+         * the helpers in `vix::Response` to ensure correct Content-Length and
          * header consistency.
          */
         virtual void handle_request(const http::request<http::string_body> &req,
@@ -70,6 +70,6 @@ namespace Vix
         IRequestHandler &operator=(IRequestHandler &&) noexcept = delete;
     };
 
-} // namespace Vix
+} // namespace vix::http
 
 #endif // I_REQUEST_HANDLER_HPP

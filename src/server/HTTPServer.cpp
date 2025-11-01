@@ -5,7 +5,7 @@
 
 /**
  * @file HTTPServer.cpp
- * @brief Implementation details for Vix::HTTPServer.
+ * @brief Implementation details for vix::HTTPServer.
  *
  * @section impl_overview Overview (for contributors)
  * The HTTP server coordinates:
@@ -34,8 +34,9 @@
 #include <sched.h>
 #endif
 
-namespace Vix
+namespace vix::server
 {
+    using Logger = vix::utils::Logger;
     /**
      * @brief Pin the current thread to a CPU core on Linux.
      *
@@ -71,14 +72,12 @@ namespace Vix
      *    semantics (no body, correct Content-Length).
      *  - Initializes the acceptor on the configured port.
      */
-    HTTPServer::HTTPServer(Config &config, std::shared_ptr<Vix::IExecutor> exec)
+    HTTPServer::HTTPServer(vix::config::Config &config, std::shared_ptr<vix::executor::IExecutor> exec)
         : config_(config),
           io_context_(std::make_shared<net::io_context>()),
           acceptor_(nullptr),
-          router_(std::make_shared<Router>()),
+          router_(std::make_shared<vix::router::Router>()),
           executor_(std::move(exec)),
-          // ThreadPool(capacityThreads, queueLimit, minSpare, maxSpare)
-          //   request_thread_pool_(NUMBER_OF_THREADS, 100, 0, 4),
           io_threads_(),
           stop_requested_(false)
     {
@@ -108,7 +107,7 @@ namespace Vix
                         {"method", std::string(req.method_string())},
                         {"path", std::string(req.target())}};
 
-                    Vix::Response::json_response(res, j, res.result());
+                    vix::vhttp::Response::json_response(res, j, res.result());
                     // Force close to avoid clients lingering for keep-alive.
                     res.set(http::field::connection, "close");
                     res.prepare_payload();
@@ -255,13 +254,9 @@ namespace Vix
             if (!ec && !stop_requested_)
             {
                 auto timeout = std::chrono::milliseconds(config_.getRequestTimeout());
-                // request_thread_pool_.enqueue(1, timeout, [this, socket]()
-                // {
-                //     handle_client(socket, router_);
-                // });
               executor_->post([this, socket]() {
                     handle_client(socket, router_);
-              }, Vix::TaskOptions{.priority = 1, .timeout = timeout});
+              }, vix::executor::TaskOptions{.priority = 1, .timeout = timeout});
             }
             if (!stop_requested_) start_accept(); });
     }
@@ -273,9 +268,9 @@ namespace Vix
      * eventually calls Router::handle_request(). The NotFound handler installed
      * in the constructor guarantees a consistent JSON 404 for unmatched routes.
      */
-    void HTTPServer::handle_client(std::shared_ptr<tcp::socket> socket_ptr, std::shared_ptr<Router> router)
+    void HTTPServer::handle_client(std::shared_ptr<tcp::socket> socket_ptr, std::shared_ptr<vix::router::Router> router)
     {
-        auto session = std::make_shared<Session>(socket_ptr, *router);
+        auto session = std::make_shared<vix::session::Session>(socket_ptr, *router);
         session->run();
     }
 
@@ -325,12 +320,12 @@ namespace Vix
     /**
      * @brief Periodically log request thread-pool metrics.
      *
-     * Uses ThreadPool::periodicTask to schedule a 5-second interval reporter.
-     * The exact metrics structure is defined by ThreadPool::getMetrics().
+     * Uses threadpool::ThreadPool::periodicTask to schedule a 5-second interval reporter.
+     * The exact metrics structure is defined by threadpool::ThreadPool::getMetrics().
      */
     void HTTPServer::monitor_metrics()
     {
-        Vix::timers::interval(*executor_, std::chrono::seconds(5), [this]()
+        vix::timers::interval(*executor_, std::chrono::seconds(5), [this]()
                               {
         const auto m = executor_->metrics();
         Logger::getInstance().log(Logger::Level::INFO,
@@ -338,4 +333,4 @@ namespace Vix
             m.pending, m.active, m.timed_out); });
     }
 
-} // namespace Vix
+} // namespace vix

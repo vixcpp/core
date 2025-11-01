@@ -10,7 +10,7 @@
 
 /**
  * @file App.cpp
- * @brief Implementation notes for Vix::App (maintainers-focused).
+ * @brief Implementation notes for vix::App (maintainers-focused).
  *
  * Responsibilities:
  *  - Initialize logging (pattern, level, async mode via env).
@@ -26,14 +26,14 @@
  *    `HTTPServer::join_threads()` to ensure a clean teardown.
  */
 
-namespace Vix
+namespace vix
 {
-    using Level = Logger::Level;
+    using Logger = vix::utils::Logger;
 
     // ------------------------------------------------------
     // Process-wide state for graceful shutdown on SIGINT/SIGTERM
     // ------------------------------------------------------
-    static HTTPServer *g_server_ptr = nullptr;
+    static vix::server::HTTPServer *g_server_ptr = nullptr;
     static std::atomic<bool> g_stop_flag{false};
     static std::mutex g_stop_mutex;
     static std::condition_variable g_stop_cv;
@@ -49,7 +49,7 @@ namespace Vix
     static void handle_stop_signal(int)
     {
         auto &log = Logger::getInstance();
-        log.log(Level::INFO, "Received stop signal, shutting down...");
+        log.log(Logger::Level::INFO, "Received stop signal, shutting down...");
 
         g_stop_flag.store(true);
         g_stop_cv.notify_one();
@@ -73,10 +73,10 @@ namespace Vix
      *  - Async mode toggled by env `VIX_LOG_ASYNC` (default: true).
      */
     App::App()
-        : config_(Config::getInstance()),
+        : config_(vix::config::Config::getInstance()),
           router_(nullptr),
           // 1) créer un executor concret (ThreadPoolExecutor) — valeurs par défaut raisonnables
-          executor_(std::make_shared<Vix::experimental::ThreadPoolExecutor>(
+          executor_(std::make_shared<vix::experimental::ThreadPoolExecutor>(
               /*threads*/ 4, /*maxThreads*/ 8, /*defaultPriority*/ 1)),
           // 2) injecter l’executor dans le HTTPServer
           server_(config_, executor_)
@@ -84,7 +84,7 @@ namespace Vix
         auto &log = Logger::getInstance();
 
         // Minimal, production-friendly defaults
-        log.setLevel(Level::WARN);
+        log.setLevel(Logger::Level::WARN);
         log.setPattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
 
         // Toggle async logging by environment (default ON in production)
@@ -92,12 +92,12 @@ namespace Vix
         if (utils::env_bool("VIX_LOG_ASYNC", true))
         {
             log.setAsync(true);
-            log.log(Level::INFO, "Logger initialized in ASYNC mode");
+            log.log(Logger::Level::INFO, "Logger initialized in ASYNC mode");
         }
         else
         {
             log.setAsync(false);
-            log.log(Level::INFO, "Logger initialized in SYNC mode");
+            log.log(Logger::Level::INFO, "Logger initialized in SYNC mode");
         }
 
         // Optional context for better observability (module tag)
@@ -174,7 +174,7 @@ namespace Vix
         // 8) Cleanup
         g_server_ptr = nullptr;
 
-        log.log(Level::INFO, "Application shutdown complete");
+        log.log(Logger::Level::INFO, "Application shutdown complete");
     }
 
-} // namespace Vix
+} // namespace vix

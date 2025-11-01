@@ -5,7 +5,7 @@
  * @brief Priority-based, production-ready task executor used across Vix.cpp.
  *
  * @details
- * `Vix::ThreadPool` provides a bounded, grow-on-demand pool of worker threads
+ * `vix::ThreadPool` provides a bounded, grow-on-demand pool of worker threads
  * that execute submitted tasks according to **priority**. It exposes a
  * futures-based `enqueue()` API for regular tasks and a `periodicTask()` API
  * for recurring jobs (metrics, housekeeping, etc.). The pool is safe for use
@@ -36,7 +36,7 @@
  *
  * Usage example
  * @code{.cpp}
- * Vix::ThreadPool pool(4, 8, 1); // threads, maxThreads, defaultPrio
+ * vix::ThreadPool pool(4, 8, 1); // threads, maxThreads, defaultPrio
  * auto fut = pool.enqueue(10, std::chrono::milliseconds(200), [] {}); // do work
  * fut.get(); // wait for completion
  * pool.periodicTask(1, [] {}, std::chrono::seconds(5)); // metrics/housekeeping
@@ -64,8 +64,9 @@
 
 #include <vix/utils/Logger.hpp>
 
-namespace Vix
+namespace vix::threadpool
 {
+    using Logger = vix::utils::Logger;
     /**
      * @brief Unit of scheduled work with a monotonic priority.
      * @note Larger `priority` means earlier execution.
@@ -80,16 +81,6 @@ namespace Vix
             : func(std::move(f)), priority(p), seq(s) {}
         Task()
             : func(nullptr), priority(0), seq(0) {}
-
-        // /**
-        //  * @brief Ordering for std::priority_queue (max-heap by priority).
-        //  * Higher priority comes first, hence the inverted comparison.
-        //  */
-        // bool operator<(const Task &other) const
-        // {
-        //     // high priority => executed before (so > for priority_queue max-heap)
-        //     return priority < other.priority;
-        // }
     };
 
     struct TaskCmp
@@ -203,8 +194,8 @@ namespace Vix
             const int ret = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
             if (ret != 0)
             {
-                auto &log = Vix::Logger::getInstance();
-                log.log(Vix::Logger::Level::WARN,
+                auto &log = Logger::getInstance();
+                log.log(Logger::Level::WARN,
                         "[ThreadPool][Thread {}] Failed to set thread affinity, error: {}", threadId, ret);
             }
 #else
@@ -225,7 +216,7 @@ namespace Vix
                         : static_cast<int>(id);
 
             setThreadAffinity(id);
-            auto& log = Vix::Logger::getInstance();
+            auto& log = Logger::getInstance();
             (void)log; // avoid warning if unused
 
             while (true)
@@ -329,8 +320,8 @@ namespace Vix
                 throw;
             }
 
-            auto &log = Vix::Logger::getInstance();
-            log.log(Vix::Logger::Level::INFO,
+            auto &log = Logger::getInstance();
+            log.log(Logger::Level::INFO,
                     "[ThreadPool] started with threads={}, maxThreads={}, defaultPrio={}, maxPeriodic={}",
                     threadCount, maxThreads, threadPriority, maxPeriodicThreads);
         }
@@ -400,8 +391,8 @@ namespace Vix
                             if (elapsed.count() > timeout.count())
                             {
 
-                                auto &log = Vix::Logger::getInstance();
-                                log.log(Vix::Logger::Level::WARN,
+                                auto &log = Logger::getInstance();
+                                log.log(Logger::Level::WARN,
                                         "[ThreadPool][Timeout] Thread {} exceeded timeout of {} ms (actual: {} ms)",
                                         threadId, timeout.count(), elapsed.count());
                                 tasksTimedOut.fetch_add(1, std::memory_order_relaxed);
@@ -480,7 +471,7 @@ namespace Vix
                         threadId = 100000 + static_cast<int>(
                                                 std::hash<std::thread::id>{}(std::this_thread::get_id()) & 0x7FFF);
 
-                        auto &log = Vix::Logger::getInstance();
+                        auto &log = Logger::getInstance();
 
                         // Fixed-rate scheduling: one tick every 'interval'
                         auto next = std::chrono::steady_clock::now() + interval;
@@ -496,13 +487,13 @@ namespace Vix
                                 }
                                 catch (const std::exception &e)
                                 {
-                                    log.log(Vix::Logger::Level::ERROR,
+                                    log.log(Logger::Level::ERROR,
                                             "[ThreadPool][PeriodicException] Exception in periodic task: {}", e.what());
                                     throw;
                                 }
                                 catch (...)
                                 {
-                                    log.log(Vix::Logger::Level::ERROR,
+                                    log.log(Logger::Level::ERROR,
                                             "[ThreadPool][PeriodicException] Unknown exception in periodic task");
                                     throw;
                                 }
@@ -516,13 +507,13 @@ namespace Vix
                             }
                             catch (const std::exception &e)
                             {
-                                log.log(Vix::Logger::Level::WARN,
+                                log.log(Logger::Level::WARN,
                                         "[ThreadPool][Periodic] enqueue() failed, stopping scheduler: {}", e.what());
                                 break; // exit periodic loop
                             }
                             catch (...)
                             {
-                                log.log(Vix::Logger::Level::WARN,
+                                log.log(Logger::Level::WARN,
                                         "[ThreadPool][Periodic] enqueue() failed with unknown error, stopping scheduler");
                                 break;
                             }
@@ -540,7 +531,7 @@ namespace Vix
                             // 2.d Detect interval overrun
                             if (future.wait_for(std::chrono::milliseconds{0}) != std::future_status::ready)
                             {
-                                log.log(Vix::Logger::Level::WARN,
+                                log.log(Logger::Level::WARN,
                                         "[ThreadPool][PeriodicTimeout] Thread {} periodic task exceeded interval of {} ms",
                                         threadId, interval.count());
                                 // do not block; keep fixed-rate schedule
@@ -630,6 +621,6 @@ namespace Vix
         }
     };
 
-} // namespace Vix
+} // namespace vix::threadpool
 
 #endif // VIX_THREADPOOL_HPP

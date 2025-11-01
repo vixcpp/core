@@ -9,11 +9,11 @@
 #
 # Public Targets:
 #   - vix_core   : The actual library target (STATIC or INTERFACE)
-#   - Vix::core  : Namespaced alias for consumers
+#   - vix::core  : Namespaced alias for consumers
 #
 # Public Dependencies:
-#   - Vix::utils
-#   - Vix::json  (resolved dynamically among common aliases)
+#   - vix::utils
+#   - vix::json  (resolved dynamically among common aliases)
 #
 # Additional Dependencies in STATIC mode:
 #   - Boost::filesystem, Boost::system
@@ -30,12 +30,12 @@
 #   top-level export-set `VixTargets`. Consumers can then use:
 #
 #       find_package(Vix CONFIG REQUIRED)
-#       target_link_libraries(app PRIVATE Vix::core)
+#       target_link_libraries(app PRIVATE vix::core)
 #
 # Notes:
 #   - This file is designed to be included from a superproject (preferred).
 #   - Avoids per-module export-sets; relies on the umbrella’s `VixTargets`.
-#   - The JSON backend target is selected dynamically (Vix::json / vix::json / vix_json).
+#   - The JSON backend target is selected dynamically (vix::json / vix::json / vix_json).
 # ====================================================================
 
 cmake_minimum_required(VERSION 3.20)
@@ -61,17 +61,17 @@ option(VIX_CORE_WITH_MYSQL   "Enable MySQL client linkage" OFF)
 file(GLOB_RECURSE CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
 # ------------------------ Utils dependency (robust) ------------------
-# We need Vix::utils. Try:
+# We need vix::utils. Try:
 # 1) already defined, 2) umbrella ../utils, 3) FetchContent, else fail.
-option(VIX_CORE_FETCH_UTILS "Auto-fetch Vix::utils if missing" ON)
+option(VIX_CORE_FETCH_UTILS "Auto-fetch vix::utils if missing" ON)
 
-if (NOT TARGET Vix::utils AND NOT TARGET vix::utils)
+if (NOT TARGET vix::utils AND NOT TARGET vix::utils)
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../utils/CMakeLists.txt")
     message(STATUS "[core] Adding utils from umbrella: ../utils")
     add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../utils" "utils")
   elseif (VIX_CORE_FETCH_UTILS)
     include(FetchContent)
-    message(STATUS "[core] Fetching Vix::utils via FetchContent")
+    message(STATUS "[core] Fetching vix::utils via FetchContent")
     # ⚠️ Aligne le tag avec ta release umbrella
     FetchContent_Declare(vix_utils
       GIT_REPOSITORY https://github.com/vixcpp/utils.git
@@ -79,12 +79,12 @@ if (NOT TARGET Vix::utils AND NOT TARGET vix::utils)
     )
     FetchContent_MakeAvailable(vix_utils)
   else()
-    message(FATAL_ERROR "Vix::utils not found. Enable VIX_CORE_FETCH_UTILS=ON or provide the target before core.")
+    message(FATAL_ERROR "vix::utils not found. Enable VIX_CORE_FETCH_UTILS=ON or provide the target before core.")
   endif()
 endif()
 
 # Normalize the utils target name into VIX_UTILS_TARGET
-set(VIX_UTILS_TARGET Vix::utils)
+set(VIX_UTILS_TARGET vix::utils)
 if (NOT TARGET ${VIX_UTILS_TARGET} AND TARGET vix::utils)
   set(VIX_UTILS_TARGET vix::utils)
 endif()
@@ -104,7 +104,7 @@ function(vix_core_try_link_json onto link_scope)
     return()
   endif()
 
-  set(_json_candidates Vix::json vix::json vix_json)
+  set(_json_candidates vix::json vix::json vix_json)
   set(_json_found "")
   foreach(t IN LISTS _json_candidates)
     if (TARGET ${t})
@@ -118,7 +118,7 @@ function(vix_core_try_link_json onto link_scope)
     target_link_libraries(${onto} ${link_scope} ${_json_found})
   else()
     if (VIX_CORE_WITH_JSON STREQUAL "ON")
-      message(FATAL_ERROR "JSON required but not found (expected: Vix::json, vix::json, or vix_json).")
+      message(FATAL_ERROR "JSON required but not found (expected: vix::json, vix::json, or vix_json).")
     else()
       message(STATUS "[core] No JSON backend detected; building without JSON.")
       target_compile_definitions(${onto} ${link_scope} VIX_CORE_NO_JSON=1)
@@ -147,7 +147,7 @@ if (CORE_SOURCES)
 
   # Required runtime deps when compiling sources
   find_package(Boost 1.78 REQUIRED COMPONENTS filesystem system)
-  # spdlog may already be brought by Vix::utils; remains harmless here
+  # spdlog may already be brought by vix::utils; remains harmless here
   find_package(spdlog REQUIRED)
 
   if (VIX_CORE_WITH_OPENSSL)
@@ -155,7 +155,7 @@ if (CORE_SOURCES)
   endif()
 
   add_library(vix_core STATIC ${CORE_SOURCES})
-  add_library(Vix::core ALIAS vix_core)
+  add_library(vix::core ALIAS vix_core)
   target_compile_features(vix_core PUBLIC cxx_std_20)
 
   # Optional debug-iterator safety in Debug builds (libstdc++)
@@ -230,7 +230,7 @@ else()
   message(STATUS "[core] Building HEADER-ONLY library (no sources).")
 
   add_library(vix_core INTERFACE)
-  add_library(Vix::core ALIAS vix_core)
+  add_library(vix::core ALIAS vix_core)
   target_compile_features(vix_core INTERFACE cxx_std_20)
 
   target_include_directories(vix_core INTERFACE
@@ -262,7 +262,7 @@ endif()
 
 # ----------------------------- Summary -------------------------------
 message(STATUS "------------------------------------------------------")
-message(STATUS "Vix::core configured (${PROJECT_VERSION})")
+message(STATUS "vix::core configured (${PROJECT_VERSION})")
 if (CORE_SOURCES)
   message(STATUS "Mode: STATIC / sources found")
 else()

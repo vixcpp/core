@@ -20,14 +20,14 @@
 // HTTP Server
 // ----------------------------
 #include <vix/server/HTTPServer.hpp>
-#include <vix/server/ThreadPool.hpp>
+#include <vix/threadpool/ThreadPool.hpp>
 
 // ----------------------------
 // Routing
 // ----------------------------
 #include <vix/router/Router.hpp>
-#include <vix/router/IRequestHandler.hpp>
-#include <vix/router/RequestHandler.hpp>
+#include <vix/http/IRequestHandler.hpp>
+#include <vix/http/RequestHandler.hpp>
 
 // ----------------------------
 // Session
@@ -39,17 +39,20 @@
 // ----------------------------
 #include <vix/config/Config.hpp>
 
-namespace Vix
+#include <vix/http/Status.hpp>
+
+namespace asio = boost::asio;
+namespace beast = boost::beast;
+namespace bhttp = boost::beast::http;
+
+namespace vix
 {
 
-    // Expose some useful Boost.Beast / Asio aliases
-    namespace http = boost::beast::http;
-    namespace net = boost::asio;
-    namespace beast = boost::beast;
-    using tcp = net::ip::tcp;
+    // Types pratiques
+    using tcp = asio::ip::tcp;
 
     // Convenience aliases
     using AppPtr = std::shared_ptr<App>;
-    using SessionPtr = std::shared_ptr<Session>;
+    using SessionPtr = std::shared_ptr<vix::session::Session>;
 
-} // namespace Vix
+} // namespace vix

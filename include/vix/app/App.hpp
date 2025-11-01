@@ -6,7 +6,7 @@
  * @brief High-level Vix.cpp application entry point combining Config, Router, and HTTPServer.
  *
  * @details
- * The `Vix::App` class provides a simplified, Express-like interface for defining routes
+ * The `vix::App` class provides a simplified, Express-like interface for defining routes
  * and running an HTTP server. It serves as the glue between configuration (`Config`), routing
  * (`Router`), and networking (`HTTPServer`).
  *
@@ -48,15 +48,16 @@
 
 #include <vix/config/Config.hpp>
 #include <vix/server/HTTPServer.hpp>
-#include <vix/router/RequestHandler.hpp>
+#include <vix/http/RequestHandler.hpp>
 #include <vix/utils/Logger.hpp>
 
 #include <vix/executor/IExecutor.hpp>
 #include <vix/experimental/ThreadPoolExecutor.hpp>
 
-namespace Vix
+namespace vix
 {
     namespace http = boost::beast::http;
+    using Logger = vix::utils::Logger;
 
     /**
      * @class App
@@ -113,17 +114,17 @@ namespace Vix
         // Accessors
         // --------------------------------------------------------------
         /** @return The global Config instance used by this app. */
-        Config &config() noexcept { return config_; }
+        vix::config::Config &config() noexcept { return config_; }
         /** @return Shared Router for registering or inspecting routes. */
-        std::shared_ptr<Router> router() const noexcept { return router_; }
+        std::shared_ptr<vix::router::Router> router() const noexcept { return router_; }
         /** @return Underlying HTTPServer instance handling requests. */
-        HTTPServer &server() noexcept { return server_; }
+        vix::server::HTTPServer &server() noexcept { return server_; }
 
     private:
-        Config &config_;                 ///< Global configuration reference
-        std::shared_ptr<Router> router_; ///< Shared router (injected into HTTPServer)
-        std::shared_ptr<Vix::IExecutor> executor_;
-        HTTPServer server_; ///< Core HTTP server
+        vix::config::Config &config_;                 ///< Global configuration reference
+        std::shared_ptr<vix::router::Router> router_; ///< Shared router (injected into HTTPServer)
+        std::shared_ptr<vix::executor::IExecutor> executor_;
+        vix::server::HTTPServer server_; ///< Core HTTP server
 
         /**
          * @brief Internal helper for adding a typed route handler.
@@ -140,13 +141,13 @@ namespace Vix
                 log.throwError("Router is not initialized in App");
             }
 
-            auto request_handler = std::make_shared<RequestHandler<Handler>>(path, std::move(handler));
+            auto request_handler = std::make_shared<vix::vhttp::RequestHandler<Handler>>(path, std::move(handler));
             router_->add_route(method, path, request_handler);
 
             log.logf(Logger::Level::DEBUG, "Route registered", "method", static_cast<int>(method), "path", path.c_str());
         }
     };
 
-} // namespace Vix
+} // namespace vix
 
 #endif // VIX_APP_HPP
