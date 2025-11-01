@@ -2,7 +2,7 @@
 
 /**
  * @file Session.cpp
- * @brief Implementation notes for Vix::Session (maintainers-focused docs).
+ * @brief Implementation notes for vix::Session (maintainers-focused docs).
  *
  * Responsibilities covered here:
  *  - Socket options and timer lifecycle
@@ -12,9 +12,9 @@
  *  - Exception boundaries around Router handlers
  */
 
-namespace Vix
+namespace vix::session
 {
-    using Level = Logger::Level;
+    using Logger = vix::utils::Logger;
     static Logger &logger = Logger::getInstance();
 
     // --- Regex rules for the lightweight WAF ---
@@ -29,7 +29,7 @@ namespace Vix
      * - Disables Nagle (TCP_NODELAY) to reduce latency for small responses.
      * - Parser and timer objects are created lazily per‑request.
      */
-    Session::Session(std::shared_ptr<tcp::socket> socket, Router &router)
+    Session::Session(std::shared_ptr<tcp::socket> socket, vix::router::Router &router)
         : socket_(std::move(socket)), router_(router),
           buffer_(),
           req_(),
@@ -39,7 +39,7 @@ namespace Vix
         boost::system::error_code ec;
         socket_->set_option(tcp::no_delay(true), ec);
         if (ec)
-            logger.log(Level::WARN, "[Session] Failed to disable Nagle: {}", ec.message());
+            logger.log(Logger::Level::WARN, "[Session] Failed to disable Nagle: {}", ec.message());
     }
 
     /**
@@ -47,7 +47,7 @@ namespace Vix
      */
     void Session::run()
     {
-        logger.log(Level::DEBUG, "[Session] Starting new session");
+        logger.log(Logger::Level::DEBUG, "[Session] Starting new session");
         read_request();
     }
 
@@ -71,7 +71,7 @@ namespace Vix
 
             if (!ec)
             {
-                logger.log(Level::WARN, "[Session] Timeout ({}s), closing socket", REQUEST_TIMEOUT.count());
+                logger.log(Logger::Level::WARN, "[Session] Timeout ({}s), closing socket", REQUEST_TIMEOUT.count());
                 close_socket_gracefully();
             } });
     }
@@ -98,7 +98,7 @@ namespace Vix
     {
         if (!socket_ || !socket_->is_open())
         {
-            logger.log(Vix::Logger::Level::DEBUG, "[Session] Socket closed before read_request()");
+            logger.log(Logger::Level::DEBUG, "[Session] Socket closed before read_request()");
             return;
         }
 
@@ -120,12 +120,12 @@ namespace Vix
                     if (ec == http::error::end_of_stream ||
                         ec == boost::asio::error::connection_reset)
                     {
-                        logger.log(Vix::Logger::Level::DEBUG,
+                        logger.log(Logger::Level::DEBUG,
                                    "[Session] Client closed connection: {}", ec.message());
                     }
                     else if (ec != boost::asio::error::operation_aborted)
                     {
-                        logger.log(Vix::Logger::Level::ERROR,
+                        logger.log(Logger::Level::ERROR,
                                    "[Session] Read error: {}", ec.message());
                     }
 
@@ -140,7 +140,7 @@ namespace Vix
                 }
                 catch (const std::exception &ex)
                 {
-                    logger.log(Vix::Logger::Level::ERROR,
+                    logger.log(Logger::Level::ERROR,
                                "[Session] Parser release failed: {}", ex.what());
                     close_socket_gracefully();
                     return;
@@ -164,14 +164,14 @@ namespace Vix
     {
         if (ec)
         {
-            logger.log(Level::ERROR, "[Session] Error handling request: {}", ec.message());
+            logger.log(Logger::Level::ERROR, "[Session] Error handling request: {}", ec.message());
             close_socket_gracefully();
             return;
         }
 
         if (!parsed_req)
         {
-            logger.log(Level::WARN, "[Session] No request parsed");
+            logger.log(Logger::Level::WARN, "[Session] No request parsed");
             close_socket_gracefully();
             return;
         }
@@ -180,7 +180,7 @@ namespace Vix
 
         if (!waf_check_request(req_))
         {
-            logger.log(Level::WARN, "[WAF] Request blocked by rules");
+            logger.log(Logger::Level::WARN, "[WAF] Request blocked by rules");
             send_error(http::status::bad_request, "Request blocked (security)");
             return;
         }
@@ -192,7 +192,7 @@ namespace Vix
 #endif
         if (req_.body().size() > MAX_REQUEST_BODY_SIZE)
         {
-            logger.log(Level::WARN, "[Session] Body too large ({} bytes)", req_.body().size());
+            logger.log(Logger::Level::WARN, "[Session] Body too large ({} bytes)", req_.body().size());
             send_error(too_large_status, "Request too large");
             return;
         }
@@ -205,7 +205,7 @@ namespace Vix
         }
         catch (const std::exception &ex)
         {
-            logger.log(Level::ERROR, "[Router] Exception: {}", ex.what());
+            logger.log(Logger::Level::ERROR, "[Router] Exception: {}", ex.what());
             send_error(http::status::internal_server_error, "Internal server error");
             return;
         }
@@ -229,7 +229,7 @@ namespace Vix
     {
         if (!socket_ || !socket_->is_open())
         {
-            logger.log(Level::DEBUG, "[Session] Cannot send response (socket closed)");
+            logger.log(Logger::Level::DEBUG, "[Session] Cannot send response (socket closed)");
             return;
         }
 
@@ -241,12 +241,12 @@ namespace Vix
                           {
                               if (ec)
                               {
-                                  logger.log(Level::WARN, "[Session] Write error: {}", ec.message());
+                                  logger.log(Logger::Level::WARN, "[Session] Write error: {}", ec.message());
                                   close_socket_gracefully();
                                   return;
                               }
 
-                              logger.log(Level::DEBUG, "[Session] Response sent ({} bytes)", res_ptr->body().size());
+                              logger.log(Logger::Level::DEBUG, "[Session] Response sent ({} bytes)", res_ptr->body().size());
 
                               if (res_ptr->keep_alive())
                               {
@@ -266,7 +266,7 @@ namespace Vix
     void Session::send_error(http::status status, const std::string &msg)
     {
         http::response<http::string_body> res;
-        Response::error_response(res, status, msg);
+        vix::http::Response::error_response(res, status, msg);
         res.set(http::field::connection, "close");
         send_response(std::move(res));
     }
@@ -283,7 +283,7 @@ namespace Vix
         socket_->shutdown(tcp::socket::shutdown_both, ec);
         socket_->close(ec);
 
-        logger.log(Level::DEBUG, "[Session] Socket closed");
+        logger.log(Logger::Level::DEBUG, "[Session] Socket closed");
     }
 
     /**
@@ -295,7 +295,7 @@ namespace Vix
     {
         if (req.target().size() > 4096)
         {
-            logger.log(Level::WARN, "[WAF] Target too long");
+            logger.log(Logger::Level::WARN, "[WAF] Target too long");
             return false;
         }
 
@@ -304,23 +304,23 @@ namespace Vix
             const std::string target{req.target().data(), req.target().size()};
             if (std::regex_search(target, XSS_PATTERN))
             {
-                logger.log(Level::WARN, "[WAF] XSS pattern detected in URL");
+                logger.log(Logger::Level::WARN, "[WAF] XSS pattern detected in URL");
                 return false;
             }
 
             if (!req.body().empty() && std::regex_search(req.body(), SQL_PATTERN))
             {
-                logger.log(Level::WARN, "[WAF] SQL injection attempt detected");
+                logger.log(Logger::Level::WARN, "[WAF] SQL injection attempt detected");
                 return false;
             }
         }
         catch (const std::regex_error &)
         {
-            logger.log(Level::ERROR, "[WAF] Regex error during pattern check");
+            logger.log(Logger::Level::ERROR, "[WAF] Regex error during pattern check");
             return false;
         }
 
         return true;
     }
 
-} // namespace Vix
+} // namespace vix

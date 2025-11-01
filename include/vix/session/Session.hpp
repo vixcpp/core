@@ -6,7 +6,7 @@
  * @brief Connection-level handler bridging Boost.Beast I/O with the Vix Router.
  *
  * @details
- * A `Vix::Session` instance encapsulates the full lifecycle of a single HTTP
+ * A `vix::Session` instance encapsulates the full lifecycle of a single HTTP
  * connection (usually one TCP socket accepted by `HTTPServer`). It is
  * responsible for:
  *
@@ -43,7 +43,7 @@
  * ### Example
  * @code{.cpp}
  * // Inside HTTPServer::handle_client()
- * auto session = std::make_shared<Vix::Session>(socket, router);
+ * auto session = std::make_shared<vix::Session>(socket, router);
  * session->run();
  * @endcode
  */
@@ -61,7 +61,7 @@
 #include <vix/http/Response.hpp>
 #include <vix/utils/Logger.hpp>
 
-namespace Vix
+namespace vix::session
 {
     namespace http = boost::beast::http;
     namespace net = boost::asio;
@@ -90,7 +90,7 @@ namespace Vix
          * @param socket Accepted TCP socket (shared ownership).
          * @param router Reference to the global router used for dispatch.
          */
-        explicit Session(std::shared_ptr<tcp::socket> socket, Router &router);
+        explicit Session(std::shared_ptr<tcp::socket> socket, vix::router::Router &router);
 
         /** @brief Destructor (defaulted). Connections are expected to self-close. */
         ~Session() = default;
@@ -152,7 +152,7 @@ namespace Vix
 
     private:
         std::shared_ptr<tcp::socket> socket_;                             //!< Underlying TCP connection.
-        Router &router_;                                                  //!< Router reference for dispatch.
+        vix::router::Router &router_;                                     //!< Router reference for dispatch.
         beast::flat_buffer buffer_;                                       //!< Read buffer for Beast.
         http::request<http::string_body> req_;                            //!< Current parsed request.
         std::unique_ptr<http::request_parser<http::string_body>> parser_; //!< HTTP request parser.
@@ -162,6 +162,6 @@ namespace Vix
         static const std::regex SQL_PATTERN; //!< Regex for basic SQL injection detection.
     };
 
-} // namespace Vix
+} // namespace vix
 
 #endif // VIX_SESSION_HPP

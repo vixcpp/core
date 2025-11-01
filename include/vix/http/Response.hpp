@@ -6,7 +6,7 @@
  * @brief Unified HTTP response builder for Vix.cpp applications.
  *
  * @details
- * The `Vix::Response` class provides a **consistent, easy-to-use API**
+ * The `vix::Response` class provides a **consistent, easy-to-use API**
  * for building and formatting HTTP responses in a Vix.cpp application.
  * It standardizes headers, encodings, and body serialization for JSON
  * and text responses while ensuring full RFC-compliant output via
@@ -24,10 +24,10 @@
  * ### Example
  * ```cpp
  * http::response<http::string_body> res;
- * Vix::Response::json_response(res, nlohmann::json{{"ok", true}, {"version", "1.0"}});
+ * vix::Response::json_response(res, nlohmann::json{{"ok", true}, {"version", "1.0"}});
  *
  * // or simple text
- * Vix::Response::text_response(res, "pong", http::status::ok);
+ * vix::Response::text_response(res, "pong", http::status::ok);
  * ```
  */
 
@@ -49,7 +49,7 @@
 #define VIX_CORE_HAS_VIX_JSON 0
 #endif
 
-namespace Vix
+namespace vix::http
 {
     namespace http = boost::beast::http;
 
@@ -59,7 +59,7 @@ namespace Vix
     /**
      * @brief Serialize any supported JSON-like object to a string.
      *
-     * @tparam J Either `nlohmann::json`, `Vix::json::Json`, or a type exposing `.dump()`.
+     * @tparam J Either `nlohmann::json`, `vix::json::Json`, or a type exposing `.dump()`.
      * @param j  The JSON object to serialize.
      * @return A UTF-8 encoded JSON string.
      */
@@ -67,9 +67,9 @@ namespace Vix
     inline std::string to_json_string(const J &j)
     {
 #if VIX_CORE_HAS_VIX_JSON
-        if constexpr (std::is_same_v<J, Vix::json::Json>)
+        if constexpr (std::is_same_v<J, vix::json::Json>)
         {
-            return Vix::json::dumps(j);
+            return vix::json::dumps(j);
         }
         else
 #endif
@@ -81,7 +81,7 @@ namespace Vix
             else
             {
                 static_assert(sizeof(J) == 0,
-                              "Unsupported JSON type: provide nlohmann::json or Vix::json::Json");
+                              "Unsupported JSON type: provide nlohmann::json or vix::json::Json");
             }
         }
     }
@@ -137,7 +137,7 @@ namespace Vix
          */
         static void common_headers(http::response<http::string_body> &res) noexcept
         {
-            res.set(http::field::server, "Vix");
+            res.set(http::field::server, "Vix/master");
             res.set(http::field::date, http_date_now());
         }
 
@@ -252,6 +252,6 @@ namespace Vix
         }
     };
 
-} // namespace Vix
+} // namespace vix
 
 #endif // VIX_RESPONSE_HPP

@@ -6,7 +6,7 @@
  * @brief Minimal JSON-like data model for lightweight Vix internal APIs.
  *
  * @details
- * `Vix::json::Simple` provides a self-contained JSON representation for internal
+ * `vix::json::Simple` provides a self-contained JSON representation for internal
  * use, independent from `nlohmann::json`. It is designed to be header-only and
  * trivially embeddable in performance-sensitive modules or plugins.
  *
@@ -19,7 +19,7 @@
  *
  * Example:
  * ```cpp
- * using namespace Vix::json;
+ * using namespace vix::json;
  *
  * kvs user = obj({
  *     "name", "Alice",
@@ -43,7 +43,7 @@
 #include <initializer_list>
 #include <type_traits>
 
-namespace Vix::json
+namespace vix::json
 {
 
     struct array_t;
@@ -123,6 +123,6 @@ namespace Vix::json
     inline kvs obj(const std::vector<token> &v) { return kvs{v}; }
     inline kvs obj(std::vector<token> &&v) { return kvs{std::move(v)}; }
 
-} // namespace Vix::json
+} // namespace vix::json
 
 #endif // VIX_JSON_SIMPLE_HPP

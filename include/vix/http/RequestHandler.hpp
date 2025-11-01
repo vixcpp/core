@@ -6,12 +6,12 @@
  * @brief Functional adapter between user-defined handlers and the Vix routing system.
  *
  * @details
- * `Vix::RequestHandler` enables developers to register simple lambdas or callable
+ * `vix::RequestHandler` enables developers to register simple lambdas or callable
  * objects as route handlers without manually subclassing `IRequestHandler`.
  * It provides:
  * - Automatic **parameter extraction** from route patterns (e.g. `/users/{id}`).
  * - A lightweight **ResponseWrapper** offering Express-like chaining (e.g. `res.status(200).json({...})`).
- * - JSON conversion utilities bridging between `Vix::json` tokens and `nlohmann::json`.
+ * - JSON conversion utilities bridging between `vix::json` tokens and `nlohmann::json`.
  *
  * ### Supported handler signatures
  * ```cpp
@@ -24,7 +24,7 @@
  * ```cpp
  * router.add_route(http::verb::get, "/users/{id}",
  *     std::make_shared<RequestHandler>("/users/{id}",
- *         [](const auto& req, Vix::ResponseWrapper& res, auto& params){
+ *         [](const auto& req, vix::ResponseWrapper& res, auto& params){
  *             res.status(200).json({{"id", params["id"]}, {"ok", true}});
  *         }
  *     ));
@@ -44,24 +44,24 @@
 #include <boost/beast/http.hpp>
 #include <nlohmann/json.hpp>
 
-#include <vix/router/IRequestHandler.hpp>
+#include <vix/http/IRequestHandler.hpp>
 #include <vix/http/Response.hpp>
 #include <vix/json/Simple.hpp>
 
-namespace Vix
+namespace vix::http
 {
     namespace http = boost::beast::http;
 
     // ------------------------------------------------------------------
-    // JSON conversion utilities (Vix::json → nlohmann::json)
+    // JSON conversion utilities (vix::json → nlohmann::json)
     // ------------------------------------------------------------------
 
-    inline nlohmann::json token_to_nlohmann(const Vix::json::token &t);
+    inline nlohmann::json token_to_nlohmann(const vix::json::token &t);
 
     /**
-     * @brief Convert Vix::json::kvs (flat key/value pairs) to nlohmann::json.
+     * @brief Convert vix::json::kvs (flat key/value pairs) to nlohmann::json.
      */
-    inline nlohmann::json kvs_to_nlohmann(const Vix::json::kvs &list)
+    inline nlohmann::json kvs_to_nlohmann(const vix::json::kvs &list)
     {
         nlohmann::json obj = nlohmann::json::object();
         const auto &a = list.flat;
@@ -81,7 +81,7 @@ namespace Vix
         return obj;
     }
 
-    inline nlohmann::json token_to_nlohmann(const Vix::json::token &t)
+    inline nlohmann::json token_to_nlohmann(const vix::json::token &t)
     {
         nlohmann::json j = nullptr;
         std::visit([&](auto &&val)
@@ -95,13 +95,13 @@ namespace Vix
                                  std::is_same_v<T, double> ||
                                  std::is_same_v<T, std::string>) {
                 j = val;
-            } else if constexpr (std::is_same_v<T, std::shared_ptr<Vix::json::array_t>>) {
+            } else if constexpr (std::is_same_v<T, std::shared_ptr<vix::json::array_t>>) {
                 if (!val) { j = nullptr; return; }
                 j = nlohmann::json::array();
                 for (const auto& el : val->elems) {
                     j.push_back(token_to_nlohmann(el));
                 }
-            } else if constexpr (std::is_same_v<T, std::shared_ptr<Vix::json::kvs>>) {
+            } else if constexpr (std::is_same_v<T, std::shared_ptr<vix::json::kvs>>) {
                 if (!val) { j = nullptr; return; }
                 j = kvs_to_nlohmann(*val);
             } else {
@@ -180,37 +180,37 @@ namespace Vix
 
         ResponseWrapper &text(std::string_view data)
         {
-            Vix::Response::text_response(res, data, res.result());
+            vix::http::Response::text_response(res, data, res.result());
             return *this;
         }
 
-        ResponseWrapper &json(std::initializer_list<Vix::json::token> list)
+        ResponseWrapper &json(std::initializer_list<vix::json::token> list)
         {
-            auto j = kvs_to_nlohmann(Vix::json::kvs{list});
-            Vix::Response::json_response(res, j, res.result());
+            auto j = kvs_to_nlohmann(vix::json::kvs{list});
+            vix::http::Response::json_response(res, j, res.result());
             return *this;
         }
 
-        ResponseWrapper &json(const Vix::json::kvs &kv)
+        ResponseWrapper &json(const vix::json::kvs &kv)
         {
             auto j = kvs_to_nlohmann(kv);
-            Vix::Response::json_response(res, j, res.result());
+            vix::http::Response::json_response(res, j, res.result());
             return *this;
         }
 
         ResponseWrapper &json(const nlohmann::json &j)
         {
-            Vix::Response::json_response(res, j, res.result());
+            vix::http::Response::json_response(res, j, res.result());
             return *this;
         }
 
         template <typename J,
                   typename = std::enable_if_t<!std::is_same_v<std::decay_t<J>, nlohmann::json> &&
-                                              !std::is_same_v<std::decay_t<J>, Vix::json::kvs> &&
-                                              !std::is_same_v<std::decay_t<J>, std::initializer_list<Vix::json::token>>>>
+                                              !std::is_same_v<std::decay_t<J>, vix::json::kvs> &&
+                                              !std::is_same_v<std::decay_t<J>, std::initializer_list<vix::json::token>>>>
         ResponseWrapper &json(const J &data)
         {
-            Vix::Response::json_response(res, data, res.result());
+            vix::http::Response::json_response(res, data, res.result());
             return *this;
         }
     };
@@ -265,7 +265,7 @@ namespace Vix
             }
             catch (const std::exception &)
             {
-                Response::error_response(res, http::status::internal_server_error, "Internal Server Error");
+                vix::http::Response::error_response(res, http::status::internal_server_error, "Internal Server Error");
             }
         }
 
@@ -279,6 +279,6 @@ namespace Vix
         };
     };
 
-} // namespace Vix
+} // namespace vix::router
 
 #endif // VIX_REQUEST_HANDLER_HPP

@@ -8,7 +8,7 @@
 #include <memory>
 #include <vix/executor/IExecutor.hpp>
 
-namespace Vix::timers
+namespace vix::timers
 {
 
     struct IntervalHandle
@@ -52,10 +52,10 @@ namespace Vix::timers
         ~IntervalHandle() { stopNow(); }
     };
 
-    inline IntervalHandle interval(IExecutor &exec,
+    inline IntervalHandle interval(vix::executor::IExecutor &exec,
                                    std::chrono::milliseconds period,
                                    std::function<void()> fn,
-                                   Vix::TaskOptions opt = {})
+                                   vix::executor::TaskOptions opt = {})
     {
         IntervalHandle h;
         h.state = std::make_shared<IntervalHandle::State>();
@@ -77,6 +77,6 @@ namespace Vix::timers
         return h; // move-only
     }
 
-} // namespace Vix::timers
+} // namespace vix::timers
 
 #endif // VIX_INTERVAL_HPP

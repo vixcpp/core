@@ -4,7 +4,7 @@
 #include <vix/executor/IExecutor.hpp>
 #include <cstddef>
 
-namespace Vix
+namespace vix::executor
 {
     struct LimitedExecutor
     {

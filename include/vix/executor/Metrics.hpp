@@ -3,7 +3,7 @@
 
 #include <cstdint>
 
-namespace Vix::executor
+namespace vix::executor
 {
     struct Metrics
     {

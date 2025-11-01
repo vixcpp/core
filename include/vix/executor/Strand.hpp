@@ -3,7 +3,7 @@
 
 #include <vix/executor/IExecutor.hpp>
 
-namespace Vix
+namespace vix::executor
 {
     struct Stand
     {

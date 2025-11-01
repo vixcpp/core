@@ -39,7 +39,7 @@
 // ----------------------------
 #include <vix/config/Config.hpp>
 
-namespace Vix
+namespace vix
 {
 
     // Expose some useful Boost.Beast / Asio aliases
@@ -50,6 +50,6 @@ namespace Vix
 
     // Convenience aliases
     using AppPtr = std::shared_ptr<App>;
-    using SessionPtr = std::shared_ptr<Session>;
+    using SessionPtr = std::shared_ptr<vix::session::Session>;
 
-} // namespace Vix
+} // namespace vix

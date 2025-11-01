@@ -6,7 +6,7 @@
  * @brief Trie-based HTTP router with method-aware paths and pluggable 404 handler.
  *
  * @details
- * `Vix::Router` maps HTTP requests to handlers using a compact trie keyed by
+ * `vix::Router` maps HTTP requests to handlers using a compact trie keyed by
  * **method-prefixed path segments**. Each node may represent a literal segment
  * or a **parameter segment** (e.g., `{id}`), allowing routes like:
  *
@@ -41,7 +41,7 @@
  * r.setNotFoundHandler([](const http::request<http::string_body>& req,
  *                         http::response<http::string_body>& res){
  *   res.result(http::status::not_found);
- *   Vix::Response::text(res, "Not found", res.result());
+ *   vix::Response::text(res, "Not found", res.result());
  * });
  *
  * auto show = std::make_shared<RequestHandler<ShowUser>>();
@@ -63,7 +63,7 @@
 #include <functional>
 #include <nlohmann/json.hpp>
 
-namespace Vix
+namespace vix::router
 {
     namespace http = boost::beast::http;
 
@@ -76,7 +76,7 @@ namespace Vix
     struct RouteNode
     {
         std::unordered_map<std::string, std::unique_ptr<RouteNode>> children;
-        std::shared_ptr<IRequestHandler> handler;
+        std::shared_ptr<vix::http::IRequestHandler> handler;
         bool isParam = false;
         std::string paramName;
 
@@ -120,7 +120,7 @@ namespace Vix
          * nodes, marking `{param}` segments as wildcard (`*`). Parameter value
          * extraction is left to the handler implementation.
          */
-        void add_route(http::verb method, const std::string &path, std::shared_ptr<IRequestHandler> handler)
+        void add_route(http::verb method, const std::string &path, std::shared_ptr<vix::http::IRequestHandler> handler)
         {
             std::string full_path = method_to_string(method) + path;
             auto *node = root_.get();
@@ -233,7 +233,7 @@ namespace Vix
                     {"error", "Route not found"},
                     {"method", std::string(req.method_string())},
                     {"path", std::string(req.target())}};
-                Vix::Response::json_response(res, j, res.result());
+                vix::http::Response::json_response(res, j, res.result());
                 res.set(http::field::connection, "close");
                 res.prepare_payload();
             }
@@ -275,6 +275,6 @@ namespace Vix
         }
     };
 
-} // namespace Vix
+} // namespace vix::router
 
 #endif // VIX_ROUTER_HPP

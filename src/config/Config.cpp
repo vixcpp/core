@@ -15,7 +15,7 @@
 
 /**
  * @file Config.cpp
- * @brief Implementation notes for Vix::Config (maintainers-focused docs).
+ * @brief Implementation notes for vix::Config (maintainers-focused docs).
  *
  * Responsibilities and design choices:
  *  - Resolve a configuration file path with sensible defaults and log each probe.
@@ -39,10 +39,11 @@
  *  - Getters are noexcept and read-only.
  */
 
-namespace Vix
+namespace vix::config
 {
     namespace fs = std::filesystem;
     using json = nlohmann::json;
+    using Logger = vix::utils::Logger;
 
     /**
      * @brief Construct and attempt to locate a config file; load if found.
@@ -53,7 +54,7 @@ namespace Vix
           db_name(DEFAULT_DB_NAME), db_port(DEFAULT_DB_PORT),
           server_port(DEFAULT_SERVER_PORT), request_timeout(DEFAULT_REQUEST_TIMEOUT)
     {
-        auto &log = Vix::Logger::getInstance();
+        auto &log = vix::utils::Logger::getInstance();
         std::vector<fs::path> candidate_paths;
 
         if (!configPath.empty())
@@ -78,19 +79,19 @@ namespace Vix
             if (fs::exists(p))
             {
                 configPath_ = p;
-                log.log(Vix::Logger::Level::INFO, "Using configuration file: {}", p.string());
+                log.log(Logger::Level::INFO, "Using configuration file: {}", p.string());
                 found = true;
                 break;
             }
             else
             {
-                log.log(Vix::Logger::Level::WARN, "Config file not found at: {}", p.string());
+                log.log(Logger::Level::WARN, "Config file not found at: {}", p.string());
             }
         }
 
         if (!found)
         {
-            log.log(Vix::Logger::Level::WARN, "No config file found. Using default settings.");
+            log.log(Logger::Level::WARN, "No config file found. Using default settings.");
             return;
         }
 
@@ -111,7 +112,7 @@ namespace Vix
      */
     void Config::loadConfig()
     {
-        auto &log = Vix::Logger::getInstance();
+        auto &log = Logger::getInstance();
 
         if (configPath_.empty() || !fs::exists(configPath_))
         {
@@ -150,7 +151,7 @@ namespace Vix
             request_timeout = server.value("request_timeout", DEFAULT_REQUEST_TIMEOUT);
         }
 
-        log.log(Vix::Logger::Level::INFO, "Config loaded from {}", configPath_.string());
+        log.log(Logger::Level::INFO, "Config loaded from {}", configPath_.string());
     }
 
     /**
@@ -158,7 +159,7 @@ namespace Vix
      */
     std::string Config::getDbPasswordFromEnv()
     {
-        auto &log = Vix::Logger::getInstance();
+        auto &log = Logger::getInstance();
         if (const char *password = std::getenv("DB_PASSWORD"))
         {
             log.log(Logger::Level::INFO, "Using DB_PASSWORD from environment.");
@@ -178,7 +179,7 @@ namespace Vix
      */
     std::shared_ptr<sql::Connection> Config::getDbConnection()
     {
-        auto &log = Vix::Logger::getInstance();
+        auto &log = Logger::getInstance();
 
         sql::Driver *driver = sql::mysql::get_driver_instance();
 
@@ -209,7 +210,7 @@ namespace Vix
      */
     void Config::setServerPort(int port)
     {
-        auto &log = Vix::Logger::getInstance();
+        auto &log = Logger::getInstance();
         if (port < 1024 || port > 65535)
             log.throwError("Server port out of range (1024-65535).");
         server_port = port;

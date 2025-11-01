@@ -9,14 +9,14 @@
 #include <vix/executor/TaskOptions.hpp>
 #include <vix/executor/Metrics.hpp>
 
-namespace Vix
+namespace vix::executor
 {
     struct IExecutor
     {
         virtual ~IExecutor() = default;
 
         virtual bool post(std::function<void()> fn, TaskOptions opt = {}) = 0;
-        virtual Vix::executor::Metrics metrics() const = 0;
+        virtual vix::executor::Metrics metrics() const = 0;
         virtual void wait_idle() = 0;
 
         template <class F, class... Args>
