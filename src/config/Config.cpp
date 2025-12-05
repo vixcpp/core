@@ -52,7 +52,8 @@ namespace vix::config
         : configPath_(configPath),
           db_host(DEFAULT_DB_HOST), db_user(DEFAULT_DB_USER), db_pass(DEFAULT_DB_PASS),
           db_name(DEFAULT_DB_NAME), db_port(DEFAULT_DB_PORT),
-          server_port(DEFAULT_SERVER_PORT), request_timeout(DEFAULT_REQUEST_TIMEOUT)
+          server_port(DEFAULT_SERVER_PORT), request_timeout(DEFAULT_REQUEST_TIMEOUT),
+          rawConfig_(nlohmann::json::object())
     {
         auto &log = vix::utils::Logger::getInstance();
         std::vector<fs::path> candidate_paths;
@@ -134,6 +135,9 @@ namespace vix::config
             log.throwError(fmt::format("JSON parsing error in config file: {}", e.what()));
         }
 
+        // garder une copie brute pour les accès génériques (websocket.* etc.)
+        rawConfig_ = cfg;
+
         if (cfg.contains("database") && cfg["database"].contains("default"))
         {
             const auto &db = cfg["database"]["default"];
@@ -152,6 +156,29 @@ namespace vix::config
         }
 
         log.log(Logger::Level::INFO, "Config loaded from {}", configPath_.string());
+    }
+
+    const nlohmann::json *Config::findNode(const std::string &dottedKey) const noexcept
+    {
+        if (rawConfig_.is_null())
+            return nullptr;
+
+        const json *node = &rawConfig_;
+        std::stringstream ss(dottedKey);
+        std::string token;
+
+        while (std::getline(ss, token, '.'))
+        {
+            if (!node->is_object())
+                return nullptr;
+
+            auto it = node->find(token);
+            if (it == node->end())
+                return nullptr;
+
+            node = &(*it);
+        }
+        return node;
     }
 
     /**
@@ -216,4 +243,77 @@ namespace vix::config
         server_port = port;
         log.log(Logger::Level::INFO, "Server port set to {}", std::to_string(port));
     }
+
+    bool Config::has(const std::string &dottedKey) const noexcept
+    {
+        return findNode(dottedKey) != nullptr;
+    }
+
+    int Config::getInt(const std::string &dottedKey, int defaultValue) const noexcept
+    {
+        const auto *node = findNode(dottedKey);
+        if (!node)
+            return defaultValue;
+
+        try
+        {
+            if (node->is_number_integer())
+                return node->get<int>();
+            if (node->is_number_float())
+                return static_cast<int>(node->get<double>());
+            if (node->is_string())
+                return std::stoi(node->get<std::string>());
+        }
+        catch (...)
+        {
+        }
+        return defaultValue;
+    }
+
+    bool Config::getBool(const std::string &dottedKey, bool defaultValue) const noexcept
+    {
+        const auto *node = findNode(dottedKey);
+        if (!node)
+            return defaultValue;
+
+        try
+        {
+            if (node->is_boolean())
+                return node->get<bool>();
+            if (node->is_number_integer())
+                return node->get<int>() != 0;
+            if (node->is_string())
+            {
+                auto s = node->get<std::string>();
+                if (s == "true" || s == "1" || s == "on" || s == "yes")
+                    return true;
+                if (s == "false" || s == "0" || s == "off" || s == "no")
+                    return false;
+            }
+        }
+        catch (...)
+        {
+        }
+        return defaultValue;
+    }
+
+    std::string Config::getString(const std::string &dottedKey,
+                                  const std::string &defaultValue) const noexcept
+    {
+        const auto *node = findNode(dottedKey);
+        if (!node)
+            return defaultValue;
+
+        try
+        {
+            if (node->is_string())
+                return node->get<std::string>();
+            return node->dump();
+        }
+        catch (...)
+        {
+            return defaultValue;
+        }
+    }
+
 }
