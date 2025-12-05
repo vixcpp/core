@@ -60,33 +60,13 @@ namespace vix::config
     class Config
     {
     public:
-        /**
-         * @brief Construct a config with an optional JSON file path.
-         * @param configPath Filesystem path to a JSON configuration file.
-         *                   If empty, only defaults and environment are used.
-         */
         explicit Config(const std::filesystem::path &configPath = "");
 
-        // Non-copyable; prefer a single source of truth.
         Config(const Config &) = delete;
         Config &operator=(const Config &) = delete;
 
-        /**
-         * @brief Global accessor to a process-wide configuration instance.
-         * @param configPath Optional path used on first call to initialize.
-         * @return Singleton Config reference.
-         * @note This is a convenience for apps that prefer global access. If
-         *       your code favors dependency injection, construct `Config`
-         *       directly and pass references explicitly.
-         */
         static Config &getInstance(const std::filesystem::path &configPath = "");
 
-        /**
-         * @brief Load or reload configuration from `configPath_` if provided.
-         *
-         * Missing keys fall back to sensible defaults. Environment overrides
-         * may be applied for sensitive values (e.g., DB password).
-         */
         void loadConfig();
 
 #if VIX_CORE_WITH_MYSQL
@@ -94,38 +74,27 @@ namespace vix::config
         {
             class Connection;
         }
-        /**
-         * @brief Build or return a cached SQL connection (if enabled).
-         * @return A shared pointer to an active SQL connection.
-         */
         std::shared_ptr<sql::Connection> getDbConnection();
 #endif
 
-        /**
-         * @brief Retrieve the DB password from environment variables.
-         * @return The password string (may be empty if not set).
-         */
         std::string getDbPasswordFromEnv();
 
         // --- Accessors (noexcept) -------------------------------------------------
-        /** @return Database host (default: "localhost"). */
         const std::string &getDbHost() const noexcept;
-        /** @return Database user (default: "root"). */
         const std::string &getDbUser() const noexcept;
-        /** @return Database name (default: empty). */
         const std::string &getDbName() const noexcept;
-        /** @return Database port (default: 3306). */
         int getDbPort() const noexcept;
-        /** @return HTTP server port (default: 8080). */
         int getServerPort() const noexcept;
-        /** @return Per-request timeout in ms (default: 2000). */
         int getRequestTimeout() const noexcept;
 
-        /**
-         * @brief Override the HTTP server port at runtime.
-         * @param port New port number.
-         */
         void setServerPort(int port);
+
+        // --- Generic dotted-path helpers (for advanced modules) -------------
+        bool has(const std::string &dottedKey) const noexcept;
+        int getInt(const std::string &dottedKey, int defaultValue) const noexcept;
+        bool getBool(const std::string &dottedKey, bool defaultValue) const noexcept;
+        std::string getString(const std::string &dottedKey,
+                              const std::string &defaultValue) const noexcept;
 
     private:
         // --- Defaults -------------------------------------------------------------
@@ -146,6 +115,13 @@ namespace vix::config
         int db_port;
         int server_port;
         int request_timeout;
+
+        // Raw JSON document as loaded from disk (used by generic getters).
+        nlohmann::json rawConfig_;
+
+        // Helper: navigate a dotted path like "websocket.max_message_size"
+        // inside rawConfig_ and return a node or nullptr if missing.
+        const nlohmann::json *findNode(const std::string &dottedKey) const noexcept;
     };
 }
 
