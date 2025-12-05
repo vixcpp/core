@@ -47,6 +47,16 @@ namespace vix::vhttp
 {
     namespace http = boost::beast::http;
 
+    inline void ordered_json_response(http::response<http::string_body> &res,
+                                      const json::OrderedJson &j,
+                                      http::status status_code = http::status::ok)
+    {
+        res.result(status_code);
+        res.body() = j.dump();
+        res.set(http::field::content_type, "application/json");
+        res.prepare_payload();
+    }
+
     // --------------------------------------------------------------
     // Forward declarations (used by ResponseWrapper)
     // --------------------------------------------------------------
@@ -121,6 +131,15 @@ namespace vix::vhttp
         {
             auto j = kvs_to_nlohmann(vix::json::kvs{list});
             vix::vhttp::Response::json_response(res, j, res.result());
+            return *this;
+        }
+
+        /**
+         * @brief Send an OrderedJson while preserving key order.
+         */
+        ResponseWrapper &json(const json::OrderedJson &j)
+        {
+            vix::vhttp::ordered_json_response(res, j, res.result());
             return *this;
         }
 
