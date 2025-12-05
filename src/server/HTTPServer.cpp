@@ -164,7 +164,16 @@ namespace vix::server
 
         acceptor_->bind(endpoint, ec);
         if (ec)
+        {
+            if (ec == boost::system::errc::address_in_use)
+            {
+                throw std::system_error(
+                    ec,
+                    "bind acceptor: address already in use. "
+                    "Another process is listening on this port.");
+            }
             throw std::system_error(ec, "bind acceptor");
+        }
 
         acceptor_->listen(boost::asio::socket_base::max_connections, ec);
         if (ec)
@@ -328,7 +337,7 @@ namespace vix::server
         vix::timers::interval(*executor_, std::chrono::seconds(5), [this]()
                               {
         const auto m = executor_->metrics();
-        Logger::getInstance().log(Logger::Level::INFO,
+        Logger::getInstance().log(Logger::Level::DEBUG,
             "Executor Metrics -> Pending: {}, Active: {}, TimedOut: {}",
             m.pending, m.active, m.timed_out); });
     }

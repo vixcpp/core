@@ -26,6 +26,40 @@
  *    `HTTPServer::join_threads()` to ensure a clean teardown.
  */
 
+namespace
+{
+
+    vix::utils::Logger::Level parse_log_level_from_env()
+    {
+        using Level = vix::utils::Logger::Level;
+
+        // env_or(key, default) -> std::string
+        // 🔥 Par défaut: WARN (donc les [info] ne s'affichent pas)
+        const std::string raw = vix::utils::env_or("VIX_LOG_LEVEL", std::string{"warn"});
+        std::string s;
+        s.reserve(raw.size());
+        for (char c : raw)
+            s.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+
+        if (s == "trace")
+            return Level::TRACE;
+        if (s == "debug")
+            return Level::DEBUG;
+        if (s == "info")
+            return Level::INFO;
+        if (s == "warn" || s == "warning")
+            return Level::WARN;
+        if (s == "error")
+            return Level::ERROR;
+        if (s == "critical")
+            return Level::CRITICAL;
+
+        // valeur inconnue → fallback raisonnable
+        return Level::WARN;
+    }
+
+} // namespace
+
 namespace vix
 {
     using Logger = vix::utils::Logger;
@@ -83,24 +117,26 @@ namespace vix
     {
         auto &log = Logger::getInstance();
 
-        // Minimal, production-friendly defaults
-        log.setLevel(Logger::Level::WARN);
+        // 1) Pattern commun (console + fichier)
         log.setPattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
 
-        // Toggle async logging by environment (default ON in production)
-        // VIX_LOG_ASYNC=0 -> force sync logs
-        if (utils::env_bool("VIX_LOG_ASYNC", true))
+        // 2) Niveau de log via VIX_LOG_LEVEL (trace|debug|info|warn|error|critical)
+        const auto level = parse_log_level_from_env();
+        log.setLevel(level);
+
+        // 3) Async / sync via VIX_LOG_ASYNC (par défaut: true)
+        if (vix::utils::env_bool("VIX_LOG_ASYNC", true))
         {
             log.setAsync(true);
-            log.log(Logger::Level::INFO, "Logger initialized in ASYNC mode");
+            log.log(Logger::Level::DEBUG, "Logger initialized in ASYNC mode");
         }
         else
         {
             log.setAsync(false);
-            log.log(Logger::Level::INFO, "Logger initialized in SYNC mode");
+            log.log(Logger::Level::DEBUG, "Logger initialized in SYNC mode");
         }
 
-        // Optional context for better observability (module tag)
+        // 4) Contexte module
         Logger::Context ctx;
         ctx.module = "App";
         log.setContext(ctx);
