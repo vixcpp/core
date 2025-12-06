@@ -18,13 +18,13 @@
  *
  * ### Example usage
  * ```cpp
- * #include <vix/App.hpp>
- * using namespace Vix;
+ * #include <vix/app/App.hpp>
  *
  * int main() {
- *     App app;
+ *     vix::App app;
  *
- *     app.get("/hello", [](const auto& req, ResponseWrapper& res){
+ *     app.get("/hello", [](const auto& req, vix::vhttp::ResponseWrapper& res){
+ *         (void)req;
  *         res.text("Hello, World!");
  *     });
  *
@@ -53,6 +53,11 @@
 
 #include <vix/executor/IExecutor.hpp>
 #include <vix/experimental/ThreadPoolExecutor.hpp>
+
+namespace vix::router
+{
+    class Router; // forward declaration pour éviter d'inclure Router.hpp ici
+}
 
 namespace vix
 {
@@ -90,41 +95,64 @@ namespace vix
         // Express-like route registration helpers
         // --------------------------------------------------------------
         template <typename Handler>
-        void get(const std::string &path, Handler handler) { add_route(http::verb::get, path, std::move(handler)); }
+        void get(const std::string &path, Handler handler)
+        {
+            add_route(http::verb::get, path, std::move(handler));
+        }
 
         template <typename Handler>
-        void post(const std::string &path, Handler handler) { add_route(http::verb::post, path, std::move(handler)); }
+        void post(const std::string &path, Handler handler)
+        {
+            add_route(http::verb::post, path, std::move(handler));
+        }
 
         template <typename Handler>
-        void put(const std::string &path, Handler handler) { add_route(http::verb::put, path, std::move(handler)); }
+        void put(const std::string &path, Handler handler)
+        {
+            add_route(http::verb::put, path, std::move(handler));
+        }
 
         template <typename Handler>
-        void patch(const std::string &path, Handler handler) { add_route(http::verb::patch, path, std::move(handler)); }
+        void patch(const std::string &path, Handler handler)
+        {
+            add_route(http::verb::patch, path, std::move(handler));
+        }
 
         template <typename Handler>
-        void del(const std::string &path, Handler handler) { add_route(http::verb::delete_, path, std::move(handler)); }
+        void del(const std::string &path, Handler handler)
+        {
+            add_route(http::verb::delete_, path, std::move(handler));
+        }
 
         template <typename Handler>
-        void head(const std::string &path, Handler handler) { add_route(http::verb::head, path, std::move(handler)); }
+        void head(const std::string &path, Handler handler)
+        {
+            add_route(http::verb::head, path, std::move(handler));
+        }
 
         template <typename Handler>
-        void options(const std::string &path, Handler handler) { add_route(http::verb::options, path, std::move(handler)); }
+        void options(const std::string &path, Handler handler)
+        {
+            add_route(http::verb::options, path, std::move(handler));
+        }
 
         // --------------------------------------------------------------
         // Accessors
         // --------------------------------------------------------------
         /** @return The global Config instance used by this app. */
         vix::config::Config &config() noexcept { return config_; }
+
         /** @return Shared Router for registering or inspecting routes. */
         std::shared_ptr<vix::router::Router> router() const noexcept { return router_; }
+
         /** @return Underlying HTTPServer instance handling requests. */
         vix::server::HTTPServer &server() noexcept { return server_; }
 
     private:
-        vix::config::Config &config_;                 ///< Global configuration reference
-        std::shared_ptr<vix::router::Router> router_; ///< Shared router (injected into HTTPServer)
-        std::shared_ptr<vix::executor::IExecutor> executor_;
-        vix::server::HTTPServer server_; ///< Core HTTP server
+        vix::config::Config &config_;                        ///< Global configuration reference
+        std::shared_ptr<vix::router::Router> router_;        ///< Shared router (injected into HTTPServer)
+        std::shared_ptr<vix::executor::IExecutor> executor_; ///< Executor used by HTTP server
+        vix::server::HTTPServer server_;                     ///< Core HTTP server
 
         /**
          * @brief Internal helper for adding a typed route handler.
@@ -141,10 +169,14 @@ namespace vix
                 log.throwError("Router is not initialized in App");
             }
 
-            auto request_handler = std::make_shared<vix::vhttp::RequestHandler<Handler>>(path, std::move(handler));
+            using Adapter = vix::vhttp::RequestHandler<Handler>;
+            auto request_handler = std::make_shared<Adapter>(path, std::move(handler));
             router_->add_route(method, path, request_handler);
 
-            log.logf(Logger::Level::DEBUG, "Route registered", "method", static_cast<int>(method), "path", path.c_str());
+            log.logf(Logger::Level::DEBUG,
+                     "Route registered",
+                     "method", static_cast<int>(method),
+                     "path", path.c_str());
         }
     };
 
