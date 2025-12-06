@@ -34,22 +34,6 @@
  * Route registration is typically done at startup **before** serving traffic.
  * If you mutate the route table after `HTTPServer::run()`, ensure external
  * synchronization.
- *
- * ### Usage example
- * @code{.cpp}
- * Router r;
- * r.setNotFoundHandler([](const http::request<http::string_body>& req,
- *                         http::response<http::string_body>& res){
- *   res.result(http::status::not_found);
- *   vix::Response::text(res, "Not found", res.result());
- * });
- *
- * auto show = std::make_shared<RequestHandler<ShowUser>>();
- * r.add_route(http::verb::get, "/users/{id}", show);
- *
- * http::response<http::string_body> res;
- * bool ok = r.handle_request(req, res);
- * @endcode
  */
 
 #include <vix/http/Response.hpp>
@@ -120,7 +104,9 @@ namespace vix::router
          * nodes, marking `{param}` segments as wildcard (`*`). Parameter value
          * extraction is left to the handler implementation.
          */
-        void add_route(http::verb method, const std::string &path, std::shared_ptr<vix::vhttp::IRequestHandler> handler)
+        void add_route(http::verb method,
+                       const std::string &path,
+                       std::shared_ptr<vix::vhttp::IRequestHandler> handler)
         {
             std::string full_path = method_to_string(method) + path;
             auto *node = root_.get();
@@ -171,13 +157,16 @@ namespace vix::router
             {
                 res.result(http::status::no_content);
                 res.set(http::field::access_control_allow_origin, "*");
-                res.set(http::field::access_control_allow_methods, "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD");
-                res.set(http::field::access_control_allow_headers, "Content-Type, Authorization");
+                res.set(http::field::access_control_allow_methods,
+                        "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD");
+                res.set(http::field::access_control_allow_headers,
+                        "Content-Type, Authorization");
                 res.set(http::field::connection, "close");
-                res.prepare_payload(); // Content-Length: 0
+                res.prepare_payload();
                 return true;
             }
 
+            // Chemin complet utilisé pour la recherche dans le trie
             std::string full_path = method_to_string(req.method()) + std::string(req.target());
 
             auto *node = root_.get();
@@ -215,8 +204,12 @@ namespace vix::router
             {
                 node->handler->handle_request(req, res);
                 // Ensure payload prepared (if handler forgot)
-                if (res.need_eof() || res.body().size() || res.find(http::field::content_length) != res.end())
+                if (res.need_eof() ||
+                    res.body().size() ||
+                    res.find(http::field::content_length) != res.end())
+                {
                     res.prepare_payload();
+                }
                 return true;
             }
 

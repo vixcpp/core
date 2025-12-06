@@ -55,6 +55,7 @@ set(CMAKE_CXX_FLAGS_DEBUG   "${GLOBAL_CXX_FLAGS} -g")
 
 option(VIX_CORE_WITH_OPENSSL "Enable HTTPS/TLS support using OpenSSL" ON)
 option(VIX_CORE_WITH_MYSQL   "Enable MySQL client linkage" OFF)
+option(VIX_BENCH_MODE "Enable ultra-minimal /bench route for benchmarking" OFF)
 
 # ------------------------ Sources discovery --------------------------
 # If any .cpp exists under src/, we switch to STATIC build mode.
@@ -206,6 +207,12 @@ if (CORE_SOURCES)
 
   # Sanitizers (only if enabled at top-level)
   vix_core_apply_sanitizers(vix_core PRIVATE)
+
+  # ✅ Bench mode → macro C++
+  if (VIX_BENCH_MODE)
+    message(STATUS "[core] Bench mode enabled: /bench route compiled in")
+    target_compile_definitions(vix_core PUBLIC VIX_BENCH_MODE=1)
+  endif()
 
   set_target_properties(vix_core PROPERTIES
     OUTPUT_NAME vix_core

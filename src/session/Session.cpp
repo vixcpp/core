@@ -293,6 +293,11 @@ namespace vix::session
      */
     bool Session::waf_check_request(const bhttp::request<bhttp::string_body> &req)
     {
+#ifdef VIX_BENCH_MODE
+        // Mode bench → on ne fait AUCUN check WAF, pour ne pas polluer les perfs
+        (void)req;
+        return true;
+#else
         if (req.target().size() > 4096)
         {
             logger.log(Logger::Level::WARN, "[WAF] Target too long");
@@ -321,6 +326,7 @@ namespace vix::session
         }
 
         return true;
+#endif
     }
 
 } // namespace vix

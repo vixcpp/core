@@ -181,25 +181,26 @@ namespace vix::threadpool
             if (maxThreads <= 1)
                 return;
 
-            cpu_set_t cpuset;  // struct du noyau linux qui represente un ensemble de coeurs
-            CPU_ZERO(&cpuset); // vider (aucun coeur selectionne au depart)
+            cpu_set_t cpuset;
+            CPU_ZERO(&cpuset);
 
-            const unsigned hc = std::thread::hardware_concurrency();
-            const unsigned denom = (hc == 0u) ? 1u : hc;
-            const unsigned coreU = static_cast<unsigned>(id % denom);
-            const int core = static_cast<int>(coreU);
+            const std::size_t hc = std::thread::hardware_concurrency();
+            const std::size_t denom = (hc == 0u) ? 1u : hc;
 
-            CPU_SET(static_cast<int>(core), &cpuset);
+            const std::size_t coreIndex = id % denom;
+
+            CPU_SET(coreIndex, &cpuset);
 
             const int ret = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
             if (ret != 0)
             {
                 auto &log = Logger::getInstance();
                 log.log(Logger::Level::WARN,
-                        "[ThreadPool][Thread {}] Failed to set thread affinity, error: {}", threadId, ret);
+                        "[ThreadPool][Thread {}] Failed to set thread affinity, error: {}",
+                        threadId, ret);
             }
 #else
-            (void)id; // avoid -Wunused-parameter on other platforms(eviter un warning sur windows/macos)
+            (void)id;
 #endif
         }
 

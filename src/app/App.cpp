@@ -1,12 +1,16 @@
 #include <vix/app/App.hpp>
 #include <vix/utils/Env.hpp> // env_bool / env_or
 #include <vix/utils/Logger.hpp>
+#include <vix/http/RequestHandler.hpp>
+#include <vix/router/Router.hpp> // <-- important : pour vix::router::Router
+#include <boost/beast/http.hpp>
 
 #include <csignal>
 #include <thread>
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
+#include <memory>
 
 /**
  * @file App.cpp
@@ -23,12 +27,11 @@
  *     1) sets a process-wide stop flag and notifies a condition variable,
  *     2) calls `HTTPServer::stop_async()` (non-blocking) via a global pointer.
  *  - `App::run()` waits on the CV, joins the server thread, then calls
- *    `HTTPServer::join_threads()` to ensure a clean teardown.
+ *    `HTTPServer::stop_blocking()` to ensure a clean teardown.
  */
 
 namespace
 {
-
     vix::utils::Logger::Level parse_log_level_from_env()
     {
         using Level = vix::utils::Logger::Level;
@@ -56,6 +59,33 @@ namespace
 
         // valeur inconnue → fallback raisonnable
         return Level::WARN;
+    }
+
+    std::size_t compute_executor_threads()
+    {
+        auto hc = std::thread::hardware_concurrency();
+        if (hc == 0)
+            hc = 4;
+        return hc;
+    }
+
+    // Route de bench simple : GET /bench -> "OK"
+    void register_bench_route(vix::router::Router &router)
+    {
+        namespace http = boost::beast::http;
+
+        auto handlerLambda =
+            [](const http::request<http::string_body> &req,
+               vix::vhttp::ResponseWrapper &res)
+        {
+            (void)req;
+            res.status(http::status::ok).text("OK");
+        };
+
+        using BenchHandler = vix::vhttp::RequestHandler<decltype(handlerLambda)>;
+        auto handlerPtr = std::make_shared<BenchHandler>("/bench", handlerLambda);
+
+        router.add_route(http::verb::get, "/bench", handlerPtr);
     }
 
 } // namespace
@@ -98,21 +128,14 @@ namespace vix
     // ------------------------------------------------------
     // App: configure logger, load config, acquire router/server
     // ------------------------------------------------------
-    /**
-     * @brief Construct the application: configure logger, load config, wire router.
-     *
-     * Logger defaults:
-     *  - Level: WARN (overridable at runtime if needed).
-     *  - Pattern: "[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v".
-     *  - Async mode toggled by env `VIX_LOG_ASYNC` (default: true).
-     */
     App::App()
         : config_(vix::config::Config::getInstance()),
           router_(nullptr),
           // 1) créer un executor concret (ThreadPoolExecutor) — valeurs par défaut raisonnables
           executor_(std::make_shared<vix::experimental::ThreadPoolExecutor>(
-              /*threads*/ 4, /*maxThreads*/ 8, /*defaultPriority*/ 1)),
-          // 2) injecter l’executor dans le HTTPServer
+              compute_executor_threads(), // threads
+              compute_executor_threads(), // maxThreads = threads → pas d'élasticité
+              /*defaultPriority*/ 1)),
           server_(config_, executor_)
     {
         auto &log = Logger::getInstance();
@@ -143,14 +166,18 @@ namespace vix
 
         try
         {
-            // Allow external code to pass a path at first getInstance(); if not, load defaults
+            // Charge la config (fichier + env)
             config_.loadConfig();
 
+            // Récupère le router depuis HTTPServer
             router_ = server_.getRouter();
             if (!router_)
             {
                 log.throwError("Failed to get Router from HTTPServer");
             }
+
+            // 🔹 Enregistrer la route /bench une fois pour toutes au démarrage
+            register_bench_route(*router_);
         }
         catch (const std::exception &e)
         {
@@ -161,16 +188,6 @@ namespace vix
     // ------------------------------------------------------
     // App::run: start server, install signal handlers, wait until stop
     // ------------------------------------------------------
-    /**
-     * @brief Start server on the given port, handle signals, and tear down.
-     *
-     * Steps:
-     *  1) Validate & set port (via Config::setServerPort).
-     *  2) Install SIGINT (+SIGTERM when available).
-     *  3) Launch `HTTPServer::run()` in a background thread.
-     *  4) Wait on a condition variable until a stop signal arrives.
-     *  5) Join the server thread and call `server_.join_threads()`.
-     */
     void App::run(int port)
     {
         auto &log = Logger::getInstance();
@@ -199,7 +216,6 @@ namespace vix
         }
 
         // 6) Graceful shutdown sequence (idempotent)
-        //    - just in case: if the handler hasn't run or ran partially
         server_.stop_async();
         server_.stop_blocking(); // stop periodic tasks + waitUntilIdle + join I/O threads
 
