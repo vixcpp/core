@@ -4,38 +4,6 @@
 /**
  * @file App.hpp
  * @brief High-level Vix.cpp application entry point combining Config, Router, and HTTPServer.
- *
- * @details
- * The `vix::App` class provides a simplified, Express-like interface for defining routes
- * and running an HTTP server. It serves as the glue between configuration (`Config`), routing
- * (`Router`), and networking (`HTTPServer`).
- *
- * ### Responsibilities
- * - Initialize and hold shared instances of Config, Router, and HTTPServer.
- * - Register routes for multiple HTTP verbs using a uniform API (`get`, `post`, etc.).
- * - Manage the server lifecycle (`run()`) and handle graceful shutdowns on signals.
- * - Provide runtime access to core subsystems (config, router, server).
- *
- * ### Example usage
- * ```cpp
- * #include <vix/app/App.hpp>
- *
- * int main() {
- *     vix::App app;
- *
- *     app.get("/hello", [](const auto& req, vix::vhttp::ResponseWrapper& res){
- *         (void)req;
- *         res.text("Hello, World!");
- *     });
- *
- *     app.run(8080);
- *     return 0;
- * }
- * ```
- *
- * ### Thread safety
- * Routes should be registered before calling `run()`. Once running, all
- * route handlers are executed concurrently within the HTTPServer's worker pool.
  */
 
 #include <memory>
@@ -71,6 +39,8 @@ namespace vix
     class App
     {
     public:
+        using ShutdownCallback = std::function<void()>;
+
         /** @brief Construct a new App instance with shared Config and Router. */
         App();
         ~App() = default;
@@ -90,6 +60,21 @@ namespace vix
          * @param port Optional override of the configured port.
          */
         void run(int port = 8080);
+
+        /**
+         * @brief Register a callback invoked during graceful shutdown.
+         *
+         * Typical usage:
+         *   - stopping auxiliary runtimes (e.g. WebSocket App)
+         *   - flushing custom metrics, background workers, etc.
+         *
+         * The callback is executed once, after a stop signal has been received
+         * (SIGINT/SIGTERM) and before the HTTP server completes its teardown.
+         */
+        void set_shutdown_callback(ShutdownCallback cb)
+        {
+            shutdown_cb_ = std::move(cb);
+        }
 
         // --------------------------------------------------------------
         // Express-like route registration helpers
@@ -153,6 +138,8 @@ namespace vix
         std::shared_ptr<vix::router::Router> router_;        ///< Shared router (injected into HTTPServer)
         std::shared_ptr<vix::executor::IExecutor> executor_; ///< Executor used by HTTP server
         vix::server::HTTPServer server_;                     ///< Core HTTP server
+
+        ShutdownCallback shutdown_cb_{}; ///< Optional hook executed on shutdown
 
         /**
          * @brief Internal helper for adding a typed route handler.

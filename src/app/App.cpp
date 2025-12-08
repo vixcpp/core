@@ -215,15 +215,36 @@ namespace vix
                            { return g_stop_flag.load(std::memory_order_relaxed); });
         }
 
-        // 6) Graceful shutdown sequence (idempotent)
+        // 6) Optional external shutdown hook (e.g. WebSocket runtime)
+        if (shutdown_cb_)
+        {
+            try
+            {
+                shutdown_cb_();
+            }
+            catch (const std::exception &e)
+            {
+                // fmt-style logging: format string literal + args
+                log.log(Logger::Level::ERROR,
+                        "Shutdown callback threw: {}",
+                        e.what());
+            }
+            catch (...)
+            {
+                log.log(Logger::Level::ERROR,
+                        "Shutdown callback threw unknown exception");
+            }
+        }
+
+        // 7) Graceful HTTP shutdown sequence (idempotent)
         server_.stop_async();
         server_.stop_blocking(); // stop periodic tasks + waitUntilIdle + join I/O threads
 
-        // 7) Join the thread that started run()
+        // 8) Join the thread that started run()
         if (server_thread.joinable())
             server_thread.join();
 
-        // 8) Cleanup
+        // 9) Cleanup
         g_server_ptr = nullptr;
 
         log.log(Logger::Level::INFO, "Application shutdown complete");
