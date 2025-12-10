@@ -28,6 +28,8 @@
 #include <vix/router/Router.hpp>
 #include <vix/http/IRequestHandler.hpp>
 #include <vix/http/RequestHandler.hpp>
+#include <vix/http/Response.hpp>       // ResponseWrapper + Response utilities
+#include <vix/http/RequestHandler.hpp> // brings vix::vhttp::{Request,Response}
 
 // ----------------------------
 // Session
@@ -47,12 +49,13 @@ namespace bhttp = boost::beast::http;
 
 namespace vix
 {
-
-    // Types pratiques
     using tcp = asio::ip::tcp;
 
-    // Convenience aliases
     using AppPtr = std::shared_ptr<App>;
     using SessionPtr = std::shared_ptr<vix::session::Session>;
 
+    // Public HTTP aliases for DX:
+    //   app.get("/", [](Request& req, Response& res) { ... });
+    using Request = vix::vhttp::Request;
+    using Response = vix::vhttp::ResponseWrapper;
 } // namespace vix
