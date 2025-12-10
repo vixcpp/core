@@ -6,17 +6,25 @@
  * @brief Functional adapter between user-defined handlers and the Vix routing system.
  *
  * @details
- * `vix::http::RequestHandler` enables developers to register simple lambdas or callable
+ * `vix::vhttp::RequestHandler` enables developers to register simple lambdas or callable
  * objects as route handlers without manually subclassing `IRequestHandler`.
+ *
  * It provides:
  * - Automatic **parameter extraction** from route patterns (e.g. `/users/{id}`).
- * - A lightweight **ResponseWrapper** offering Express-like chaining (e.g. `res.status(200).json({...})`).
- * - JSON conversion utilities bridging between `vix::json` tokens and `nlohmann::json`.
+ * - A lightweight **Request** façade with:
+ *      - `req.method()`
+ *      - `req.path()`
+ *      - `req.params()["id"]`
+ *      - `req.query()["page"]`
+ *      - `req.json()` (parsed body as nlohmann::json)
+ * - A lightweight **ResponseWrapper** offering Express-like chaining
+ *      - `res.status(200).json({...})`
+ *      - `res.ok().json({...})`
  *
- * ### Supported handler signatures
+ * ### Supported handler signatures (user-facing)
  * ```cpp
- * void handler(const http::request<http::string_body>& req, ResponseWrapper& res);
- * void handler(const http::request<http::string_body>& req, ResponseWrapper& res,
+ * void handler(Request& req, ResponseWrapper& res);
+ * void handler(Request& req, ResponseWrapper& res,
  *              std::unordered_map<std::string, std::string>& params);
  * ```
  */
@@ -33,6 +41,7 @@
 #include <concepts>  // C++20 concepts
 #include <cassert>   // assert in Debug
 #include <stdexcept> // std::range_error
+#include <optional>
 
 #include <boost/beast/http.hpp>
 #include <nlohmann/json.hpp>
@@ -46,6 +55,15 @@
 namespace vix::vhttp
 {
     namespace http = boost::beast::http;
+
+    // Façades publiques
+    class Request;          // req.method(), req.path(), req.params(), req.query(), req.json()
+    struct ResponseWrapper; // res.ok().json(...)
+
+    using RawRequest = http::request<http::string_body>;
+    // --------------------------------------------------------------
+    // Small helpers
+    // --------------------------------------------------------------
 
     inline void ordered_json_response(http::response<http::string_body> &res,
                                       const json::OrderedJson &j,
@@ -63,6 +81,306 @@ namespace vix::vhttp
     inline nlohmann::json token_to_nlohmann(const vix::json::token &t);
     inline nlohmann::json kvs_to_nlohmann(const vix::json::kvs &list);
 
+    // --------------------------------------------------------------
+    // URL-decoding helper for query parameters
+    // --------------------------------------------------------------
+    inline std::string url_decode(std::string_view in)
+    {
+        std::string out;
+        out.reserve(in.size());
+
+        for (size_t i = 0; i < in.size(); ++i)
+        {
+            const unsigned char c = static_cast<unsigned char>(in[i]);
+            if (c == '+')
+            {
+                out.push_back(' ');
+            }
+            else if (c == '%' && i + 2 < in.size())
+            {
+                auto hex = [](unsigned char ch) -> int
+                {
+                    if (ch >= '0' && ch <= '9')
+                        return ch - '0';
+                    if (ch >= 'a' && ch <= 'f')
+                        return 10 + (ch - 'a');
+                    if (ch >= 'A' && ch <= 'F')
+                        return 10 + (ch - 'A');
+                    return -1;
+                };
+
+                int hi = hex(static_cast<unsigned char>(in[i + 1]));
+                int lo = hex(static_cast<unsigned char>(in[i + 2]));
+                if (hi >= 0 && lo >= 0)
+                {
+                    out.push_back(static_cast<char>((hi << 4) | lo));
+                    i += 2;
+                }
+                else
+                {
+                    // Malformed % sequence, keep as-is
+                    out.push_back(static_cast<char>(c));
+                }
+            }
+            else
+            {
+                out.push_back(static_cast<char>(c));
+            }
+        }
+
+        return out;
+    }
+
+    inline std::unordered_map<std::string, std::string>
+    parse_query_string(std::string_view qs)
+    {
+        std::unordered_map<std::string, std::string> out;
+
+        size_t pos = 0;
+        while (pos < qs.size())
+        {
+            size_t amp = qs.find('&', pos);
+            if (amp == std::string_view::npos)
+                amp = qs.size();
+
+            std::string_view pair = qs.substr(pos, amp - pos);
+            if (!pair.empty())
+            {
+                size_t eq = pair.find('=');
+                std::string_view key, val;
+                if (eq == std::string_view::npos)
+                {
+                    key = pair;
+                    val = std::string_view{};
+                }
+                else
+                {
+                    key = pair.substr(0, eq);
+                    val = pair.substr(eq + 1);
+                }
+
+                auto key_dec = url_decode(key);
+                auto val_dec = url_decode(val);
+                if (!key_dec.empty())
+                {
+                    out[std::move(key_dec)] = std::move(val_dec);
+                }
+            }
+
+            if (amp == qs.size())
+                break;
+            pos = amp + 1;
+        }
+
+        return out;
+    }
+
+    // --------------------------------------------------------------
+    // Path parameter extraction
+    // --------------------------------------------------------------
+    inline std::unordered_map<std::string, std::string>
+    extract_params_from_path(const std::string &pattern, std::string_view path)
+    {
+        std::unordered_map<std::string, std::string> params;
+        size_t rpos = 0, ppos = 0;
+        while (rpos < pattern.size() && ppos < path.size())
+        {
+            if (pattern[rpos] == '{')
+            {
+                const size_t end_brace = pattern.find('}', rpos);
+                const auto name = pattern.substr(rpos + 1, end_brace - rpos - 1);
+
+                const size_t next_slash = path.find('/', ppos);
+                const auto value = (next_slash == std::string_view::npos)
+                                       ? path.substr(ppos)
+                                       : path.substr(ppos, next_slash - ppos);
+
+                params[name] = std::string(value);
+                rpos = end_brace + 1;
+                ppos = (next_slash == std::string_view::npos) ? path.size() : next_slash + 1;
+            }
+            else
+            {
+                ++rpos;
+                ++ppos;
+            }
+        }
+        return params;
+    }
+
+    // ------------------------------------------------------------------
+    // Request façade — user-facing API (req.params, req.query, req.json)
+    // ------------------------------------------------------------------
+    class Request
+    {
+    public:
+        using RawRequest = http::request<http::string_body>;
+
+        Request(const RawRequest &raw,
+                std::unordered_map<std::string, std::string> params)
+            : raw_(&raw),
+              params_(std::move(params))
+        {
+            // Cache method string
+            method_ = std::string(raw.method_string());
+
+            // Split target into path + query
+            std::string_view target(raw.target().data(), raw.target().size());
+            auto qpos = target.find('?');
+            if (qpos == std::string_view::npos)
+            {
+                path_ = std::string(target);
+            }
+            else
+            {
+                path_ = std::string(target.substr(0, qpos));
+                query_raw_ = std::string(target.substr(qpos + 1));
+            }
+        }
+
+        // HTTP method ("GET", "POST", ...)
+        const std::string &method() const noexcept { return method_; }
+
+        // Raw target ("/users/1?x=1")
+        std::string target() const
+        {
+            return std::string(raw_->target().data(), raw_->target().size());
+        }
+
+        // Path without query ("/users/1")
+        const std::string &path() const noexcept { return path_; }
+
+        // Params (from route pattern)
+        const std::unordered_map<std::string, std::string> &params() const noexcept
+        {
+            return params_;
+        }
+
+        bool has_param(const std::string &key) const
+        {
+            return params_.find(key) != params_.end();
+        }
+
+        std::string param(const std::string &key,
+                          const std::string &fallback = "") const
+        {
+            auto it = params_.find(key);
+            if (it == params_.end())
+                return fallback;
+            return it->second;
+        }
+
+        // Query object (lazy-parsed & cached)
+        const std::unordered_map<std::string, std::string> &query()
+        {
+            ensure_query_parsed();
+            return query_;
+        }
+
+        bool has_query(const std::string &key)
+        {
+            ensure_query_parsed();
+            return query_.find(key) != query_.end();
+        }
+
+        std::string query_value(const std::string &key,
+                                const std::string &fallback = "")
+        {
+            ensure_query_parsed();
+            auto it = query_.find(key);
+            if (it == query_.end())
+                return fallback;
+            return it->second;
+        }
+
+        // Body as raw string
+        const std::string &body() const noexcept
+        {
+            return raw_->body();
+        }
+
+        // Body as JSON (lazy parse, throws on error)
+        const nlohmann::json &json() const
+        {
+            ensure_json_parsed();
+            return body_json_;
+        }
+
+        // Convenience: parse JSON and cast to a type
+        template <typename T>
+        T json_as() const
+        {
+            ensure_json_parsed();
+            return body_json_.get<T>();
+        }
+
+        // Access to underlying Beast request
+        const RawRequest &raw() const noexcept { return *raw_; }
+
+        // Header access
+        std::string header(std::string_view name) const
+        {
+            // Beast uses its own string_view type, so we adapt.
+            boost::beast::string_view key{name.data(), name.size()};
+
+            auto it = raw_->find(key);
+            if (it == raw_->end())
+                return {};
+            return std::string(it->value());
+        }
+
+        bool has_header(std::string_view name) const
+        {
+            boost::beast::string_view key{name.data(), name.size()};
+            return raw_->find(key) != raw_->end();
+        }
+
+    private:
+        void ensure_query_parsed()
+        {
+            if (query_parsed_ || query_raw_.empty())
+            {
+                query_parsed_ = true; // even if empty
+                return;
+            }
+
+            query_ = parse_query_string(query_raw_);
+            query_parsed_ = true;
+        }
+
+        void ensure_json_parsed() const
+        {
+            if (json_parsed_)
+                return;
+
+            if (raw_->body().empty())
+            {
+                body_json_ = nlohmann::json{};
+            }
+            else
+            {
+                body_json_ = nlohmann::json::parse(raw_->body(), nullptr, true, true);
+            }
+
+            json_parsed_ = true;
+        }
+
+    private:
+        const RawRequest *raw_;
+
+        std::string method_;
+        std::string path_;
+        std::string query_raw_;
+
+        std::unordered_map<std::string, std::string> params_;
+
+        mutable bool query_parsed_{false};
+        mutable std::unordered_map<std::string, std::string> query_;
+
+        mutable bool json_parsed_{false};
+        mutable nlohmann::json body_json_;
+    };
+
     // ------------------------------------------------------------------
     // ResponseWrapper — Express-like response builder
     // ------------------------------------------------------------------
@@ -72,23 +390,12 @@ namespace vix::vhttp
 
         explicit ResponseWrapper(http::response<http::string_body> &r) noexcept : res(r) {}
 
-        /**
-         * @brief Set HTTP status from enum and keep chaining.
-         */
         ResponseWrapper &status(http::status code) noexcept
         {
             res.result(code);
             return *this;
         }
 
-        /**
-         * @brief Set HTTP status from integer (Express-like).
-         *
-         * - Debug: assert on invalid range and also throw a range_error to bubble into the global handler.
-         * - Release: throw a range_error on invalid range so it is **not** silent; the global handler
-         *            will log the error and format a proper error response (HTML in Debug builds of the server,
-         *            JSON in Release).
-         */
         ResponseWrapper &status(int code)
         {
             if (code < 100 || code > 599)
@@ -103,10 +410,6 @@ namespace vix::vhttp
             return *this;
         }
 
-        /**
-         * @brief Set status and immediately send a short textual payload
-         *        like Express's res.sendStatus().
-         */
         ResponseWrapper &sendStatus(int code)
         {
             status(code);
@@ -115,18 +418,12 @@ namespace vix::vhttp
             return *this;
         }
 
-        /**
-         * @brief Send plain text with current status.
-         */
         ResponseWrapper &text(std::string_view data)
         {
             vix::vhttp::Response::text_response(res, data, res.result());
             return *this;
         }
 
-        /**
-         * @brief Send JSON from key-value tokens (initializer list).
-         */
         ResponseWrapper &json(std::initializer_list<vix::json::token> list)
         {
             auto j = kvs_to_nlohmann(vix::json::kvs{list});
@@ -134,18 +431,12 @@ namespace vix::vhttp
             return *this;
         }
 
-        /**
-         * @brief Send an OrderedJson while preserving key order.
-         */
-        ResponseWrapper &json(const json::OrderedJson &j)
+        ResponseWrapper &json_ordered(const json::OrderedJson &j)
         {
             vix::vhttp::ordered_json_response(res, j, res.result());
             return *this;
         }
 
-        /**
-         * @brief Send JSON from key-value sequence.
-         */
         ResponseWrapper &json(const vix::json::kvs &kv)
         {
             auto j = kvs_to_nlohmann(kv);
@@ -153,19 +444,12 @@ namespace vix::vhttp
             return *this;
         }
 
-        /**
-         * @brief Send prebuilt nlohmann::json.
-         */
         ResponseWrapper &json(const nlohmann::json &j)
         {
             vix::vhttp::Response::json_response(res, j, res.result());
             return *this;
         }
 
-        /**
-         * @brief Send any serializable type as JSON.
-         * @note Compile-time error if J is not serializable by Response::json_response.
-         */
         template <typename J>
             requires(!std::is_same_v<std::decay_t<J>, nlohmann::json> &&
                      !std::is_same_v<std::decay_t<J>, vix::json::kvs> &&
@@ -176,9 +460,6 @@ namespace vix::vhttp
             return *this;
         }
 
-        // ----------------------------------------------------------
-        // Express-like helpers (ergonomic chaining)
-        // ----------------------------------------------------------
         ResponseWrapper &ok() { return status(http::status::ok); }
         ResponseWrapper &created() { return status(http::status::created); }
         ResponseWrapper &accepted() { return status(http::status::accepted); }
@@ -197,26 +478,44 @@ namespace vix::vhttp
     };
 
     // ------------------------------------------------------------------
-    // Concepts — on exige les signatures avec requête const&
-    // (évite les faux négatifs et force une API sûre)
+    // Concepts – handlers compatibles
     // ------------------------------------------------------------------
     template <class H>
-    concept HandlerReqRes =
+    concept HandlerFacadeReqRes =
         std::is_invocable_r_v<void,
                               H,
-                              const http::request<http::string_body> &,
-                              vix::vhttp::ResponseWrapper &>;
+                              Request &,
+                              ResponseWrapper &>;
 
     template <class H>
-    concept HandlerReqResParams =
+    concept HandlerFacadeReqResParams =
         std::is_invocable_r_v<void,
                               H,
-                              const http::request<http::string_body> &,
-                              vix::vhttp::ResponseWrapper &,
+                              Request &,
+                              ResponseWrapper &,
                               std::unordered_map<std::string, std::string> &>;
 
     template <class H>
-    concept ValidHandler = HandlerReqRes<H> || HandlerReqResParams<H>;
+    concept HandlerRawReqRes =
+        std::is_invocable_r_v<void,
+                              H,
+                              const RawRequest &,
+                              ResponseWrapper &>;
+
+    template <class H>
+    concept HandlerRawReqResParams =
+        std::is_invocable_r_v<void,
+                              H,
+                              const RawRequest &,
+                              ResponseWrapper &,
+                              std::unordered_map<std::string, std::string> &>;
+
+    template <class H>
+    concept ValidHandler =
+        HandlerFacadeReqRes<H> ||
+        HandlerFacadeReqResParams<H> ||
+        HandlerRawReqRes<H> ||
+        HandlerRawReqResParams<H>;
 
     // ------------------------------------------------------------------
     // JSON conversion utilities (vix::json → nlohmann::json)
@@ -271,41 +570,7 @@ namespace vix::vhttp
     }
 
     // ------------------------------------------------------------------
-    // Path parameter extraction
-    // ------------------------------------------------------------------
-    inline std::unordered_map<std::string, std::string>
-    extract_params_from_path(const std::string &pattern, std::string_view path)
-    {
-        std::unordered_map<std::string, std::string> params;
-        size_t rpos = 0, ppos = 0;
-        while (rpos < pattern.size() && ppos < path.size())
-        {
-            if (pattern[rpos] == '{')
-            {
-                const size_t end_brace = pattern.find('}', rpos);
-                const auto name = pattern.substr(rpos + 1, end_brace - rpos - 1);
-
-                const size_t next_slash = path.find('/', ppos);
-                const auto value = (next_slash == std::string_view::npos)
-                                       ? path.substr(ppos)
-                                       : path.substr(ppos, next_slash - ppos);
-
-                params[name] = std::string(value);
-                rpos = end_brace + 1;
-                ppos = (next_slash == std::string_view::npos) ? path.size() : next_slash + 1;
-            }
-            else
-            {
-                ++rpos;
-                ++ppos;
-            }
-        }
-        return params;
-    }
-
-    // ------------------------------------------------------------------
-    // Utility: Dev HTML error page (Express-like) for invalid status or handler errors.
-    // Only used in Debug builds to aid DX. In Release, we return JSON.
+    // Dev HTML error helper
     // ------------------------------------------------------------------
     inline std::string make_dev_error_html(const std::string &title, const std::string &detail,
                                            const std::string &route_pattern,
@@ -329,16 +594,16 @@ namespace vix::vhttp
     }
 
     // ------------------------------------------------------------------
-    // RequestHandler<Handler> — generic adapter avec checks compile-time
+    // RequestHandler<Handler> — bridge Router ↔ user lambda
     // ------------------------------------------------------------------
     template <ValidHandler Handler>
     class RequestHandler : public IRequestHandler
     {
         static_assert(ValidHandler<Handler>,
                       "Invalid handler signature. Expected:\n"
-                      "  void (const request<string_body>&, ResponseWrapper&)\n"
+                      "  void (Request&, ResponseWrapper&)\n"
                       "  or\n"
-                      "  void (const request<string_body>&, ResponseWrapper&, unordered_map<string,string>&)");
+                      "  void (Request&, ResponseWrapper&, unordered_map<string,string>&)");
 
     public:
         RequestHandler(std::string route_pattern, Handler handler)
@@ -347,22 +612,49 @@ namespace vix::vhttp
             static_assert(sizeof(Handler) > 0, "Handler type must be complete here.");
         }
 
-        void handle_request(const http::request<http::string_body> &req,
+        void handle_request(const http::request<http::string_body> &rawReq,
                             http::response<http::string_body> &res) override
         {
             ResponseWrapper wrapped{res};
+
+            // 1) Extraire la target brute: "/echo/42?page=3&filter=active"
+            std::string_view target(rawReq.target().data(), rawReq.target().size());
+
+            // 2) Séparer path / query → on garde seulement le path pour les params
+            const auto qpos = target.find('?');
+            std::string_view path_only =
+                (qpos == std::string_view::npos)
+                    ? target                  // "/echo/42"
+                    : target.substr(0, qpos); // "/echo/42" (sans "?page=3&filter=active")
+
+            // 3) Extraire les params à partir du pattern et du path seul
+            auto params = extract_params_from_path(route_pattern_, path_only);
+
+            // 4) Construire la façade Request (req.params(), req.query(), req.json())
+            //    ⚠️ On passe la raw request complète pour que la query soit toujours visible.
+            vix::vhttp::Request req(rawReq, params);
+
             try
             {
-                auto params = extract_params_from_path(
-                    route_pattern_, std::string_view(req.target().data(), req.target().size()));
-
-                if constexpr (HandlerReqResParams<Handler>)
+                if constexpr (HandlerFacadeReqResParams<Handler>)
                 {
+                    // Handler Express-like complet : (Request&, ResponseWrapper&, params)
                     handler_(req, wrapped, params);
                 }
-                else if constexpr (HandlerReqRes<Handler>)
+                else if constexpr (HandlerFacadeReqRes<Handler>)
                 {
+                    // Handler Express-like simple : (Request&, ResponseWrapper&)
                     handler_(req, wrapped);
+                }
+                else if constexpr (HandlerRawReqResParams<Handler>)
+                {
+                    // Handler bas niveau : (rawReq, ResponseWrapper&, params)
+                    handler_(rawReq, wrapped, params);
+                }
+                else if constexpr (HandlerRawReqRes<Handler>)
+                {
+                    // Handler bas niveau simple : (rawReq, ResponseWrapper&)
+                    handler_(rawReq, wrapped);
                 }
                 else
                 {
@@ -370,20 +662,19 @@ namespace vix::vhttp
                 }
 
                 const bool keep_alive =
-                    (req[http::field::connection] == "keep-alive") ||
-                    (req.version() == 11 && req[http::field::connection].empty());
+                    (rawReq[http::field::connection] == "keep-alive") ||
+                    (rawReq.version() == 11 && rawReq[http::field::connection].empty());
 
                 res.set(http::field::connection, keep_alive ? "keep-alive" : "close");
                 res.prepare_payload();
             }
             catch (const std::range_error &e)
             {
-                // Explicit developer error (e.g., invalid status code). Log loudly and format Express-like Debug HTML.
                 auto &log = vix::utils::Logger::getInstance();
                 log.log(vix::utils::Logger::Level::ERROR,
                         "Route '{}' threw range_error: {} (method={}, path={})",
                         route_pattern_, e.what(),
-                        std::string(req.method_string()), std::string(req.target()));
+                        std::string(rawReq.method_string()), std::string(rawReq.target()));
 
 #ifndef NDEBUG
                 res.result(http::status::internal_server_error);
@@ -391,11 +682,10 @@ namespace vix::vhttp
                 res.set("X-Content-Type-Options", "nosniff");
                 const auto html = make_dev_error_html(
                     "RangeError", e.what(), route_pattern_,
-                    std::string(req.method_string()), std::string(req.target()));
+                    std::string(rawReq.method_string()), std::string(rawReq.target()));
                 res.body() = html;
                 res.prepare_payload();
 #else
-                // In Release, return a compact JSON with a clear developer-facing hint.
                 nlohmann::json j{
                     {"error", "Internal Server Error"},
                     {"hint", "Invalid status code passed by handler. See server logs."},
@@ -410,21 +700,19 @@ namespace vix::vhttp
                 log.log(vix::utils::Logger::Level::ERROR,
                         "Route '{}' threw exception: {} (method={}, path={})",
                         route_pattern_, e.what(),
-                        std::string(req.method_string()), std::string(req.target()));
+                        std::string(rawReq.method_string()), std::string(rawReq.target()));
 
 #ifndef NDEBUG
-                // Debug: rich HTML like Express
                 res.result(http::status::internal_server_error);
                 res.set(http::field::content_type, "text/html; charset=utf-8");
                 res.set("X-Content-Type-Options", "nosniff");
 
                 const auto html = make_dev_error_html(
                     "Error", e.what(), route_pattern_,
-                    std::string(req.method_string()), std::string(req.target()));
+                    std::string(rawReq.method_string()), std::string(rawReq.target()));
                 res.body() = html;
                 res.prepare_payload();
 #else
-                // Release: minimal JSON
                 vix::vhttp::Response::error_response(
                     res, http::status::internal_server_error, "Internal Server Error");
 #endif

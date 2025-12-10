@@ -60,17 +60,34 @@ namespace vix::config
 
         if (!configPath.empty())
         {
-            candidate_paths.push_back(configPath);
+            if (configPath.is_absolute())
+            {
+                candidate_paths.push_back(configPath);
+            }
+            else
+            {
+                // 🔹 Relative path:
+                //  1) relative to the current directory (build/)
+                //  2) relative to the parent of the current directory (project/)
+                // ex: build/config/config.json
+                candidate_paths.push_back(fs::current_path() / configPath);
+                // ex: project/config/config.json (if the binary is inside build/)
+                auto parent = fs::current_path().parent_path();
+                if (!parent.empty())
+                {
+                    candidate_paths.push_back(parent / configPath);
+                }
+            }
         }
         else
         {
-            // <repo_root>/config/config.json
+            // “Core” / vix itself case: we go up from __FILE__ to <repo_root>/config/config.json
             candidate_paths.push_back(
                 fs::path(__FILE__).parent_path() // .../modules/core/src/config
                     .parent_path()               // .../modules/core/src
                     .parent_path()               // .../modules/core
                     .parent_path()               // .../modules
-                    .parent_path() /
+                    .parent_path() /             // .../
                 "config/config.json");
         }
 
@@ -80,19 +97,22 @@ namespace vix::config
             if (fs::exists(p))
             {
                 configPath_ = p;
-                log.log(Logger::Level::INFO, "Using configuration file: {}", p.string());
+                log.log(Logger::Level::INFO,
+                        "Using configuration file: {}", p.string());
                 found = true;
                 break;
             }
             else
             {
-                log.log(Logger::Level::WARN, "Config file not found at: {}", p.string());
+                log.log(Logger::Level::WARN,
+                        "Config file not found at: {}", p.string());
             }
         }
 
         if (!found)
         {
-            log.log(Logger::Level::WARN, "No config file found. Using default settings.");
+            log.log(Logger::Level::WARN,
+                    "No config file found. Using default settings.");
             return;
         }
 

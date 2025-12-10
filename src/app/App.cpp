@@ -2,7 +2,7 @@
 #include <vix/utils/Env.hpp> // env_bool / env_or
 #include <vix/utils/Logger.hpp>
 #include <vix/http/RequestHandler.hpp>
-#include <vix/router/Router.hpp> // <-- important : pour vix::router::Router
+#include <vix/router/Router.hpp>
 #include <boost/beast/http.hpp>
 
 #include <csignal>
@@ -36,8 +36,6 @@ namespace
     {
         using Level = vix::utils::Logger::Level;
 
-        // env_or(key, default) -> std::string
-        // 🔥 Par défaut: WARN (donc les [info] ne s'affichent pas)
         const std::string raw = vix::utils::env_or("VIX_LOG_LEVEL", std::string{"warn"});
         std::string s;
         s.reserve(raw.size());
@@ -57,7 +55,6 @@ namespace
         if (s == "critical")
             return Level::CRITICAL;
 
-        // valeur inconnue → fallback raisonnable
         return Level::WARN;
     }
 
@@ -75,11 +72,13 @@ namespace
         namespace http = boost::beast::http;
 
         auto handlerLambda =
-            [](const http::request<http::string_body> &req,
+            [](vix::vhttp::Request &req,
                vix::vhttp::ResponseWrapper &res)
         {
-            (void)req;
-            res.status(http::status::ok).text("OK");
+            (void)req; // aucun usage pour le moment
+            res.ok().text("OK");
+            // équivalent à:
+            // res.status(http::status::ok).text("OK");
         };
 
         using BenchHandler = vix::vhttp::RequestHandler<decltype(handlerLambda)>;

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+## [1.6.2] - 2025-12-11
+
+core: refine HTTP facade, handler system and configuration loading
+
+• Exposed clean public types (Request, Response) via umbrella headers (vix.hpp, core.h)
+• Adjusted RequestHandler to: - fix header find() overloads - stabilize concepts (HandlerReqRes, HandlerReqResParams) - support new Request facade (params, query, JSON body)
+• Improved App.cpp: - unified route registration logs - stronger error diagnostics in development mode - safer shutdown callback execution
+• Reworked Config.cpp: - deterministic resolution of config/config.json - support for relative, absolute and project-root discovery - improved warnings and fallback behavior
+
 -
 
 ### Changed
