@@ -219,24 +219,33 @@ namespace vix::vhttp
         Request(const RawRequest &raw,
                 std::unordered_map<std::string, std::string> params)
             : raw_(&raw),
-              params_(std::move(params))
+              method_(raw.method_string().data(), raw.method_string().size()),
+              path_(),
+              query_raw_(),
+              params_(std::move(params)),
+              query_parsed_(false),
+              query_(),
+              json_parsed_(false),
+              body_json_()
         {
-            // Cache method string
-            method_ = std::string(raw.method_string());
-
-            // Split target into path + query
             std::string_view target(raw.target().data(), raw.target().size());
             auto qpos = target.find('?');
             if (qpos == std::string_view::npos)
             {
-                path_ = std::string(target);
+                path_.assign(target.begin(), target.end());
             }
             else
             {
-                path_ = std::string(target.substr(0, qpos));
-                query_raw_ = std::string(target.substr(qpos + 1));
+                path_.assign(target.begin(), target.begin() + static_cast<std::ptrdiff_t>(qpos));
+                query_raw_.assign(target.begin() + static_cast<std::ptrdiff_t>(qpos + 1), target.end());
             }
         }
+
+        Request(const Request &) = delete;
+        Request &operator=(const Request &) = delete;
+        Request(Request &&) noexcept = default;
+        Request &operator=(Request &&) noexcept = default;
+        ~Request() = default;
 
         // HTTP method ("GET", "POST", ...)
         const std::string &method() const noexcept { return method_; }
