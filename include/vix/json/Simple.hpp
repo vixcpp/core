@@ -86,7 +86,7 @@ namespace vix::json
     // ------------------------------------------------------------------
     struct kvs
     {
-        std::vector<token> flat;
+        std::vector<token> flat{};
 
         kvs() = default;
         kvs(std::initializer_list<token> list) : flat(list) {}
