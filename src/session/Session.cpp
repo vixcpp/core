@@ -15,7 +15,11 @@
 namespace vix::session
 {
     using Logger = vix::utils::Logger;
-    static Logger &logger = Logger::getInstance();
+
+    inline Logger &log()
+    {
+        return Logger::getInstance();
+    }
 
     // --- Regex rules for the lightweight WAF ---
     // Intentionally conservative, aimed at catching trivial exploit payloads
@@ -39,7 +43,7 @@ namespace vix::session
         boost::system::error_code ec;
         socket_->set_option(tcp::no_delay(true), ec);
         if (ec)
-            logger.log(Logger::Level::WARN, "[Session] Failed to disable Nagle: {}", ec.message());
+            log().log(Logger::Level::WARN, "[Session] Failed to disable Nagle: {}", ec.message());
     }
 
     /**
@@ -47,7 +51,7 @@ namespace vix::session
      */
     void Session::run()
     {
-        logger.log(Logger::Level::DEBUG, "[Session] Starting new session");
+        log().log(Logger::Level::DEBUG, "[Session] Starting new session");
         read_request();
     }
 
@@ -71,7 +75,7 @@ namespace vix::session
 
             if (!ec)
             {
-                logger.log(Logger::Level::WARN, "[Session] Timeout ({}s), closing socket", REQUEST_TIMEOUT.count());
+                log().log(Logger::Level::WARN, "[Session] Timeout ({}s), closing socket", REQUEST_TIMEOUT.count());
                 close_socket_gracefully();
             } });
     }
@@ -98,7 +102,7 @@ namespace vix::session
     {
         if (!socket_ || !socket_->is_open())
         {
-            logger.log(Logger::Level::DEBUG, "[Session] Socket closed before read_request()");
+            log().log(Logger::Level::DEBUG, "[Session] Socket closed before read_request()");
             return;
         }
 
@@ -120,13 +124,13 @@ namespace vix::session
                     if (ec == bhttp::error::end_of_stream ||
                         ec == boost::asio::error::connection_reset)
                     {
-                        logger.log(Logger::Level::DEBUG,
-                                   "[Session] Client closed connection: {}", ec.message());
+                        log().log(Logger::Level::DEBUG,
+                                  "[Session] Client closed connection: {}", ec.message());
                     }
                     else if (ec != boost::asio::error::operation_aborted)
                     {
-                        logger.log(Logger::Level::ERROR,
-                                   "[Session] Read error: {}", ec.message());
+                        log().log(Logger::Level::ERROR,
+                                  "[Session] Read error: {}", ec.message());
                     }
 
                     close_socket_gracefully();
@@ -140,8 +144,8 @@ namespace vix::session
                 }
                 catch (const std::exception &ex)
                 {
-                    logger.log(Logger::Level::ERROR,
-                               "[Session] Parser release failed: {}", ex.what());
+                    log().log(Logger::Level::ERROR,
+                              "[Session] Parser release failed: {}", ex.what());
                     close_socket_gracefully();
                     return;
                 }
@@ -164,14 +168,14 @@ namespace vix::session
     {
         if (ec)
         {
-            logger.log(Logger::Level::ERROR, "[Session] Error handling request: {}", ec.message());
+            log().log(Logger::Level::ERROR, "[Session] Error handling request: {}", ec.message());
             close_socket_gracefully();
             return;
         }
 
         if (!parsed_req)
         {
-            logger.log(Logger::Level::WARN, "[Session] No request parsed");
+            log().log(Logger::Level::WARN, "[Session] No request parsed");
             close_socket_gracefully();
             return;
         }
@@ -180,7 +184,7 @@ namespace vix::session
 
         if (!waf_check_request(req_))
         {
-            logger.log(Logger::Level::WARN, "[WAF] Request blocked by rules");
+            log().log(Logger::Level::WARN, "[WAF] Request blocked by rules");
             send_error(bhttp::status::bad_request, "Request blocked (security)");
             return;
         }
@@ -192,7 +196,7 @@ namespace vix::session
 #endif
         if (req_.body().size() > MAX_REQUEST_BODY_SIZE)
         {
-            logger.log(Logger::Level::WARN, "[Session] Body too large ({} bytes)", req_.body().size());
+            log().log(Logger::Level::WARN, "[Session] Body too large ({} bytes)", req_.body().size());
             send_error(too_large_status, "Request too large");
             return;
         }
@@ -205,7 +209,7 @@ namespace vix::session
         }
         catch (const std::exception &ex)
         {
-            logger.log(Logger::Level::ERROR, "[Router] Exception: {}", ex.what());
+            log().log(Logger::Level::ERROR, "[Router] Exception: {}", ex.what());
             send_error(bhttp::status::internal_server_error, "Internal server error");
             return;
         }
@@ -229,7 +233,7 @@ namespace vix::session
     {
         if (!socket_ || !socket_->is_open())
         {
-            logger.log(Logger::Level::DEBUG, "[Session] Cannot send response (socket closed)");
+            log().log(Logger::Level::DEBUG, "[Session] Cannot send response (socket closed)");
             return;
         }
 
@@ -241,12 +245,12 @@ namespace vix::session
                            {
                                if (ec)
                                {
-                                   logger.log(Logger::Level::WARN, "[Session] Write error: {}", ec.message());
+                                   log().log(Logger::Level::WARN, "[Session] Write error: {}", ec.message());
                                    close_socket_gracefully();
                                    return;
                                }
 
-                               logger.log(Logger::Level::DEBUG, "[Session] Response sent ({} bytes)", res_ptr->body().size());
+                               log().log(Logger::Level::DEBUG, "[Session] Response sent ({} bytes)", res_ptr->body().size());
 
                                if (res_ptr->keep_alive())
                                {
@@ -283,7 +287,7 @@ namespace vix::session
         socket_->shutdown(tcp::socket::shutdown_both, ec);
         socket_->close(ec);
 
-        logger.log(Logger::Level::DEBUG, "[Session] Socket closed");
+        log().log(Logger::Level::DEBUG, "[Session] Socket closed");
     }
 
     /**
@@ -300,7 +304,7 @@ namespace vix::session
 #else
         if (req.target().size() > 4096)
         {
-            logger.log(Logger::Level::WARN, "[WAF] Target too long");
+            log().log(Logger::Level::WARN, "[WAF] Target too long");
             return false;
         }
 
@@ -309,19 +313,19 @@ namespace vix::session
             const std::string target{req.target().data(), req.target().size()};
             if (std::regex_search(target, XSS_PATTERN))
             {
-                logger.log(Logger::Level::WARN, "[WAF] XSS pattern detected in URL");
+                log().log(Logger::Level::WARN, "[WAF] XSS pattern detected in URL");
                 return false;
             }
 
             if (!req.body().empty() && std::regex_search(req.body(), SQL_PATTERN))
             {
-                logger.log(Logger::Level::WARN, "[WAF] SQL injection attempt detected");
+                log().log(Logger::Level::WARN, "[WAF] SQL injection attempt detected");
                 return false;
             }
         }
         catch (const std::regex_error &)
         {
-            logger.log(Logger::Level::ERROR, "[WAF] Regex error during pattern check");
+            log().log(Logger::Level::ERROR, "[WAF] Regex error during pattern check");
             return false;
         }
 
