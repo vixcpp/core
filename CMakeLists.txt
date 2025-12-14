@@ -148,8 +148,7 @@ if (CORE_SOURCES)
 
   # Required runtime deps when compiling sources
   find_package(Boost 1.78 REQUIRED COMPONENTS filesystem system)
-  # spdlog may already be brought by vix::utils; remains harmless here
-  find_package(spdlog REQUIRED)
+  # NOTE: no spdlog lookup in core (logger is owned by vix::utils)
 
   if (VIX_CORE_WITH_OPENSSL)
     find_package(OpenSSL REQUIRED)
@@ -158,11 +157,6 @@ if (CORE_SOURCES)
   add_library(vix_core STATIC ${CORE_SOURCES})
   add_library(vix::core ALIAS vix_core)
   target_compile_features(vix_core PUBLIC cxx_std_20)
-
-  # Optional debug-iterator safety in Debug builds (libstdc++)
-  if (CMAKE_BUILD_TYPE MATCHES "Debug")
-    target_compile_definitions(vix_core PRIVATE -D_GLIBCXX_DEBUG)
-  endif()
 
   # Public headers for #include <vix/...>
   target_include_directories(vix_core
@@ -187,7 +181,6 @@ if (CORE_SOURCES)
 
   # ----- Optional: MySQL linkage -----
   if (VIX_CORE_WITH_MYSQL)
-    # Prefer Connector/C++ 8 (X DevAPI); fallback to legacy if needed
     find_library(MYSQLCPP_CONN8_LIB mysqlcppconn8)
     if (MYSQLCPP_CONN8_LIB)
       target_link_libraries(vix_core PRIVATE ${MYSQLCPP_CONN8_LIB})
@@ -208,7 +201,6 @@ if (CORE_SOURCES)
   # Sanitizers (only if enabled at top-level)
   vix_core_apply_sanitizers(vix_core PRIVATE)
 
-  # ✅ Bench mode → macro C++
   if (VIX_BENCH_MODE)
     message(STATUS "[core] Bench mode enabled: /bench route compiled in")
     target_compile_definitions(vix_core PUBLIC VIX_BENCH_MODE=1)
@@ -221,7 +213,6 @@ if (CORE_SOURCES)
     EXPORT_NAME core
   )
 
-  # ---- INSTALL: join the umbrella export-set (VixTargets) ----
   install(TARGETS vix_core
     EXPORT VixTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
