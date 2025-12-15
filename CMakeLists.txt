@@ -258,6 +258,16 @@ else()
           FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h")
 endif()
 
+# ----------------------------- Tests ---------------------------------
+option(VIX_CORE_BUILD_TESTS "Build core module tests" OFF)
+
+# Build tests only when explicitly enabled.
+if (VIX_CORE_BUILD_TESTS)
+  include(CTest)
+  enable_testing()
+  add_subdirectory(tests)
+endif()
+
 # ----------------------------- Summary -------------------------------
 message(STATUS "------------------------------------------------------")
 message(STATUS "vix::core configured (${PROJECT_VERSION})")
