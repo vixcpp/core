@@ -43,3 +43,6 @@
 .vscode/
 build/
 vix.log
+cmd.md
+build/
+build-ninja/
