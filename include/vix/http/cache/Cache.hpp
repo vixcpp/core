@@ -7,6 +7,7 @@
 
 #include <vix/http/cache/CachePolicy.hpp>
 #include <vix/http/cache/CacheStore.hpp>
+#include <vix/http/cache/CacheContext.hpp>
 
 namespace vix::http::cache
 {
@@ -16,10 +17,9 @@ namespace vix::http::cache
     public:
         Cache(CachePolicy policy,
               std::shared_ptr<CacheStore> store);
-
-        std::optional<CacheEntry> get(const std::string &key, std::int64_t now_ms,
-                                      bool network_ok);
-
+        std::optional<CacheEntry> get(const std::string &key,
+                                      std::int64_t now_ms,
+                                      CacheContext ctx);
         void put(const std::string &key, const CacheEntry &entry);
 
     private:

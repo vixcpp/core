@@ -3,14 +3,12 @@
 namespace vix::http::cache
 {
 
-    Cache::Cache(CachePolicy policy,
-                 std::shared_ptr<CacheStore> store)
-        : policy_(policy), store_(std::move(store))
-    {
-    }
+    Cache::Cache(CachePolicy policy, std::shared_ptr<CacheStore> store)
+        : policy_(policy), store_(std::move(store)) {}
 
-    std::optional<CacheEntry>
-    Cache::get(const std::string &key, std::int64_t now_ms, bool network_ok)
+    std::optional<CacheEntry> Cache::get(const std::string &key,
+                                         std::int64_t now_ms,
+                                         CacheContext ctx)
     {
         auto e = store_->get(key);
         if (!e)
@@ -23,12 +21,12 @@ namespace vix::http::cache
             return e;
         }
 
-        if (!network_ok && policy_.allow_stale_offline(age))
+        if (ctx.offline && policy_.allow_stale_offline(age))
         {
             return e;
         }
 
-        if (network_ok == false && policy_.allow_stale_error(age))
+        if (ctx.network_error && policy_.allow_stale_error(age))
         {
             return e;
         }

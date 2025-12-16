@@ -5,6 +5,7 @@
 #include <memory>
 
 #include <vix/http/cache/Cache.hpp>
+#include <vix/http/cache/CacheContext.hpp>
 #include <vix/http/cache/CachePolicy.hpp>
 #include <vix/http/cache/MemoryStore.hpp>
 #include <vix/http/cache/FileStore.hpp>
@@ -26,9 +27,7 @@ static void test_memory_store()
     policy.stale_if_offline_ms = 1'000; // 1s stale allowed if offline
     policy.allow_stale_if_offline = true;
 
-    // ✅ Important: disable stale-if-error for this smoke test.
-    // In the current Cache::get API, network_ok=false can also be interpreted
-    // as "network error", so stale_if_error could keep returning a value.
+    // ⛔ stale-if-error disabled initially
     policy.allow_stale_if_error = false;
     policy.stale_if_error_ms = 0;
 
@@ -46,7 +45,7 @@ static void test_memory_store()
 
     // 1) Fresh hit
     {
-        auto got = cache.get(key, t0 + 50, /*network_ok=*/true);
+        auto got = cache.get(key, t0 + 50, CacheContext::Online());
         assert(got.has_value());
         assert(got->status == 200);
         assert(got->body == R"({"ok":true})");
@@ -54,18 +53,34 @@ static void test_memory_store()
 
     // 2) Stale but offline allowed
     {
-        auto got = cache.get(key, t0 + 500, /*network_ok=*/false);
+        auto got = cache.get(key, t0 + 500, CacheContext::Offline());
         assert(got.has_value());
         assert(got->body == R"({"ok":true})");
     }
 
-    // 3) Too old => reject even if offline (beyond stale_if_offline_ms)
+    // 3) Too old => reject even if offline
     {
-        auto got = cache.get(key, t0 + 5000, /*network_ok=*/false);
+        auto got = cache.get(key, t0 + 5000, CacheContext::Offline());
         assert(!got.has_value());
     }
 
-    std::cout << "[OK] MemoryStore cache smoke\n";
+    // 4) Network error → stale-if-error allowed
+    policy.allow_stale_if_error = true;
+    policy.stale_if_error_ms = 5'000;
+
+    // Recreate cache with updated policy (policy is copied into Cache)
+    Cache cache_with_error_policy(policy, store);
+
+    {
+        auto got = cache_with_error_policy.get(
+            key,
+            t0 + 4000, // expired but within stale_if_error window
+            CacheContext::NetworkError());
+        assert(got.has_value());
+        assert(got->body == R"({"ok":true})");
+    }
+
+    std::cout << "[OK] MemoryStore cache smoke (offline + network_error)\n";
 }
 
 static void test_file_store()
@@ -88,10 +103,6 @@ static void test_file_store()
     policy.stale_if_offline_ms = 2'000;
     policy.allow_stale_if_offline = true;
 
-    // ✅ Same reasoning as above
-    policy.allow_stale_if_error = false;
-    policy.stale_if_error_ms = 0;
-
     Cache cache(policy, store);
 
     const std::string key = "GET:/api/products?limit=10";
@@ -112,14 +123,14 @@ static void test_file_store()
 
     // 1) Fresh hit after reload
     {
-        auto got = cache2.get(key, t0 + 50, /*network_ok=*/true);
+        auto got = cache2.get(key, t0 + 50, CacheContext::Online());
         assert(got.has_value());
         assert(got->body == R"({"items":[1,2,3]})");
     }
 
     // 2) Stale hit if offline after reload
     {
-        auto got = cache2.get(key, t0 + 1000, /*network_ok=*/false);
+        auto got = cache2.get(key, t0 + 1000, CacheContext::Offline());
         assert(got.has_value());
     }
 
