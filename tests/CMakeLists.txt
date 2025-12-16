@@ -36,3 +36,18 @@ target_compile_features(core_http_cache_smoke_test PRIVATE cxx_std_20)
 if (BUILD_TESTING)
   add_test(NAME core_http_cache_smoke_test COMMAND core_http_cache_smoke_test)
 endif()
+
+add_executable(core_http_cache_context_mapper_smoke_test
+  http/cache_context_mapper_smoke_test.cpp
+)
+
+target_link_libraries(core_http_cache_context_mapper_smoke_test PRIVATE
+  vix_core
+)
+
+target_compile_features(core_http_cache_context_mapper_smoke_test PRIVATE cxx_std_20)
+
+if (BUILD_TESTING)
+  add_test(NAME core_http_cache_context_mapper_smoke_test
+           COMMAND core_http_cache_context_mapper_smoke_test)
+endif()
