@@ -722,7 +722,7 @@ namespace vix::vhttp
             // For 204/304 you should not send a body.
             const int s = static_cast<int>(res.result());
             if (s == 204 || s == 304)
-                return send(); // empty
+                return this->send(); // empty
 
             return send(default_status_message(s));
         }
@@ -735,7 +735,7 @@ namespace vix::vhttp
             // If status implies no body, force empty
             const int s = static_cast<int>(res.result());
             if (s == 204 || s == 304)
-                return send(); // empty
+                return this->send(); // empty
 
             if (!has_header(http::field::content_type))
             {
@@ -753,7 +753,7 @@ namespace vix::vhttp
 
             const int s = static_cast<int>(res.result());
             if (s == 204 || s == 304)
-                return send(); // empty
+                return this->send(); // empty
 
             if (!has_header(http::field::content_type))
             {
@@ -782,7 +782,7 @@ namespace vix::vhttp
 
             const int s = static_cast<int>(res.result());
             if (s == 204 || s == 304)
-                return send(); // empty
+                return this->send(); // empty
 
             if (!has_header(http::field::content_type))
             {
@@ -805,7 +805,7 @@ namespace vix::vhttp
 
             const int s = static_cast<int>(res.result());
             if (s == 204 || s == 304)
-                return send(); // empty
+                return this->send(); // empty
 
             if (!has_header(http::field::content_type))
             {
