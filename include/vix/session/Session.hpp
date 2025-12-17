@@ -53,7 +53,18 @@
 #include <boost/beast/http.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <memory>
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
 #include <regex>
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+
 #include <optional>
 #include <chrono>
 

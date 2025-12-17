@@ -11,6 +11,8 @@ namespace vix::http::cache
     class MemoryStore final : public CacheStore
     {
     public:
+        MemoryStore() : CacheStore{}, mu_{}, map_{} {}
+
         void put(const std::string &key, const CacheEntry &entry) override;
         std::optional<CacheEntry> get(const std::string &key) override;
         void erase(const std::string &key) override;
@@ -20,5 +22,4 @@ namespace vix::http::cache
         std::mutex mu_;
         std::unordered_map<std::string, CacheEntry> map_;
     };
-
 } // namespace vix::http::cache

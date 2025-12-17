@@ -61,11 +61,14 @@ namespace vix::router
     {
         std::unordered_map<std::string, std::unique_ptr<RouteNode>> children;
         std::shared_ptr<vix::vhttp::IRequestHandler> handler;
-        bool isParam = false;
+        bool isParam;
         std::string paramName;
 
         RouteNode()
-            : children(), handler(nullptr), paramName()
+            : children{},
+              handler{},
+              isParam{false},
+              paramName{}
         {
         }
     };
@@ -85,7 +88,11 @@ namespace vix::router
             http::response<http::string_body> &)>;
 
         /** @brief Construct an empty router with a fresh trie root. */
-        Router() : root_(std::make_unique<RouteNode>()) {}
+        Router()
+            : root_{std::make_unique<RouteNode>()},
+              notFound_{}
+        {
+        }
 
         /**
          * @brief Install a custom 404 callback.

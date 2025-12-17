@@ -133,6 +133,8 @@ namespace vix
         /** @return Underlying HTTPServer instance handling requests. */
         vix::server::HTTPServer &server() noexcept { return server_; }
 
+        vix::executor::IExecutor &executor() noexcept { return *executor_; }
+
     private:
         vix::config::Config &config_;                        ///< Global configuration reference
         std::shared_ptr<vix::router::Router> router_;        ///< Shared router (injected into HTTPServer)

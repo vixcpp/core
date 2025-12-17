@@ -4,6 +4,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <cstddef>
 
 #include <vix/http/cache/CachePolicy.hpp>
 #include <vix/http/cache/CacheStore.hpp>
@@ -21,6 +22,7 @@ namespace vix::http::cache
                                       std::int64_t now_ms,
                                       CacheContext ctx);
         void put(const std::string &key, const CacheEntry &entry);
+        std::size_t prune(std::int64_t now_ms);
 
     private:
         CachePolicy policy_;

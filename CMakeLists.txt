@@ -48,11 +48,6 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# Friendly warnings (tunable)
-set(GLOBAL_CXX_FLAGS "-Wall -Wextra -Wshadow -Weffc++")
-set(CMAKE_CXX_FLAGS_RELEASE "${GLOBAL_CXX_FLAGS} -O2 -DNDEBUG")
-set(CMAKE_CXX_FLAGS_DEBUG   "${GLOBAL_CXX_FLAGS} -g")
-
 option(VIX_CORE_WITH_OPENSSL "Enable HTTPS/TLS support using OpenSSL" ON)
 option(VIX_CORE_WITH_MYSQL   "Enable MySQL client linkage" OFF)
 option(VIX_BENCH_MODE "Enable ultra-minimal /bench route for benchmarking" OFF)
@@ -66,7 +61,7 @@ file(GLOB_RECURSE CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 # 1) already defined, 2) umbrella ../utils, 3) FetchContent, else fail.
 option(VIX_CORE_FETCH_UTILS "Auto-fetch vix::utils if missing" ON)
 
-if (NOT TARGET vix::utils AND NOT TARGET vix::utils)
+if (NOT TARGET vix::utils)
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../utils/CMakeLists.txt")
     message(STATUS "[core] Adding utils from umbrella: ../utils")
     add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../utils" "utils")
@@ -105,7 +100,7 @@ function(vix_core_try_link_json onto link_scope)
     return()
   endif()
 
-  set(_json_candidates vix::json vix::json vix_json)
+  set(_json_candidates vix::json vix_json)
   set(_json_found "")
   foreach(t IN LISTS _json_candidates)
     if (TARGET ${t})
@@ -127,21 +122,6 @@ function(vix_core_try_link_json onto link_scope)
   endif()
 endfunction()
 
-# ------------------------ Helper: Sanitizers -------------------------
-# Apply -fsanitize flags either PRIVATELY (for STATIC) or as INTERFACE (header-only).
-function(vix_core_apply_sanitizers tgt scope)
-  if (VIX_ENABLE_SANITIZERS AND TARGET ${tgt})
-    message(STATUS "[core] enabling sanitizers on ${tgt} (${scope})")
-    if (${scope} STREQUAL "PRIVATE")
-      target_compile_options(${tgt} PRIVATE -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined)
-      target_link_options(   ${tgt} PRIVATE                       -fsanitize=address,undefined)
-    else() # INTERFACE
-      target_compile_options(${tgt} INTERFACE -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined)
-      target_link_options(   ${tgt} INTERFACE                       -fsanitize=address,undefined)
-    endif()
-  endif()
-endfunction()
-
 # ============================== STATIC ===============================
 if (CORE_SOURCES)
   message(STATUS "[core] Building STATIC library with detected sources.")
@@ -155,8 +135,21 @@ if (CORE_SOURCES)
   endif()
 
   add_library(vix_core STATIC ${CORE_SOURCES})
+
+  if (TARGET vix_warnings)
+    message(STATUS "[core] vix_warnings detected (from umbrella)")
+    target_link_libraries(vix_core PUBLIC vix_warnings)
+    if (VIX_ENABLE_SANITIZERS AND TARGET vix_sanitizers)
+      target_link_libraries(vix_core INTERFACE vix_sanitizers)
+    endif()
+
+  else()
+    message(STATUS "[core] vix_warnings not found (building core standalone)")
+  endif()
+
   add_library(vix::core ALIAS vix_core)
   target_compile_features(vix_core PUBLIC cxx_std_20)
+
 
   # Public headers for #include <vix/...>
   target_include_directories(vix_core
@@ -198,9 +191,6 @@ if (CORE_SOURCES)
     target_compile_definitions(vix_core PUBLIC VIX_CORE_WITH_MYSQL=0)
   endif()
 
-  # Sanitizers (only if enabled at top-level)
-  vix_core_apply_sanitizers(vix_core PRIVATE)
-
   if (VIX_BENCH_MODE)
     message(STATUS "[core] Bench mode enabled: /bench route compiled in")
     target_compile_definitions(vix_core PUBLIC VIX_BENCH_MODE=1)
@@ -240,14 +230,15 @@ else()
     ${VIX_UTILS_TARGET}
   )
 
+  if (VIX_ENABLE_SANITIZERS AND TARGET vix_sanitizers)
+    target_link_libraries(vix_core INTERFACE vix_sanitizers)
+  endif()
+
   # JSON (optional: AUTO/ON/OFF)
   vix_core_try_link_json(vix_core INTERFACE)
 
   # Feature macro parity
   target_compile_definitions(vix_core INTERFACE VIX_CORE_WITH_MYSQL=0)
-
-  # Propagate sanitizers to dependents if requested
-  vix_core_apply_sanitizers(vix_core INTERFACE)
 
   # ---- INSTALL: join the umbrella export-set (VixTargets) ----
   install(TARGETS vix_core
