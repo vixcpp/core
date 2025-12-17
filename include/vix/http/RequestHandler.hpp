@@ -55,9 +55,12 @@
 #include <vix/json/Simple.hpp>  // vix::json::token / kvs
 #include <vix/utils/Logger.hpp> // vix::utils::Logger
 
+#include <nlohmann/json.hpp>
+
 namespace vix::vhttp
 {
     namespace http = boost::beast::http;
+    using OrderedJson = nlohmann::ordered_json;
 
     // Façades publiques
     class Request;          // req.method(), req.path(), req.params(), req.query(), req.json()
@@ -67,7 +70,7 @@ namespace vix::vhttp
     // Small helpers
     inline void ordered_json_response(
         http::response<http::string_body> &res,
-        const json::OrderedJson &j,
+        const OrderedJson &j,
         http::status status_code = http::status::ok)
     {
         res.result(status_code);
@@ -773,7 +776,7 @@ namespace vix::vhttp
             return json(vix::json::kvs{list});
         }
 
-        ResponseWrapper &json_ordered(const json::OrderedJson &j)
+        ResponseWrapper &json_ordered(const OrderedJson &j)
         {
             ensure_status();
 
@@ -795,7 +798,7 @@ namespace vix::vhttp
             requires(!std::is_same_v<std::decay_t<J>, nlohmann::json> &&
                      !std::is_same_v<std::decay_t<J>, vix::json::kvs> &&
                      !std::is_same_v<std::decay_t<J>, std::initializer_list<vix::json::token>> &&
-                     !std::is_same_v<std::decay_t<J>, json::OrderedJson>)
+                     !std::is_same_v<std::decay_t<J>, OrderedJson>)
         ResponseWrapper &json(const J &data)
         {
             ensure_status();
@@ -865,13 +868,13 @@ namespace vix::vhttp
         ResponseWrapper &send(const nlohmann::json &j) { return json(j); }
         ResponseWrapper &send(const vix::json::kvs &kv) { return json(kv); }
         ResponseWrapper &send(std::initializer_list<vix::json::token> list) { return json(list); }
-        ResponseWrapper &send(const json::OrderedJson &j) { return json_ordered(j); }
+        ResponseWrapper &send(const OrderedJson &j) { return json_ordered(j); }
 
         template <typename J>
             requires(!std::is_same_v<std::decay_t<J>, nlohmann::json> &&
                      !std::is_same_v<std::decay_t<J>, vix::json::kvs> &&
                      !std::is_same_v<std::decay_t<J>, std::initializer_list<vix::json::token>> &&
-                     !std::is_same_v<std::decay_t<J>, json::OrderedJson> &&
+                     !std::is_same_v<std::decay_t<J>, OrderedJson> &&
                      !std::is_convertible_v<J, std::string_view>)
         ResponseWrapper &send(const J &data)
         {
