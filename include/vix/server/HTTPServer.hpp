@@ -75,6 +75,7 @@
 #include <boost/system/error_code.hpp>
 #include <boost/filesystem.hpp>
 #include <atomic>
+#include <cstring>
 
 #include <vix/http/IRequestHandler.hpp>
 #include <vix/router/Router.hpp>
@@ -140,7 +141,7 @@ namespace vix::server
          * @return A positive integer based on configuration and hardware
          *         concurrency (never returns 0).
          */
-        int calculate_io_thread_count();
+        std::size_t calculate_io_thread_count();
 
         /**
          * @brief Access the server's router for route registration.

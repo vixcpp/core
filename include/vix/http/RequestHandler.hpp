@@ -206,7 +206,7 @@ namespace vix::vhttp
     class RequestState
     {
     public:
-        RequestState() = default;
+        RequestState() : data_{} {};
 
         RequestState(const RequestState &) = delete;
         RequestState &operator=(const RequestState &) = delete;

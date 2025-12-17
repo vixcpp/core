@@ -24,6 +24,35 @@ namespace vix::http::cache
         void erase(const std::string &key) override;
         void clear() override;
 
+        // Pour le GC/prune (suppression conditionnelle)
+        template <typename Pred>
+        std::size_t eraseIf(Pred pred)
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            load_();
+
+            std::size_t removed = 0;
+            for (auto it = map_.begin(); it != map_.end();)
+            {
+                if (pred(it->second))
+                {
+                    it = map_.erase(it);
+                    ++removed;
+                }
+                else
+                {
+                    ++it;
+                }
+            }
+
+            if (removed > 0)
+            {
+                flush_();
+            }
+
+            return removed;
+        }
+
     private:
         void load_();
         void flush_();

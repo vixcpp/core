@@ -46,17 +46,21 @@ namespace vix::server
      *
      * @param thread_id 0-based index of the worker attempting affinity.
      */
-    void set_affinity(int thread_id)
+    void set_affinity(std::size_t thread_index)
     {
 #ifdef __linux__
         unsigned int hc = std::thread::hardware_concurrency();
-        if (hc == 0)
-            hc = 1; // Fallback to 1 when unknown
+        if (hc == 0u)
+            hc = 1u;
+
+        const unsigned int cpu =
+            static_cast<unsigned int>(thread_index % static_cast<std::size_t>(hc));
+
         cpu_set_t cpuset;
         CPU_ZERO(&cpuset);
-        CPU_SET(thread_id % hc, &cpuset);
-        // Best-effort: failure is non-fatal.
-        pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+        CPU_SET(cpu, &cpuset);
+
+        (void)pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
 #endif
     }
 
@@ -192,7 +196,7 @@ namespace vix::server
     void HTTPServer::start_io_threads()
     {
         auto &log = Logger::getInstance();
-        std::size_t num_threads = static_cast<std::size_t>(calculate_io_thread_count());
+        const std::size_t num_threads = calculate_io_thread_count();
 
         for (std::size_t i = 0; i < num_threads; ++i)
         {
@@ -201,7 +205,7 @@ namespace vix::server
                 {
                     try
                     {
-                        set_affinity(static_cast<int>(i));
+                        set_affinity(i);
                         io_context_->run();
                     }
                     catch (const std::exception &e)
@@ -238,10 +242,11 @@ namespace vix::server
      * Heuristic: max(1, hardware_concurrency/2). This balances context-switch
      * pressure with ability to parallelize kernel I/O completions.
      */
-    int HTTPServer::calculate_io_thread_count()
+    std::size_t HTTPServer::calculate_io_thread_count()
     {
-        unsigned int hc = std::thread::hardware_concurrency();
-        return std::max(1u, hc ? hc / 2 : 1u);
+        const unsigned int hc = std::thread::hardware_concurrency();
+        const unsigned int v = (hc != 0u) ? (hc / 2u) : 1u;
+        return static_cast<std::size_t>(std::max(1u, v));
     }
 
     /**
