@@ -56,7 +56,7 @@ namespace vix::sync::outbox
         return store_->mark_done(id, now_ms);
     }
 
-    bool Outbox::fail(const std::string &id, const std::string &error, std::int64_t now_ms)
+    bool Outbox::fail(const std::string &id, const std::string &error, std::int64_t now_ms, bool retryable)
     {
         auto cur = store_->get(id);
         if (!cur)
@@ -65,6 +65,11 @@ namespace vix::sync::outbox
         auto op = *cur;
         op.attempt += 1;
         op.updated_at_ms = now_ms;
+
+        if (!retryable)
+        {
+            return store_->mark_permanent_failed(id, error, now_ms);
+        }
 
         if (!cfg_.retry.can_retry(op.attempt))
         {

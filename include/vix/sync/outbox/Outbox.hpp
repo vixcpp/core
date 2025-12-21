@@ -28,7 +28,7 @@ namespace vix::sync::outbox
         std::vector<vix::sync::Operation> peek_ready(std::int64_t now_ms, std::size_t limit = 50);
         bool claim(const std::string &id, std::int64_t now_ms);
         bool complete(const std::string &id, std::int64_t now_ms);
-        bool fail(const std::string &id, const std::string &error, std::int64_t now_ms);
+        bool fail(const std::string &id, const std::string &error, std::int64_t now_ms, bool retryable = true);
         std::shared_ptr<OutboxStore> store() const noexcept { return store_; }
         const Config &config() const noexcept { return cfg_; }
 

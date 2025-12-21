@@ -40,6 +40,10 @@ namespace vix::sync::outbox
 
         std::size_t prune_done(std::int64_t older_than_ms) override;
 
+        bool mark_permanent_failed(const std::string &id,
+                                   const std::string &error,
+                                   std::int64_t now_ms) override;
+
     private:
         void load_if_needed_();
         void flush_();

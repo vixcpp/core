@@ -55,7 +55,10 @@ namespace vix::sync::engine
             }
             else
             {
-                outbox_->fail(op.id, r.error.empty() ? "send failed" : r.error, now_ms);
+                outbox_->fail(op.id,
+                              r.error.empty() ? "send failed" : r.error,
+                              now_ms,
+                              /*retryable=*/r.retryable);
             }
 
             ++processed;
