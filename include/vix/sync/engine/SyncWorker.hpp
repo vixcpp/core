@@ -37,6 +37,9 @@ namespace vix::sync::engine
             std::size_t batch_limit{25};
             std::int64_t idle_sleep_ms{250}; // when nothing to do
             std::int64_t offline_sleep_ms{500};
+
+            // recovery for stuck in-flight ops
+            std::int64_t inflight_timeout_ms{10'000};
         };
 
         SyncWorker(Config cfg,

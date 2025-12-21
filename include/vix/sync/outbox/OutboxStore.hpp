@@ -41,6 +41,11 @@ namespace vix::sync::outbox
         virtual bool mark_permanent_failed(const std::string &id,
                                            const std::string &error,
                                            std::int64_t now_ms) = 0;
+
+        // Requeue inflight operations older than timeout
+        virtual std::size_t requeue_inflight_older_than(
+            std::int64_t now_ms,
+            std::int64_t timeout_ms) = 0;
     };
 
 } // namespace vix::sync::outbox
