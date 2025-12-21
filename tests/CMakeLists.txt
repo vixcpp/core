@@ -86,3 +86,22 @@ if (BUILD_TESTING)
     COMMAND core_http_cache_context_mapper_smoke_test
   )
 endif()
+
+
+# Sync / Outbox in-flight timeout test 
+add_executable(core_sync_inflight_timeout_test
+  sync/sync_engine_inflight_timeout_test.cpp
+)
+
+target_link_libraries(core_sync_inflight_timeout_test PRIVATE
+  vix_core
+)
+
+target_compile_features(core_sync_inflight_timeout_test PRIVATE cxx_std_20)
+
+if (BUILD_TESTING)
+  add_test(
+    NAME core_sync_inflight_timeout_test
+    COMMAND core_sync_inflight_timeout_test
+  )
+endif()

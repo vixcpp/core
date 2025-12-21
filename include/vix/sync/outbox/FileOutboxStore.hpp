@@ -44,6 +44,10 @@ namespace vix::sync::outbox
                                    const std::string &error,
                                    std::int64_t now_ms) override;
 
+        std::size_t requeue_inflight_older_than(
+            std::int64_t now_ms,
+            std::int64_t timeout_ms) override;
+
     private:
         void load_if_needed_();
         void flush_();

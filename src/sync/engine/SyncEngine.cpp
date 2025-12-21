@@ -27,6 +27,7 @@ namespace vix::sync::engine
             wc.batch_limit = cfg_.batch_limit;
             wc.idle_sleep_ms = cfg_.idle_sleep_ms;
             wc.offline_sleep_ms = cfg_.offline_sleep_ms;
+            wc.inflight_timeout_ms = cfg_.inflight_timeout_ms;
 
             workers_.push_back(std::make_unique<SyncWorker>(wc, outbox_, probe_, transport_));
         }

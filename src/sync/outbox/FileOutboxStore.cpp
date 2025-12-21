@@ -270,4 +270,39 @@ namespace vix::sync::outbox
         return true;
     }
 
+    std::size_t FileOutboxStore::requeue_inflight_older_than(
+        std::int64_t now_ms,
+        std::int64_t timeout_ms)
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        load_if_needed_();
+
+        std::size_t count = 0;
+
+        for (auto &[id, op] : ops_)
+        {
+            if (op.status != vix::sync::OperationStatus::InFlight)
+                continue;
+
+            const auto age = now_ms - op.updated_at_ms;
+            if (age < timeout_ms)
+                continue;
+
+            // Requeue
+            op.status = vix::sync::OperationStatus::Failed;
+            op.attempt += 1;
+            op.updated_at_ms = now_ms;
+            op.next_retry_at_ms = now_ms;
+            op.last_error = "requeued after inflight timeout";
+
+            owner_.erase(id);
+            ++count;
+        }
+
+        if (count > 0)
+            flush_();
+
+        return count;
+    }
+
 } // namespace vix::sync::outbox

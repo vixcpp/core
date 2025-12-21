@@ -72,10 +72,16 @@ namespace vix::sync::engine
         if (!outbox_)
             return 0;
 
-        if (!should_send_(now_ms))
+        // NEW: recover stuck inflight operations
+        if (auto store = outbox_->store())
         {
-            return 0;
+            store->requeue_inflight_older_than(
+                now_ms,
+                cfg_.inflight_timeout_ms);
         }
+
+        if (!should_send_(now_ms))
+            return 0;
 
         return process_ready_(now_ms);
     }
