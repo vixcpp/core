@@ -38,6 +38,9 @@ namespace vix::sync::outbox
 
         // Optional cleanup
         virtual std::size_t prune_done(std::int64_t older_than_ms) = 0;
+        virtual bool mark_permanent_failed(const std::string &id,
+                                           const std::string &error,
+                                           std::int64_t now_ms) = 0;
     };
 
 } // namespace vix::sync::outbox

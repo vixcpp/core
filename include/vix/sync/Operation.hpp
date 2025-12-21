@@ -13,7 +13,8 @@ namespace vix::sync
         Pending = 0,
         InFlight,
         Done,
-        Failed
+        Failed,
+        PermanentFailed
     };
 
     struct Operation

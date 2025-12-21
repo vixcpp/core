@@ -146,6 +146,9 @@ namespace vix::sync::outbox
             if (op.status == vix::sync::OperationStatus::Done)
                 continue;
 
+            if (op.status == vix::sync::OperationStatus::PermanentFailed)
+                continue;
+
             out.push_back(op);
             if (out.size() >= opt.limit)
                 break;
@@ -243,6 +246,28 @@ namespace vix::sync::outbox
         if (removed > 0)
             flush_();
         return removed;
+    }
+
+    bool FileOutboxStore::mark_permanent_failed(const std::string &id,
+                                                const std::string &error,
+                                                std::int64_t now_ms)
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        load_if_needed_();
+
+        auto it = ops_.find(id);
+        if (it == ops_.end())
+            return false;
+
+        auto &op = it->second;
+        op.status = vix::sync::OperationStatus::PermanentFailed;
+        op.last_error = error;
+        op.updated_at_ms = now_ms;
+        op.next_retry_at_ms = now_ms;
+
+        owner_.erase(id);
+        flush_();
+        return true;
     }
 
 } // namespace vix::sync::outbox
