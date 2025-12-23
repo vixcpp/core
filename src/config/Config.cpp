@@ -13,41 +13,12 @@
 #include <vector>
 #include <sstream>
 
-/**
- * @file Config.cpp
- * @brief Implementation notes for vix::Config (maintainers-focused docs).
- *
- * Responsibilities and design choices:
- *  - Resolve a configuration file path with sensible defaults and log each probe.
- *  - Load a JSON document with a conservative schema and default fallbacks.
- *  - Provide noexcept getters for hot-path usage after initialization.
- *  - Optionally construct a MySQL connection (behind VIX_CORE_WITH_MYSQL).
- *  - Support environment override for sensitive values (DB password).
- *
- * Path discovery strategy
- *  - If a path is provided to the constructor, prefer it.
- *  - Otherwise, probe a repo-relative default: <repo_root>/config/config.json
- *    (walks up from this source file's directory).
- *
- * Error handling
- *  - Missing config file: warning + fall back to built-in defaults.
- *  - JSON parse errors / IO failures: escalate via Logger::throwError (terminates or throws).
- *  - Out-of-range server port in setServerPort(): throw via Logger.
- *
- * Thread-safety
- *  - The object is expected to be fully configured before concurrent access.
- *  - Getters are noexcept and read-only.
- */
-
 namespace vix::config
 {
     namespace fs = std::filesystem;
     using json = nlohmann::json;
     using Logger = vix::utils::Logger;
 
-    /**
-     * @brief Construct and attempt to locate a config file; load if found.
-     */
     Config::Config(const fs::path &configPath)
         : configPath_(configPath),
           db_host(DEFAULT_DB_HOST), db_user(DEFAULT_DB_USER), db_pass(DEFAULT_DB_PASS),
@@ -66,7 +37,7 @@ namespace vix::config
             }
             else
             {
-                // 🔹 Relative path:
+                // Relative path:
                 //  1) relative to the current directory (build/)
                 //  2) relative to the parent of the current directory (project/)
                 // ex: build/config/config.json
@@ -97,47 +68,33 @@ namespace vix::config
             if (fs::exists(p))
             {
                 configPath_ = p;
-                log.log(Logger::Level::INFO,
-                        "Using configuration file: {}", p.string());
                 found = true;
                 break;
-            }
-            else
-            {
-                log.log(Logger::Level::WARN,
-                        "Config file not found at: {}", p.string());
             }
         }
 
         if (!found)
         {
-            log.log(Logger::Level::WARN,
-                    "No config file found. Using default settings.");
+            log.log(Logger::Level::DEBUG, "No config file found. Using default settings.");
             return;
         }
 
         loadConfig();
     }
 
-    /**
-     * @brief Singleton accessor; first call fixes the path.
-     */
     Config &Config::getInstance(const fs::path &configPath)
     {
         static Config instance(configPath);
         return instance;
     }
 
-    /**
-     * @brief Load configuration JSON and apply defaults for missing keys.
-     */
     void Config::loadConfig()
     {
         auto &log = Logger::getInstance();
 
         if (configPath_.empty() || !fs::exists(configPath_))
         {
-            log.log(Logger::Level::WARN, "No config file found. Using default settings.");
+            log.log(Logger::Level::DEBUG, "No config file found. Using default settings.");
             return;
         }
 
@@ -155,7 +112,6 @@ namespace vix::config
             log.throwError(fmt::format("JSON parsing error in config file: {}", e.what()));
         }
 
-        // garder une copie brute pour les accès génériques (websocket.* etc.)
         rawConfig_ = cfg;
 
         if (cfg.contains("database") && cfg["database"].contains("default"))
@@ -174,8 +130,6 @@ namespace vix::config
             server_port = server.value("port", DEFAULT_SERVER_PORT);
             request_timeout = server.value("request_timeout", DEFAULT_REQUEST_TIMEOUT);
         }
-
-        log.log(Logger::Level::INFO, "Config loaded from {}", configPath_.string());
     }
 
     const nlohmann::json *Config::findNode(const std::string &dottedKey) const noexcept
@@ -201,29 +155,19 @@ namespace vix::config
         return node;
     }
 
-    /**
-     * @brief Prefer DB password from environment when available.
-     */
     std::string Config::getDbPasswordFromEnv()
     {
         auto &log = Logger::getInstance();
         if (const char *password = std::getenv("DB_PASSWORD"))
         {
-            log.log(Logger::Level::INFO, "Using DB_PASSWORD from environment.");
+            log.log(Logger::Level::DEBUG, "Using DB_PASSWORD from environment.");
             return password;
         }
-        log.log(Logger::Level::WARN, "No DB_PASSWORD found in environment; using config/default password.");
+        log.log(Logger::Level::DEBUG, "No DB_PASSWORD found in environment; using config/default password.");
         return db_pass;
     }
 
 #if VIX_CORE_WITH_MYSQL
-    /**
-     * @brief Establish a new MySQL connection using current config values.
-     *
-     * Notes:
-     *  - Uses driver instance from Connector/C++. Exceptions may propagate.
-     *  - If `db_name` is set, selects schema immediately after connect.
-     */
     std::shared_ptr<sql::Connection> Config::getDbConnection()
     {
         auto &log = Logger::getInstance();
@@ -238,13 +182,11 @@ namespace vix::config
         if (!db_name.empty())
             con->setSchema(db_name);
 
-        log.log(Logger::Level::INFO, "Database connection established (host={}, db={}).",
-                host, db_name);
+        log.log(Logger::Level::DEBUG, "Database connection established (host={}, db={}).", host, db_name);
         return con;
     }
 #endif // VIX_CORE_WITH_MYSQL
 
-    // --- Getters (definitions) ---------------------------------------------------
     const std::string &Config::getDbHost() const noexcept { return db_host; }
     const std::string &Config::getDbUser() const noexcept { return db_user; }
     const std::string &Config::getDbName() const noexcept { return db_name; }
@@ -252,16 +194,13 @@ namespace vix::config
     int Config::getServerPort() const noexcept { return server_port; }
     int Config::getRequestTimeout() const noexcept { return request_timeout; }
 
-    /**
-     * @brief Validate and set the HTTP server port at runtime.
-     */
     void Config::setServerPort(int port)
     {
         auto &log = Logger::getInstance();
         if (port < 1024 || port > 65535)
             log.throwError("Server port out of range (1024-65535).");
         server_port = port;
-        log.log(Logger::Level::INFO, "Server port set to {}", std::to_string(port));
+        log.log(Logger::Level::DEBUG, "Server port set to {}", std::to_string(port));
     }
 
     bool Config::has(const std::string &dottedKey) const noexcept

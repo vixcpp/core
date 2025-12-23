@@ -1,34 +1,17 @@
 #include <vix/app/App.hpp>
-#include <vix/utils/Env.hpp> // env_bool / env_or
-#include <vix/utils/Logger.hpp>
-#include <vix/http/RequestHandler.hpp>
+
 #include <vix/router/Router.hpp>
+#include <vix/utils/Env.hpp>
+#include <vix/utils/Logger.hpp>
+#include <vix/utils/ServerPrettyLogs.hpp>
+
 #include <boost/beast/http.hpp>
 
 #include <csignal>
+#include <cctype>
+#include <exception>
+#include <string>
 #include <thread>
-#include <atomic>
-#include <condition_variable>
-#include <mutex>
-#include <memory>
-
-/**
- * @file App.cpp
- * @brief Implementation notes for vix::App (maintainers-focused).
- *
- * Responsibilities:
- *  - Initialize logging (pattern, level, async mode via env).
- *  - Load configuration and wire `Router` from `HTTPServer`.
- *  - Install POSIX signal handlers (SIGINT/SIGTERM) for graceful shutdown.
- *  - Coordinate server thread run/stop/join lifecycle.
- *
- * Shutdown model:
- *  - Signals trigger `handle_stop_signal()` which:
- *     1) sets a process-wide stop flag and notifies a condition variable,
- *     2) calls `HTTPServer::stop_async()` (non-blocking) via a global pointer.
- *  - `App::run()` waits on the CV, joins the server thread, then calls
- *    `HTTPServer::stop_blocking()` to ensure a clean teardown.
- */
 
 namespace
 {
@@ -37,10 +20,13 @@ namespace
         using Level = vix::utils::Logger::Level;
 
         const std::string raw = vix::utils::env_or("VIX_LOG_LEVEL", std::string{"warn"});
+
         std::string s;
         s.reserve(raw.size());
         for (char c : raw)
+        {
             s.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        }
 
         if (s == "trace")
             return Level::TRACE;
@@ -54,7 +40,6 @@ namespace
             return Level::ERROR;
         if (s == "critical")
             return Level::CRITICAL;
-
         return Level::WARN;
     }
 
@@ -63,28 +48,32 @@ namespace
         auto hc = std::thread::hardware_concurrency();
         if (hc == 0)
             hc = 4;
-        return hc;
+        return static_cast<std::size_t>(hc);
     }
 
-    // Route de bench simple : GET /bench -> "OK"
     void register_bench_route(vix::router::Router &router)
     {
         namespace http = boost::beast::http;
 
-        auto handlerLambda =
-            [](vix::vhttp::Request &req,
-               vix::vhttp::ResponseWrapper &res)
+        auto handler = [](vix::vhttp::Request &req, vix::vhttp::ResponseWrapper &res)
         {
-            (void)req; // aucun usage pour le moment
+            (void)req;
             res.ok().text("OK");
-            // équivalent à:
-            // res.status(http::status::ok).text("OK");
         };
 
-        using BenchHandler = vix::vhttp::RequestHandler<decltype(handlerLambda)>;
-        auto handlerPtr = std::make_shared<BenchHandler>("/bench", handlerLambda);
+        using HandlerT = vix::vhttp::RequestHandler<decltype(handler)>;
+        auto h = std::make_shared<HandlerT>("/bench", handler);
+        router.add_route(http::verb::get, "/bench", h);
+    }
 
-        router.add_route(http::verb::get, "/bench", handlerPtr);
+    static std::atomic<vix::App *> g_app_ptr{nullptr};
+
+    static void handle_stop_signal(int /*signum*/)
+    {
+        if (auto *app = g_app_ptr.load(std::memory_order_relaxed))
+        {
+            app->request_stop_from_signal();
+        }
     }
 
 } // namespace
@@ -93,60 +82,20 @@ namespace vix
 {
     using Logger = vix::utils::Logger;
 
-    // ------------------------------------------------------
-    // Process-wide state for graceful shutdown on SIGINT/SIGTERM
-    // ------------------------------------------------------
-    static vix::server::HTTPServer *g_server_ptr = nullptr;
-    static std::atomic<bool> g_stop_flag{false};
-    static std::mutex g_stop_mutex;
-    static std::condition_variable g_stop_cv;
-
-    /**
-     * @brief POSIX signal handler for coordinated shutdown.
-     *
-     * Notes:
-     *  - Minimal work inside the handler: set atomic flag, notify CV,
-     *    request server stop via non-blocking API.
-     *  - Logging is best-effort; avoid heavy operations here.
-     */
-    static void handle_stop_signal(int)
-    {
-        auto &log = Logger::getInstance();
-        log.log(Logger::Level::INFO, "Received stop signal, shutting down...");
-
-        g_stop_flag.store(true);
-        g_stop_cv.notify_one();
-
-        if (g_server_ptr)
-        {
-            // Non-blocking stop; worker threads will be joined in App::run
-            g_server_ptr->stop_async();
-        }
-    }
-
-    // ------------------------------------------------------
-    // App: configure logger, load config, acquire router/server
-    // ------------------------------------------------------
     App::App()
         : config_(vix::config::Config::getInstance()),
           router_(nullptr),
-          // 1) créer un executor concret (ThreadPoolExecutor) — valeurs par défaut raisonnables
           executor_(std::make_shared<vix::experimental::ThreadPoolExecutor>(
-              compute_executor_threads(), // threads
-              compute_executor_threads(), // maxThreads = threads → pas d'élasticité
+              compute_executor_threads(),
+              compute_executor_threads(),
               /*defaultPriority*/ 1)),
           server_(config_, executor_)
     {
         auto &log = Logger::getInstance();
 
-        // 1) Pattern commun (console + fichier)
         log.setPattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
+        log.setLevel(parse_log_level_from_env());
 
-        // 2) Niveau de log via VIX_LOG_LEVEL (trace|debug|info|warn|error|critical)
-        const auto level = parse_log_level_from_env();
-        log.setLevel(level);
-
-        // 3) Async / sync via VIX_LOG_ASYNC (par défaut: true)
         if (vix::utils::env_bool("VIX_LOG_ASYNC", true))
         {
             log.setAsync(true);
@@ -158,24 +107,24 @@ namespace vix
             log.log(Logger::Level::DEBUG, "Logger initialized in SYNC mode");
         }
 
-        // 4) Contexte module
+        if (!vix::utils::env_bool("VIX_INTERNAL_LOGS", false))
+        {
+            // Le CLI/bannière gèrent l'affichage. On coupe les logs internes.
+            log.setLevel(Logger::Level::CRITICAL);
+        }
+
         Logger::Context ctx;
         ctx.module = "App";
         log.setContext(ctx);
 
         try
         {
-            // Charge la config (fichier + env)
-            config_.loadConfig();
-
-            // Récupère le router depuis HTTPServer
             router_ = server_.getRouter();
             if (!router_)
             {
                 log.throwError("Failed to get Router from HTTPServer");
             }
 
-            // 🔹 Enregistrer la route /bench une fois pour toutes au démarrage
             register_bench_route(*router_);
         }
         catch (const std::exception &e)
@@ -184,37 +133,177 @@ namespace vix
         }
     }
 
-    // ------------------------------------------------------
-    // App::run: start server, install signal handlers, wait until stop
-    // ------------------------------------------------------
-    void App::run(int port)
+    App::App(std::shared_ptr<vix::executor::IExecutor> executor)
+        : config_(vix::config::Config::getInstance()),
+          router_(nullptr),
+          executor_(std::move(executor)),
+          server_(config_, executor_)
     {
         auto &log = Logger::getInstance();
 
-        // 1) Configure the port (already validated in Config::setServerPort)
+        if (!executor_)
+        {
+            log.throwError("App: executor cannot be null");
+        }
+
+        log.setPattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
+        log.setLevel(parse_log_level_from_env());
+
+        if (vix::utils::env_bool("VIX_LOG_ASYNC", true))
+        {
+            log.setAsync(true);
+            log.log(Logger::Level::DEBUG, "Logger initialized in ASYNC mode");
+        }
+        else
+        {
+            log.setAsync(false);
+            log.log(Logger::Level::DEBUG, "Logger initialized in SYNC mode");
+        }
+
+        if (vix::utils::env_bool("VIX_INTERNAL_LOGS", false))
+        {
+            log.setPattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
+            log.setLevel(parse_log_level_from_env());
+        }
+        else
+        {
+            // Le CLI s’occupe déjà d'afficher.
+            log.setLevel(Logger::Level::CRITICAL); // quasi muet
+        }
+
+        Logger::Context ctx;
+        ctx.module = "App";
+        log.setContext(ctx);
+
+        try
+        {
+            router_ = server_.getRouter();
+            if (!router_)
+                log.throwError("Failed to get Router from HTTPServer");
+
+            register_bench_route(*router_);
+        }
+        catch (const std::exception &e)
+        {
+            log.throwError("Failed to initialize App: {}", e.what());
+        }
+    }
+
+    App::~App()
+    {
+        // Additive safety: if user used listen() and forgot close(), we avoid a running thread.
+        close();
+    }
+
+    void App::request_stop_from_signal() noexcept
+    {
+        stop_requested_.store(true, std::memory_order_relaxed);
+        stop_cv_.notify_one();
+
+        // ask server to stop (idempotent)
+        server_.stop_async();
+    }
+
+    void App::listen_port(int port, ListenPortCallback cb)
+    {
+        listen(port, [cb = std::move(cb)](const vix::utils::ServerReadyInfo &info)
+               {
+        if (cb) cb(info.port); });
+    }
+
+    void App::listen(int port, ListenCallback on_listen)
+    {
+        using clock = std::chrono::steady_clock;
+
+        auto &log = Logger::getInstance();
+
+        if (started_.exchange(true, std::memory_order_relaxed))
+        {
+            // si tu veux 0 logs, tu peux juste return;
+            log.log(Logger::Level::WARN, "App::listen() called but server is already running");
+            return;
+        }
+
+        const auto t0 = clock::now();
+
+        stop_requested_.store(false, std::memory_order_relaxed);
         config_.setServerPort(port);
 
-        // 2) Expose server pointer to the signal handler
-        g_server_ptr = &server_;
-
-        // 3) Set up SIGINT / SIGTERM handlers
+        g_app_ptr.store(this, std::memory_order_relaxed);
         std::signal(SIGINT, handle_stop_signal);
 #ifdef SIGTERM
         std::signal(SIGTERM, handle_stop_signal);
 #endif
 
-        // 4) Start the server (run() is non-blocking)
-        std::thread server_thread([this]()
-                                  { server_.run(); });
+        server_thread_ = std::thread([this]()
+                                     { server_.run(); });
 
-        // 5) Wait for a stop signal (from handle_stop_signal)
+        log.log(Logger::Level::DEBUG, "[http] listen() called port={}", port);
+
+        const auto t1 = clock::now();
+        int ready_ms = static_cast<int>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
+        if (ready_ms < 1)
+            ready_ms = 1;
+
+        vix::utils::ServerReadyInfo info;
+        info.app = "vix";
+        info.version = "Vix.cpp v1.16.2";
+        info.ready_ms = ready_ms;
+        // Source de vérité: runtime/CLI
+        info.mode = dev_mode_ ? "dev" : "run";
+
+        // Optionnel: permettre override explicite
+        if (const char *v = std::getenv("VIX_MODE"); v && *v)
+            info.mode = vix::utils::RuntimeBanner::mode_from_env();
+
+        info.scheme = "http";
+        info.host = "localhost";
+        info.port = port;
+        info.base_path = "/";
+
+        info.show_ws = false;
+
+        if (auto *tp = dynamic_cast<vix::experimental::ThreadPoolExecutor *>(executor_.get()))
         {
-            std::unique_lock<std::mutex> lock(g_stop_mutex);
-            g_stop_cv.wait(lock, []
-                           { return g_stop_flag.load(std::memory_order_relaxed); });
+            info.threads = tp->threads();
+            info.max_threads = tp->max_threads();
+        }
+        else
+        {
+            const auto th = compute_executor_threads();
+            info.threads = th;
+            info.max_threads = th;
         }
 
-        // 6) Optional external shutdown hook (e.g. WebSocket runtime)
+        if (on_listen)
+        {
+            on_listen(info);
+            return;
+        }
+
+        vix::utils::RuntimeBanner::emit_server_ready(info);
+    }
+
+    void App::wait()
+    {
+        std::unique_lock<std::mutex> lock(stop_mutex_);
+        stop_cv_.wait(lock, [this]()
+                      { return stop_requested_.load(std::memory_order_relaxed); });
+    }
+
+    void App::close()
+    {
+        if (!started_.load(std::memory_order_relaxed))
+        {
+            return;
+        }
+
+        stop_requested_.store(true, std::memory_order_relaxed);
+        stop_cv_.notify_one();
+
+        auto &log = Logger::getInstance();
+
         if (shutdown_cb_)
         {
             try
@@ -223,30 +312,34 @@ namespace vix
             }
             catch (const std::exception &e)
             {
-                // fmt-style logging: format string literal + args
-                log.log(Logger::Level::ERROR,
-                        "Shutdown callback threw: {}",
-                        e.what());
+                log.log(Logger::Level::ERROR, "Shutdown callback threw: {}", e.what());
             }
             catch (...)
             {
-                log.log(Logger::Level::ERROR,
-                        "Shutdown callback threw unknown exception");
+                log.log(Logger::Level::ERROR, "Shutdown callback threw unknown exception");
             }
         }
 
-        // 7) Graceful HTTP shutdown sequence (idempotent)
         server_.stop_async();
-        server_.stop_blocking(); // stop periodic tasks + waitUntilIdle + join I/O threads
+        server_.stop_blocking();
 
-        // 8) Join the thread that started run()
-        if (server_thread.joinable())
-            server_thread.join();
+        if (server_thread_.joinable())
+        {
+            server_thread_.join();
+        }
 
-        // 9) Cleanup
-        g_server_ptr = nullptr;
+        g_app_ptr.store(nullptr, std::memory_order_relaxed);
+        started_.store(false, std::memory_order_relaxed);
 
-        log.log(Logger::Level::INFO, "Application shutdown complete");
+        log.log(Logger::Level::DEBUG, "Application shutdown complete");
+    }
+
+    void App::run(int port)
+    {
+        // app.run(8080) still blocks until SIGINT/SIGTERM, then shuts down gracefully.
+        listen(port);
+        wait();
+        close();
     }
 
 } // namespace vix

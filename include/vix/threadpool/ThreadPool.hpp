@@ -322,8 +322,8 @@ namespace vix::threadpool
             }
 
             auto &log = Logger::getInstance();
-            log.log(Logger::Level::INFO,
-                    "[ThreadPool] started with threads={}, maxThreads={}, defaultPrio={}, maxPeriodic={}",
+            log.log(Logger::Level::DEBUG,
+                    "[ThreadPool] started (threads={}, max={}, prio={}, periodic={})",
                     threadCount, maxThreads, threadPriority, maxPeriodicThreads);
         }
 
