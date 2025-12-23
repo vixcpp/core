@@ -55,8 +55,6 @@
 #include <vix/json/Simple.hpp>  // vix::json::token / kvs
 #include <vix/utils/Logger.hpp> // vix::utils::Logger
 
-#include <nlohmann/json.hpp>
-
 namespace vix::vhttp
 {
     namespace http = boost::beast::http;
@@ -180,29 +178,76 @@ namespace vix::vhttp
     extract_params_from_path(const std::string &pattern, std::string_view path)
     {
         std::unordered_map<std::string, std::string> params;
-        size_t rpos = 0, ppos = 0;
-        while (rpos < pattern.size() && ppos < path.size())
+
+        std::size_t rpos = 0;
+        std::size_t ppos = 0;
+
+        while (rpos < pattern.size() && ppos <= path.size())
         {
+            // Param segment: {name}
             if (pattern[rpos] == '{')
             {
-                const size_t end_brace = pattern.find('}', rpos);
-                const auto name = pattern.substr(rpos + 1, end_brace - rpos - 1);
+                const std::size_t end_brace = pattern.find('}', rpos);
+                if (end_brace == std::string::npos)
+                {
+                    // Malformed pattern, stop parsing safely
+                    break;
+                }
 
-                const size_t next_slash = path.find('/', ppos);
-                const auto value = (next_slash == std::string_view::npos)
-                                       ? path.substr(ppos)
-                                       : path.substr(ppos, next_slash - ppos);
+                const std::string name = pattern.substr(rpos + 1, end_brace - rpos - 1);
 
-                params[name] = std::string(value);
+                // capture until next '/' in the path
+                const std::size_t next_slash = path.find('/', ppos);
+                const std::string_view value =
+                    (next_slash == std::string_view::npos)
+                        ? path.substr(ppos)
+                        : path.substr(ppos, next_slash - ppos);
+
+                if (!name.empty())
+                {
+                    params.emplace(name, std::string(value));
+                }
+
                 rpos = end_brace + 1;
-                ppos = (next_slash == std::string_view::npos) ? path.size() : next_slash + 1;
+                if (next_slash == std::string_view::npos)
+                {
+                    ppos = path.size();
+                }
+                else
+                {
+                    ppos = next_slash + 1;
+                }
+
+                continue;
             }
-            else
+
+            // Static segment must match exactly; if not, it's not this route.
+            if (ppos >= path.size() || pattern[rpos] != path[ppos])
             {
-                ++rpos;
-                ++ppos;
+                // mismatch: return empty map (route doesn't match)
+                return {};
             }
+
+            ++rpos;
+            ++ppos;
         }
+
+        // If pattern has remaining static chars, it must be only slashes to be acceptable.
+        while (rpos < pattern.size())
+        {
+            if (pattern[rpos] != '/')
+                return {};
+            ++rpos;
+        }
+
+        // If path has remaining chars, it must be only slashes to be acceptable.
+        while (ppos < path.size())
+        {
+            if (path[ppos] != '/')
+                return {};
+            ++ppos;
+        }
+
         return params;
     }
 
@@ -376,14 +421,19 @@ namespace vix::vhttp
             return *query_cache_;
         }
 
-        bool has_query(std::string_view key)
+        const QueryMap &query() const
+        {
+            ensure_query_cache();
+            return *query_cache_;
+        }
+
+        bool has_query(std::string_view key) const
         {
             ensure_query_cache();
             return query_cache_->find(std::string(key)) != query_cache_->end();
         }
 
-        std::string query_value(std::string_view key,
-                                std::string_view fallback = {})
+        std::string query_value(std::string_view key, std::string_view fallback = {}) const
         {
             ensure_query_cache();
             auto it = query_cache_->find(std::string(key));
@@ -491,7 +541,7 @@ namespace vix::vhttp
 
     private:
         // Lazy builders (shared_ptr)
-        void ensure_query_cache()
+        void ensure_query_cache() const
         {
             if (query_cache_)
                 return;
@@ -533,7 +583,7 @@ namespace vix::vhttp
         std::shared_ptr<const ParamMap> params_;
 
         // Lazy shared caches
-        std::shared_ptr<const QueryMap> query_cache_;
+        mutable std::shared_ptr<const QueryMap> query_cache_;
         mutable std::shared_ptr<const nlohmann::json> json_cache_;
 
         // ✅ Request-scoped typed state (shared between copies)

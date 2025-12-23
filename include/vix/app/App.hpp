@@ -6,10 +6,13 @@
  * @brief High-level Vix.cpp application entry point combining Config, Router, and HTTPServer.
  */
 
-#include <memory>
+#include <atomic>
+#include <condition_variable>
 #include <functional>
-#include <stdexcept>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <utility>
 
 #include <boost/beast/http.hpp>
@@ -21,10 +24,11 @@
 
 #include <vix/executor/IExecutor.hpp>
 #include <vix/experimental/ThreadPoolExecutor.hpp>
+#include <vix/utils/ServerPrettyLogs.hpp>
 
 namespace vix::router
 {
-    class Router; // forward declaration pour éviter d'inclure Router.hpp ici
+    class Router; // forward decl
 }
 
 namespace vix
@@ -32,53 +36,29 @@ namespace vix
     namespace http = boost::beast::http;
     using Logger = vix::utils::Logger;
 
-    /**
-     * @class App
-     * @brief Main application orchestrator for Vix.cpp HTTP services.
-     */
     class App
     {
     public:
         using ShutdownCallback = std::function<void()>;
+        using ListenCallback = std::function<void(const vix::utils::ServerReadyInfo &)>;
+        using ListenPortCallback = std::function<void(int)>;
 
-        /** @brief Construct a new App instance with shared Config and Router. */
         App();
-        ~App() = default;
-
-        // Non-copyable / non-movable
+        explicit App(std::shared_ptr<vix::executor::IExecutor> executor);
+        ~App();
         App(const App &) = delete;
         App &operator=(const App &) = delete;
         App(App &&) = delete;
         App &operator=(App &&) = delete;
-
-        /**
-         * @brief Start the HTTP server.
-         *
-         * Blocks until a termination signal (SIGINT/SIGTERM) is received,
-         * performing graceful shutdown of worker threads and open connections.
-         *
-         * @param port Optional override of the configured port.
-         */
         void run(int port = 8080);
-
-        /**
-         * @brief Register a callback invoked during graceful shutdown.
-         *
-         * Typical usage:
-         *   - stopping auxiliary runtimes (e.g. WebSocket App)
-         *   - flushing custom metrics, background workers, etc.
-         *
-         * The callback is executed once, after a stop signal has been received
-         * (SIGINT/SIGTERM) and before the HTTP server completes its teardown.
-         */
+        void listen(int port = 8080, ListenCallback on_listen = {});
+        void wait();
+        void close();
         void set_shutdown_callback(ShutdownCallback cb)
         {
             shutdown_cb_ = std::move(cb);
         }
 
-        // --------------------------------------------------------------
-        // Express-like route registration helpers
-        // --------------------------------------------------------------
         template <typename Handler>
         void get(const std::string &path, Handler handler)
         {
@@ -121,34 +101,29 @@ namespace vix
             add_route(http::verb::options, path, std::move(handler));
         }
 
-        // --------------------------------------------------------------
-        // Accessors
-        // --------------------------------------------------------------
-        /** @return The global Config instance used by this app. */
         vix::config::Config &config() noexcept { return config_; }
-
-        /** @return Shared Router for registering or inspecting routes. */
         std::shared_ptr<vix::router::Router> router() const noexcept { return router_; }
-
-        /** @return Underlying HTTPServer instance handling requests. */
         vix::server::HTTPServer &server() noexcept { return server_; }
-
         vix::executor::IExecutor &executor() noexcept { return *executor_; }
+        bool is_running() const noexcept { return started_.load(std::memory_order_relaxed); }
+        void request_stop_from_signal() noexcept;
+        void listen_port(int port, ListenPortCallback cb = {});
+        void setDevMode(bool v) { dev_mode_ = v; }
+        bool isDevMode() const { return dev_mode_; }
 
     private:
-        vix::config::Config &config_;                        ///< Global configuration reference
-        std::shared_ptr<vix::router::Router> router_;        ///< Shared router (injected into HTTPServer)
-        std::shared_ptr<vix::executor::IExecutor> executor_; ///< Executor used by HTTP server
-        vix::server::HTTPServer server_;                     ///< Core HTTP server
+        vix::config::Config &config_;
+        std::shared_ptr<vix::router::Router> router_;
+        std::shared_ptr<vix::executor::IExecutor> executor_;
+        vix::server::HTTPServer server_;
+        ShutdownCallback shutdown_cb_{};
+        std::thread server_thread_;
+        std::atomic<bool> started_{false};
+        std::atomic<bool> stop_requested_{false};
+        std::mutex stop_mutex_;
+        std::condition_variable stop_cv_;
+        bool dev_mode_ = {false};
 
-        ShutdownCallback shutdown_cb_{}; ///< Optional hook executed on shutdown
-
-        /**
-         * @brief Internal helper for adding a typed route handler.
-         *
-         * Wraps the provided handler into a RequestHandler<Handler> adapter,
-         * then registers it on the router. Logs registration details.
-         */
         template <typename Handler>
         void add_route(http::verb method, const std::string &path, Handler handler)
         {

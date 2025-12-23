@@ -2,6 +2,8 @@
 #define VIX_THREAD_POOL_EXECUTOR_HPP
 
 #include <memory>
+#include <functional>
+
 #include <vix/executor/IExecutor.hpp>
 #include <vix/threadpool/ThreadPool.hpp>
 
@@ -21,8 +23,13 @@ namespace vix::experimental
         vix::executor::Metrics metrics() const override;
         void wait_idle() override;
 
+        std::size_t threads() const noexcept;
+        std::size_t max_threads() const noexcept;
+
     private:
         std::unique_ptr<vix::threadpool::ThreadPool> pool_;
+        std::size_t threads_{0};
+        std::size_t max_threads_{0};
     };
 
     std::unique_ptr<vix::executor::IExecutor> make_threadpool_executor(std::size_t threads,

@@ -215,6 +215,7 @@ namespace vix::server
         std::shared_ptr<vix::executor::IExecutor> executor_;
         std::vector<std::thread> io_threads_;     //!< Threads running `io_context_`.
         std::atomic<bool> stop_requested_{false}; //!< Cooperative stop flag.
+        std::chrono::steady_clock::time_point startup_t0_;
     };
 
 } // namespace vix
