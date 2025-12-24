@@ -10,7 +10,7 @@
 #include <vix/http/cache/CacheStore.hpp>
 #include <vix/http/cache/CacheContext.hpp>
 
-namespace vix::http::cache
+namespace vix::vhttp::cache
 {
 
     class Cache
@@ -29,4 +29,4 @@ namespace vix::http::cache
         std::shared_ptr<CacheStore> store_;
     };
 
-} // namespace vix::http::cache
+} // namespace vix::vhttp::cache

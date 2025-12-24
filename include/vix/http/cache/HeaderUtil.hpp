@@ -4,7 +4,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace vix::http::cache
+namespace vix::vhttp::cache
 {
     struct HeaderUtil
     {
@@ -29,4 +29,4 @@ namespace vix::http::cache
             headers.swap(norm);
         }
     };
-} // namespace vix::http::cache
+} // namespace vix::vhttp::cache

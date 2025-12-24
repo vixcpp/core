@@ -4,7 +4,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace vix::http::cache
+namespace vix::vhttp::cache
 {
 
     struct CacheEntry
@@ -16,4 +16,4 @@ namespace vix::http::cache
         std::int64_t created_at_ms{0};
     };
 
-} // namespace vix::http::cache
+} // namespace vix::vhttp::cache

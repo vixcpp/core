@@ -1,6 +1,6 @@
 #pragma once
 
-namespace vix::http::cache
+namespace vix::vhttp::cache
 {
 
     struct CacheContext
@@ -13,4 +13,4 @@ namespace vix::http::cache
         static CacheContext NetworkError() noexcept { return {.network_error = true}; }
     };
 
-} // namespace vix::http::cache
+} // namespace vix::vhttp::cache

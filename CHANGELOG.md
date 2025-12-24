@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+## [1.11.0] - 2025-12-24
+
+### Added
+- 
+
+### Changed
+- 
+
+### Removed
+- 
+
+
+### Core v1.11.0
+
+This release introduces foundational middleware primitives into the core
+and significantly stabilizes the HTTP cache engine.
+
+#### Middleware primitives (core)
+
+- Added `core/mw/*` primitives:
+  - `Context`
+  - `Next` / `NextOnce`
+  - `Hooks`
+  - `Result` / `Error`
+- These primitives are now owned by core and reused by middleware
+- Eliminates circular dependency between core and middleware
+
+#### HTTP cache engine improvements
+
+- Refactored cache core:
+  - `Cache`, `CacheEntry`, `CacheKey`, `CachePolicy`
+  - `CacheContext` + `CacheContextMapper`
+- Improved store implementations:
+  - `MemoryStore`
+  - `LruMemoryStore`
+  - `FileStore`
+- Better cache key stability and header handling
+- Cleaner separation between policy, keying, and storage
+
+#### App integration
+
+- Updated `App` to support middleware-based cache usage
+- Internal cleanup for cache/middleware interaction
+
+#### Tests
+
+- Updated cache smoke tests
+- Added coverage for CacheContextMapper behavior
+
+This release provides a clean, reusable middleware foundation inside core
+and prepares the ecosystem for higher-level middleware APIs.
+
 ### Added
 
 ## [1.6.2] - 2025-12-11

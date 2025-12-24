@@ -11,7 +11,7 @@
 #include <vix/http/cache/CacheEntry.hpp>
 #include <vix/http/cache/CacheStore.hpp>
 
-namespace vix::http::cache
+namespace vix::vhttp::cache
 {
     class LruMemoryStore final : public CacheStore
     {
@@ -129,4 +129,4 @@ namespace vix::http::cache
         std::unordered_map<std::string, Node> map_;
     };
 
-} // namespace vix::http::cache
+} // namespace vix::vhttp::cache

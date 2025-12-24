@@ -38,14 +38,14 @@ struct NetResult
 };
 
 // Pure function we can test
-static Decision handle_get_with_cache(vix::http::cache::Cache &cache,
+static Decision handle_get_with_cache(vix::vhttp::cache::Cache &cache,
                                       const std::string &key,
                                       std::int64_t t,
                                       vix::sync::NetworkProbe &probe,
                                       const NetResult &net,
-                                      std::optional<vix::http::cache::CacheContext> forced_ctx = std::nullopt)
+                                      std::optional<vix::vhttp::cache::CacheContext> forced_ctx = std::nullopt)
 {
-    using namespace vix::http::cache;
+    using namespace vix::vhttp::cache;
 
     // 1) Determine context (test override if provided)
     CacheContext ctx = forced_ctx ? *forced_ctx : contextFromProbe(probe, t);
@@ -85,7 +85,7 @@ static Decision handle_get_with_cache(vix::http::cache::Cache &cache,
 
 static void test_offline_cache_hit()
 {
-    using namespace vix::http::cache;
+    using namespace vix::vhttp::cache;
 
     auto store = std::make_shared<MemoryStore>();
     CachePolicy policy;
@@ -119,7 +119,7 @@ static void test_offline_cache_hit()
 
 static void test_offline_cache_miss()
 {
-    using namespace vix::http::cache;
+    using namespace vix::vhttp::cache;
 
     auto store = std::make_shared<MemoryStore>();
     CachePolicy policy;
@@ -147,7 +147,7 @@ static void test_offline_cache_miss()
 
 static void test_online_network_ok_populates_cache()
 {
-    using namespace vix::http::cache;
+    using namespace vix::vhttp::cache;
 
     auto store = std::make_shared<MemoryStore>();
     CachePolicy policy;
@@ -181,7 +181,7 @@ static void test_online_network_ok_populates_cache()
 
 static void test_online_network_error_fallback_cache()
 {
-    using namespace vix::http::cache;
+    using namespace vix::vhttp::cache;
 
     auto store = std::make_shared<MemoryStore>();
     CachePolicy policy;

@@ -342,4 +342,36 @@ namespace vix
         close();
     }
 
+    void App::use(Middleware mw)
+    {
+        middlewares_.push_back(MiddlewareEntry{"", std::move(mw)});
+    }
+
+    void App::use(std::string prefix, Middleware mw)
+    {
+        middlewares_.push_back(MiddlewareEntry{std::move(prefix), std::move(mw)});
+    }
+
+    bool App::match_middleware_prefix_(const std::string &prefix, const std::string &path) const
+    {
+        if (prefix.empty())
+            return true;
+        if (path.size() < prefix.size())
+            return false;
+        return path.compare(0, prefix.size(), prefix) == 0;
+    }
+
+    std::vector<App::Middleware> App::collect_middlewares_for_(const std::string &path) const
+    {
+        std::vector<Middleware> out;
+        out.reserve(middlewares_.size());
+
+        for (const auto &e : middlewares_)
+        {
+            if (match_middleware_prefix_(e.prefix, path))
+                out.push_back(e.mw);
+        }
+        return out;
+    }
+
 } // namespace vix

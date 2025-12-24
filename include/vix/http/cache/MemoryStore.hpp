@@ -5,7 +5,7 @@
 
 #include <vix/http/cache/CacheStore.hpp>
 
-namespace vix::http::cache
+namespace vix::vhttp::cache
 {
 
     class MemoryStore final : public CacheStore
@@ -22,4 +22,4 @@ namespace vix::http::cache
         std::mutex mu_;
         std::unordered_map<std::string, CacheEntry> map_;
     };
-} // namespace vix::http::cache
+} // namespace vix::vhttp::cache

@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-namespace vix::http::cache
+namespace vix::vhttp::cache
 {
     class CacheKey
     {
@@ -158,4 +158,4 @@ namespace vix::http::cache
         }
     };
 
-} // namespace vix::http::cache
+} // namespace vix::vhttp::cache
