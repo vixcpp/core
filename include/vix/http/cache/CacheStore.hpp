@@ -5,7 +5,7 @@
 
 #include <vix/http/cache/CacheEntry.hpp>
 
-namespace vix::http::cache
+namespace vix::vhttp::cache
 {
 
     class CacheStore
@@ -18,4 +18,4 @@ namespace vix::http::cache
         virtual void clear() = 0;
     };
 
-} // namespace vix::http::cache
+} // namespace vix::vhttp::cache

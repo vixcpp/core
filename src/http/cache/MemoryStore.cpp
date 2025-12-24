@@ -1,6 +1,6 @@
 #include <vix/http/cache/MemoryStore.hpp>
 
-namespace vix::http::cache
+namespace vix::vhttp::cache
 {
 
     void MemoryStore::put(const std::string &key, const CacheEntry &entry)
@@ -30,4 +30,4 @@ namespace vix::http::cache
         map_.clear();
     }
 
-} // namespace vix::http::cache
+} // namespace vix::vhttp::cache

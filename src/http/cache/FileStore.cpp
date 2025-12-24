@@ -3,7 +3,7 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 
-namespace vix::http::cache
+namespace vix::vhttp::cache
 {
     using json = nlohmann::json;
 
@@ -95,4 +95,4 @@ namespace vix::http::cache
         flush_();
     }
 
-} // namespace vix::http::cache
+} // namespace vix::vhttp::cache

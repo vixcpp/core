@@ -26,7 +26,7 @@ static std::int64_t now_ms()
 // A) Test existant : MemoryStore + Policy
 static void test_memory_store()
 {
-    using namespace vix::http::cache;
+    using namespace vix::vhttp::cache;
 
     auto store = std::make_shared<MemoryStore>();
 
@@ -93,7 +93,7 @@ static void test_memory_store()
 // B) Test existant : FileStore persistence + reload
 static void test_file_store()
 {
-    using namespace vix::http::cache;
+    using namespace vix::vhttp::cache;
 
     const std::filesystem::path dir = "./build/.vix_test";
     const std::filesystem::path file = dir / "cache_http.json";
@@ -148,7 +148,7 @@ static void test_file_store()
 // C) Cache::put() normalise les headers en lower-case
 static void test_header_normalization_on_put()
 {
-    using namespace vix::http::cache;
+    using namespace vix::vhttp::cache;
 
     auto store = std::make_shared<MemoryStore>();
     CachePolicy policy;
@@ -184,7 +184,7 @@ static void test_header_normalization_on_put()
 // D) LruMemoryStore eviction (max_entries)
 static void test_lru_eviction()
 {
-    using namespace vix::http::cache;
+    using namespace vix::vhttp::cache;
 
     auto store = std::make_shared<LruMemoryStore>(LruMemoryStore::Config{.max_entries = 2});
     CachePolicy policy;
@@ -221,7 +221,7 @@ static void test_lru_eviction()
 // E) Cache::prune() supprime les entrées trop vieilles (LRU store)
 static void test_prune_on_lru_store()
 {
-    using namespace vix::http::cache;
+    using namespace vix::vhttp::cache;
 
     // temps "fake" stable
     const std::int64_t t0 = 1'000'000;
@@ -270,7 +270,7 @@ static void test_prune_on_lru_store()
 // F) CacheKey normalise query + support include_headers
 static void test_cache_key_builder()
 {
-    using namespace vix::http::cache;
+    using namespace vix::vhttp::cache;
 
     std::unordered_map<std::string, std::string> headers;
     headers["Accept"] = "application/json";

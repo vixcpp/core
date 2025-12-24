@@ -5,7 +5,7 @@
 #include <vix/http/cache/CacheContext.hpp>
 #include <vix/sync/NetworkProbe.hpp>
 
-namespace vix::http::cache
+namespace vix::vhttp::cache
 {
 
     /**
@@ -60,4 +60,4 @@ namespace vix::http::cache
     inline CacheContext contextOnline() noexcept { return CacheContext::Online(); }
     inline CacheContext contextNetworkError() noexcept { return CacheContext::NetworkError(); }
 
-} // namespace vix::http::cache
+} // namespace vix::vhttp::cache

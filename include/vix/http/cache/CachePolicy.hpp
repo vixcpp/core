@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace vix::http::cache
+namespace vix::vhttp::cache
 {
 
     struct CachePolicy
@@ -32,4 +32,4 @@ namespace vix::http::cache
         }
     };
 
-} // namespace vix::http::cache
+} // namespace vix::vhttp::cache

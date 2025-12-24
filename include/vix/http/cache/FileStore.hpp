@@ -6,7 +6,7 @@
 
 #include <vix/http/cache/CacheStore.hpp>
 
-namespace vix::http::cache
+namespace vix::vhttp::cache
 {
 
     class FileStore final : public CacheStore
@@ -64,4 +64,4 @@ namespace vix::http::cache
         std::unordered_map<std::string, CacheEntry> map_;
     };
 
-} // namespace vix::http::cache
+} // namespace vix::vhttp::cache

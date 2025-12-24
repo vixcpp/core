@@ -14,6 +14,8 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
+#include <filesystem>
 
 #include <boost/beast/http.hpp>
 
@@ -124,6 +126,14 @@ namespace vix
         void setDevMode(bool v) { dev_mode_ = v; }
         bool isDevMode() const { return dev_mode_; }
 
+        using Next = std::function<void()>;
+        using Middleware = std::function<void(vix::vhttp::Request &, vix::vhttp::ResponseWrapper &, Next)>;
+
+        // Global middleware
+        void use(Middleware mw);
+        // Scoped middleware by path prefix (ex: "/api/")
+        void use(std::string prefix, Middleware mw);
+
     private:
         vix::config::Config &config_;
         std::shared_ptr<vix::router::Router> router_;
@@ -136,6 +146,17 @@ namespace vix
         std::mutex stop_mutex_;
         std::condition_variable stop_cv_;
         bool dev_mode_ = {false};
+
+        // Handler detection helpers
+        using RawRequestT = vix::vhttp::RawRequest;
+
+        template <class H>
+        static constexpr bool is_facade_handler_v =
+            std::is_invocable_v<H &, vix::vhttp::Request &, vix::vhttp::ResponseWrapper &>;
+
+        template <class H>
+        static constexpr bool is_raw_handler_v =
+            std::is_invocable_v<H &, const RawRequestT &, vix::vhttp::ResponseWrapper &>;
 
         template <typename Handler>
         void add_route(http::verb method, const std::string &path, Handler handler)
@@ -153,8 +174,41 @@ namespace vix
             if (!router_)
                 log.throwError("Router is not initialized in App");
 
-            using Adapter = vix::vhttp::RequestHandler<Handler>;
-            auto request_handler = std::make_shared<Adapter>(path, std::move(handler));
+            static_assert(is_facade_handler_v<Handler> || is_raw_handler_v<Handler>,
+                          "Invalid handler: expected (vix::vhttp::Request&, ResponseWrapper&) "
+                          "or (const vix::vhttp::RawRequest&, ResponseWrapper&)");
+
+            auto chain = collect_middlewares_for_(path);
+            auto final = std::move(handler);
+
+            // ✅ wrapped MUST be a ValidHandler for RequestHandler
+            // => choose: (Request&, ResponseWrapper&)
+            auto wrapped = [chain = std::move(chain), final = std::move(final)](
+                               vix::vhttp::Request &req,
+                               vix::vhttp::ResponseWrapper &res) mutable
+            {
+                std::function<void()> final_handler = [&]()
+                {
+                    if constexpr (is_facade_handler_v<decltype(final)>)
+                    {
+                        final(req, res);
+                    }
+                    else if constexpr (is_raw_handler_v<decltype(final)>)
+                    {
+                        final(req.raw(), res);
+                    }
+                    else
+                    {
+                        static_assert(is_facade_handler_v<decltype(final)> || is_raw_handler_v<decltype(final)>,
+                                      "Unsupported handler signature.");
+                    }
+                };
+
+                run_middleware_chain_(chain, 0, req, res, final_handler);
+            };
+
+            using Adapter = vix::vhttp::RequestHandler<decltype(wrapped)>;
+            auto request_handler = std::make_shared<Adapter>(path, std::move(wrapped));
 
             router_->add_route(method, path, request_handler, opt);
 
@@ -163,6 +217,37 @@ namespace vix
                      "method", static_cast<int>(method),
                      "path", path.c_str(),
                      "heavy", opt.heavy ? "true" : "false");
+        }
+
+        struct MiddlewareEntry
+        {
+            std::string prefix; // empty => global
+            Middleware mw;
+        };
+
+        std::vector<MiddlewareEntry> middlewares_;
+        bool match_middleware_prefix_(const std::string &prefix, const std::string &path) const;
+        std::vector<Middleware> collect_middlewares_for_(const std::string &path) const;
+
+        static inline void run_middleware_chain_(
+            const std::vector<Middleware> &chain,
+            std::size_t i,
+            vix::vhttp::Request &req,
+            vix::vhttp::ResponseWrapper &res,
+            std::function<void()> final_handler)
+        {
+            if (i >= chain.size())
+            {
+                final_handler();
+                return;
+            }
+
+            auto next = [&]()
+            {
+                run_middleware_chain_(chain, i + 1, req, res, std::move(final_handler));
+            };
+
+            chain[i](req, res, std::move(next));
         }
     };
 

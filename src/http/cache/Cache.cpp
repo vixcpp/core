@@ -4,7 +4,7 @@
 #include <vix/http/cache/Cache.hpp>
 #include <vix/http/cache/HeaderUtil.hpp>
 
-namespace vix::http::cache
+namespace vix::vhttp::cache
 {
 
     Cache::Cache(CachePolicy policy, std::shared_ptr<CacheStore> store)
@@ -78,4 +78,4 @@ namespace vix::http::cache
         return 0;
     }
 
-} // namespace vix::http::cache
+} // namespace vix::vhttp::cache
