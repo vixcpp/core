@@ -24,7 +24,7 @@ namespace vix::config
           db_host(DEFAULT_DB_HOST), db_user(DEFAULT_DB_USER), db_pass(DEFAULT_DB_PASS),
           db_name(DEFAULT_DB_NAME), db_port(DEFAULT_DB_PORT),
           server_port(DEFAULT_SERVER_PORT), request_timeout(DEFAULT_REQUEST_TIMEOUT),
-          rawConfig_(nlohmann::json::object())
+          rawConfig_(nlohmann::json::object()), io_threads_(DEFAULT_IO_THREADS), log_async_(DEFAULT_LOG_ASYNC), log_queue_max_(DEFAULT_LOG_QUEUE_MAX), log_drop_on_overflow_(DEFAULT_LOG_DROP_ON_OVERFLOW), waf_mode_(DEFAULT_WAF_MODE), waf_max_target_len_(DEFAULT_WAF_MAX_TARGET_LEN), waf_max_body_bytes_(DEFAULT_WAF_MAX_BODY_BYTES)
     {
         auto &log = vix::utils::Logger::getInstance();
         std::vector<fs::path> candidate_paths;
@@ -129,7 +129,25 @@ namespace vix::config
             const auto &server = cfg["server"];
             server_port = server.value("port", DEFAULT_SERVER_PORT);
             request_timeout = server.value("request_timeout", DEFAULT_REQUEST_TIMEOUT);
+
+            // NEW
+            io_threads_ = server.value("io_threads", DEFAULT_IO_THREADS);
         }
+        else
+        {
+            // fallback via dotted path (si jamais tu changes de schema)
+            io_threads_ = getInt("server.io_threads", DEFAULT_IO_THREADS);
+        }
+
+        // NEW: logging
+        log_async_ = getBool("logging.async", DEFAULT_LOG_ASYNC);
+        log_queue_max_ = getInt("logging.queue_max", DEFAULT_LOG_QUEUE_MAX);
+        log_drop_on_overflow_ = getBool("logging.drop_on_overflow", DEFAULT_LOG_DROP_ON_OVERFLOW);
+
+        // NEW: waf
+        waf_mode_ = getString("waf.mode", DEFAULT_WAF_MODE);
+        waf_max_target_len_ = getInt("waf.max_target_len", DEFAULT_WAF_MAX_TARGET_LEN);
+        waf_max_body_bytes_ = getInt("waf.max_body_bytes", DEFAULT_WAF_MAX_BODY_BYTES);
     }
 
     const nlohmann::json *Config::findNode(const std::string &dottedKey) const noexcept
@@ -274,5 +292,27 @@ namespace vix::config
             return defaultValue;
         }
     }
+
+    // --- Prod-safe server knobs -----------------------------------------
+    int Config::getIOThreads() const noexcept { return io_threads_; }
+
+    bool Config::isBenchMode() const noexcept
+    {
+#ifdef VIX_BENCH_MODE
+        return true;
+#else
+        return false;
+#endif
+    }
+
+    // --- Logging knobs ---------------------------------------------------
+    bool Config::getLogAsync() const noexcept { return log_async_; }
+    int Config::getLogQueueMax() const noexcept { return log_queue_max_; }
+    bool Config::getLogDropOnOverflow() const noexcept { return log_drop_on_overflow_; }
+
+    // --- WAF knobs -------------------------------------------------------
+    const std::string &Config::getWafMode() const noexcept { return waf_mode_; }
+    int Config::getWafMaxTargetLen() const noexcept { return waf_max_target_len_; }
+    int Config::getWafMaxBodyBytes() const noexcept { return waf_max_body_bytes_; }
 
 }

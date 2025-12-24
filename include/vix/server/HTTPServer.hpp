@@ -198,9 +198,7 @@ namespace vix::server
          * matched handler via the request worker pool, and writing the response
          * back to the client.
          */
-        void handle_client(std::shared_ptr<tcp::socket> socket_ptr,
-                           std::shared_ptr<vix::router::Router> router);
-
+        void handle_client(std::shared_ptr<tcp::socket> socket_ptr);
         /** @brief Close the given socket, ignoring benign errors. */
         void close_socket(std::shared_ptr<tcp::socket> socket);
 

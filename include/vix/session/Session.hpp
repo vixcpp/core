@@ -52,6 +52,8 @@
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/asio/steady_timer.hpp>
+#include <boost/asio/dispatch.hpp>
+#include <boost/asio/strand.hpp>
 #include <memory>
 
 #if defined(__GNUC__) && !defined(__clang__)
@@ -71,6 +73,8 @@
 #include <vix/router/Router.hpp>
 #include <vix/http/Response.hpp>
 #include <vix/utils/Logger.hpp>
+#include <vix/config/Config.hpp>
+#include <vix/executor/IExecutor.hpp>
 
 namespace vix::session
 {
@@ -101,7 +105,10 @@ namespace vix::session
          * @param socket Accepted TCP socket (shared ownership).
          * @param router Reference to the global router used for dispatch.
          */
-        explicit Session(std::shared_ptr<tcp::socket> socket, vix::router::Router &router);
+        explicit Session(std::shared_ptr<tcp::socket> socket,
+                         vix::router::Router &router,
+                         const vix::config::Config &config,
+                         std::shared_ptr<vix::executor::IExecutor> executor);
 
         /** @brief Destructor (defaulted). Connections are expected to self-close. */
         ~Session() = default;
@@ -161,6 +168,8 @@ namespace vix::session
          */
         bool waf_check_request(const bhttp::request<bhttp::string_body> &req);
 
+        void send_response_strand(bhttp::response<bhttp::string_body> res);
+
     private:
         std::shared_ptr<tcp::socket> socket_;                               //!< Underlying TCP connection.
         vix::router::Router &router_;                                       //!< Router reference for dispatch.
@@ -171,6 +180,9 @@ namespace vix::session
 
         static const std::regex XSS_PATTERN; //!< Regex for basic XSS detection.
         static const std::regex SQL_PATTERN; //!< Regex for basic SQL injection detection.
+        const vix::config::Config &config_;
+        std::shared_ptr<vix::executor::IExecutor> executor_;
+        net::strand<net::any_io_executor> strand_;
     };
 
 } // namespace vix
