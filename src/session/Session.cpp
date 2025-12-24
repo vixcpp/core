@@ -1,16 +1,5 @@
 #include <vix/session/Session.hpp>
-
-/**
- * @file Session.cpp
- * @brief Implementation notes for vix::Session (maintainers-focused docs).
- *
- * Responsibilities covered here:
- *  - Socket options and timer lifecycle
- *  - Request parsing, error mapping, and size limits
- *  - WAF checks (XSS / SQLi) before dispatch
- *  - Keep‑alive vs. close semantics
- *  - Exception boundaries around Router handlers
- */
+#include <cctype>
 
 namespace vix::session
 {
@@ -24,17 +13,31 @@ namespace vix::session
     const std::regex Session::XSS_PATTERN(R"(<script.*?>.*?</script>)", std::regex::icase);
     const std::regex Session::SQL_PATTERN(R"((\bUNION\b|\bSELECT\b|\bINSERT\b|\bDELETE\b|\bUPDATE\b|\bDROP\b))", std::regex::icase);
 
-    Session::Session(std::shared_ptr<tcp::socket> socket, vix::router::Router &router)
-        : socket_(std::move(socket)), router_(router),
+    Session::Session(std::shared_ptr<tcp::socket> socket,
+                     vix::router::Router &router,
+                     const vix::config::Config &config,
+                     std::shared_ptr<vix::executor::IExecutor> executor)
+        : socket_(std::move(socket)),
+          router_(router),
           buffer_(),
           req_(),
           parser_(nullptr),
-          timer_(nullptr)
+          timer_(nullptr),
+          config_(config),
+          executor_(std::move(executor)),
+          strand_(socket_->get_executor())
     {
         boost::system::error_code ec;
         socket_->set_option(tcp::no_delay(true), ec);
         if (ec)
             log().log(Logger::Level::WARN, "[Session] Failed to disable Nagle: {}", ec.message());
+    }
+
+    void Session::send_response_strand(bhttp::response<bhttp::string_body> res)
+    {
+        auto self = shared_from_this();
+        boost::asio::dispatch(strand_, [self, r = std::move(res)]() mutable
+                              { self->send_response(std::move(r)); });
     }
 
     void Session::run()
@@ -127,8 +130,9 @@ namespace vix::session
             });
     }
 
-    void Session::handle_request(const boost::system::error_code &ec,
-                                 std::optional<bhttp::request<bhttp::string_body>> parsed_req)
+    void Session::handle_request(
+        const boost::system::error_code &ec,
+        std::optional<bhttp::request<bhttp::string_body>> parsed_req)
     {
         if (ec)
         {
@@ -158,6 +162,7 @@ namespace vix::session
 #else
         constexpr auto too_large_status = static_cast<bhttp::status>(413);
 #endif
+
         if (req_.body().size() > MAX_REQUEST_BODY_SIZE)
         {
             log().log(Logger::Level::WARN, "[Session] Body too large ({} bytes)", req_.body().size());
@@ -165,27 +170,83 @@ namespace vix::session
             return;
         }
 
-        bhttp::response<bhttp::string_body> res;
-        bool ok = false;
-        try
+        auto self = shared_from_this();
+        auto req = std::move(req_);
+        const bool heavy = router_.is_heavy(req);
+
+        // 1) LIGHT path: run on IO thread (fast)
+        if (!heavy)
         {
-            ok = router_.handle_request(req_, res);
-        }
-        catch (const std::exception &ex)
-        {
-            log().log(Logger::Level::ERROR, "[Router] Exception: {}", ex.what());
-            send_error(bhttp::status::internal_server_error, "Internal server error");
+            bhttp::response<bhttp::string_body> res;
+            bool ok = false;
+
+            try
+            {
+                ok = router_.handle_request(req, res);
+            }
+            catch (const std::exception &ex)
+            {
+                log().log(Logger::Level::ERROR, "[Router] Exception: {}", ex.what());
+                send_error(bhttp::status::internal_server_error, "Internal server error");
+                return;
+            }
+
+            if (!ok && res.result() == bhttp::status::ok)
+                res.result(bhttp::status::bad_request);
+
+            res.set(bhttp::field::connection, req.keep_alive() ? "keep-alive" : "close");
+
+            // Always write from the socket strand
+            send_response_strand(std::move(res));
             return;
         }
 
-        if (!ok)
+        // 2) HEAVY path: run on executor (DB / CPU heavy)
+        if (!executor_)
         {
-            if (res.result() == bhttp::status::ok)
-                res.result(bhttp::status::bad_request);
+            send_error(bhttp::status::service_unavailable, "Executor not configured");
+            return;
         }
 
-        res.set(bhttp::field::connection, req_.keep_alive() ? "keep-alive" : "close");
-        send_response(std::move(res));
+        auto res_ptr = std::make_shared<bhttp::response<bhttp::string_body>>();
+
+        const bool accepted = executor_->post(
+            [self, req = std::move(req), res_ptr]() mutable
+            {
+                bool ok = false;
+
+                try
+                {
+                    ok = self->router_.handle_request(req, *res_ptr);
+                }
+                catch (const std::exception &ex)
+                {
+                    // Use global logger here (safe + clear)
+                    vix::utils::Logger::getInstance().log(
+                        vix::utils::Logger::Level::ERROR,
+                        "[Router][heavy] Exception: {}", ex.what());
+
+                    res_ptr->result(bhttp::status::internal_server_error);
+                    vix::vhttp::Response::error_response(
+                        *res_ptr,
+                        bhttp::status::internal_server_error,
+                        "Internal server error");
+                }
+
+                if (!ok && res_ptr->result() == bhttp::status::ok)
+                    res_ptr->result(bhttp::status::bad_request);
+
+                res_ptr->set(bhttp::field::connection, req.keep_alive() ? "keep-alive" : "close");
+
+                // Back to IO strand for socket write
+                self->send_response_strand(std::move(*res_ptr));
+            });
+
+        if (!accepted)
+        {
+            send_error(bhttp::status::service_unavailable, "Server busy");
+            return;
+        }
     }
 
     void Session::send_response(bhttp::response<bhttp::string_body> res)
@@ -243,36 +304,115 @@ namespace vix::session
         log().log(Logger::Level::DEBUG, "[Session] Socket closed");
     }
 
+    static inline bool icontains(std::string_view s, std::string_view needle)
+    {
+        if (needle.empty())
+            return true;
+        if (needle.size() > s.size())
+            return false;
+
+        for (size_t i = 0; i + needle.size() <= s.size(); ++i)
+        {
+            size_t j = 0;
+            for (; j < needle.size(); ++j)
+            {
+                unsigned char a = (unsigned char)s[i + j];
+                unsigned char b = (unsigned char)needle[j];
+                if ((char)std::tolower(a) != (char)std::tolower(b))
+                    break;
+            }
+            if (j == needle.size())
+                return true;
+        }
+        return false;
+    }
+
     bool Session::waf_check_request(const bhttp::request<bhttp::string_body> &req)
     {
 #ifdef VIX_BENCH_MODE
         (void)req;
         return true;
 #else
-        if (req.target().size() > 4096)
-        {
-            log().log(Logger::Level::WARN, "[WAF] Target too long");
+        const std::string &mode = config_.getWafMode(); // "off"|"basic"|"strict"
+        if (mode == "off")
+            return true;
+
+        const std::size_t maxTargetLen = (std::size_t)config_.getWafMaxTargetLen();
+        const std::size_t maxBodyBytes = (std::size_t)config_.getWafMaxBodyBytes();
+
+        // 1) Target length
+        if (req.target().size() > maxTargetLen)
             return false;
+
+        // 2) Fast target sanity: reject CRLF/NUL in URL
+        for (char c : req.target())
+        {
+            if (c == '\0' || c == '\r' || c == '\n')
+                return false;
         }
 
+        // 3) Suspicion gate (URL) - cheap
+        std::string_view target{req.target().data(), req.target().size()};
+        const bool suspicious_url =
+            target.find('<') != std::string_view::npos ||
+            icontains(target, "script") ||
+            icontains(target, "union") ||
+            icontains(target, "select") ||
+            icontains(target, "drop");
+
+        if (suspicious_url)
+        {
+            // Regex only if suspicious (rare path)
+            try
+            {
+                const std::string t(target);
+                if (std::regex_search(t, XSS_PATTERN))
+                    return false;
+            }
+            catch (...)
+            {
+                return false;
+            }
+        }
+
+        // 4) Body checks: only for mutating methods
+        const auto m = req.method();
+        const bool mutating =
+            (m == bhttp::verb::post || m == bhttp::verb::put ||
+             m == bhttp::verb::patch || m == bhttp::verb::delete_);
+
+        if (!mutating)
+            return true;
+
+        const std::string &body = req.body();
+        if (body.empty())
+            return true;
+
+        // limit scanning cost
+        if (body.size() > maxBodyBytes)
+            return false;
+
+        // strict mode: always do cheap keyword scan
+        // basic mode: do keyword scan only if body has suspicious characters/keywords
+        const bool cheap_trigger =
+            body.find('<') != std::string::npos ||
+            icontains(body, "union") || icontains(body, "select") ||
+            icontains(body, "drop") || icontains(body, "insert") ||
+            icontains(body, "delete") || icontains(body, "update");
+
+        if (mode == "basic" && !cheap_trigger)
+            return true;
+
+        // If strict OR basic+triggered: apply regex (rare-ish)
         try
         {
-            const std::string target{req.target().data(), req.target().size()};
-            if (std::regex_search(target, XSS_PATTERN))
-            {
-                log().log(Logger::Level::WARN, "[WAF] XSS pattern detected in URL");
+            if (std::regex_search(body, SQL_PATTERN))
                 return false;
-            }
-
-            if (!req.body().empty() && std::regex_search(req.body(), SQL_PATTERN))
-            {
-                log().log(Logger::Level::WARN, "[WAF] SQL injection attempt detected");
+            if (std::regex_search(body, XSS_PATTERN))
                 return false;
-            }
         }
-        catch (const std::regex_error &)
+        catch (...)
         {
-            log().log(Logger::Level::ERROR, "[WAF] Regex error during pattern check");
             return false;
         }
 

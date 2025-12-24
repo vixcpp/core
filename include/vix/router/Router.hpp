@@ -63,14 +63,21 @@ namespace vix::router
         std::shared_ptr<vix::vhttp::IRequestHandler> handler;
         bool isParam;
         std::string paramName;
+        bool heavy;
 
         RouteNode()
             : children{},
               handler{},
               isParam{false},
-              paramName{}
+              paramName{},
+              heavy{false}
         {
         }
+    };
+
+    struct RouteOptions
+    {
+        bool heavy{false}; // DB/CPU heavy => executor
     };
 
     /**
@@ -115,6 +122,14 @@ namespace vix::router
                        const std::string &path,
                        std::shared_ptr<vix::vhttp::IRequestHandler> handler)
         {
+            add_route(method, path, std::move(handler), RouteOptions{});
+        }
+
+        void add_route(http::verb method,
+                       const std::string &path,
+                       std::shared_ptr<vix::vhttp::IRequestHandler> handler,
+                       RouteOptions opt)
+        {
             std::string full_path = method_to_string(method) + path;
             auto *node = root_.get();
             size_t start = 0;
@@ -142,6 +157,7 @@ namespace vix::router
             }
 
             node->handler = std::move(handler);
+            node->heavy = opt.heavy; // ✅ NEW
         }
 
         /**
@@ -174,7 +190,8 @@ namespace vix::router
             }
 
             // Chemin complet utilisé pour la recherche dans le trie
-            std::string full_path = method_to_string(req.method()) + std::string(req.target());
+            std::string target = strip_query(std::string(req.target()));
+            std::string full_path = method_to_string(req.method()) + target;
 
             auto *node = root_.get();
             size_t start = 0;
@@ -220,7 +237,6 @@ namespace vix::router
                 return true;
             }
 
-            // --- Fallback 404 JSON ---
             if (notFound_)
             {
                 notFound_(req, res);
@@ -240,13 +256,23 @@ namespace vix::router
             return true; // handled (404)
         }
 
+        bool is_heavy(const http::request<http::string_body> &req) const
+        {
+            const RouteNode *node = match_node(req);
+            return node ? node->heavy : false;
+        }
+
+        static std::string strip_query(std::string target)
+        {
+            if (auto q = target.find('?'); q != std::string::npos)
+                target.resize(q);
+            return target;
+        }
+
     private:
         std::unique_ptr<RouteNode> root_;
         NotFoundHandler notFound_{};
 
-        /**
-         * @brief Convert HTTP verb to uppercase string used in the trie root.
-         */
         std::string method_to_string(http::verb method) const
         {
             switch (method)
@@ -272,6 +298,44 @@ namespace vix::router
             default:
                 return "OTHER";
             }
+        }
+
+        const RouteNode *match_node(const http::request<http::string_body> &req) const
+        {
+            if (req.method() == http::verb::options)
+                return nullptr;
+
+            std::string target = strip_query(std::string(req.target()));
+            std::string full_path = method_to_string(req.method()) + target;
+
+            const RouteNode *node = root_.get();
+            size_t start = 0;
+
+            while (start <= full_path.size() && node)
+            {
+                if (start == full_path.size())
+                    break;
+
+                size_t end = full_path.find('/', start);
+                if (end == std::string::npos)
+                    end = full_path.size();
+
+                std::string segment = full_path.substr(start, end - start);
+
+                if (node->children.count(segment))
+                    node = node->children.at(segment).get();
+                else if (node->children.count("*"))
+                    node = node->children.at("*").get();
+                else
+                    return nullptr;
+
+                start = end + 1;
+            }
+
+            if (node && node->handler)
+                return node;
+
+            return nullptr;
         }
     };
 

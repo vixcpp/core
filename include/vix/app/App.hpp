@@ -21,6 +21,7 @@
 #include <vix/server/HTTPServer.hpp>
 #include <vix/http/RequestHandler.hpp>
 #include <vix/utils/Logger.hpp>
+#include <vix/router/Router.hpp>
 
 #include <vix/executor/IExecutor.hpp>
 #include <vix/experimental/ThreadPoolExecutor.hpp>
@@ -101,6 +102,18 @@ namespace vix
             add_route(http::verb::options, path, std::move(handler));
         }
 
+        template <typename Handler>
+        void get_heavy(const std::string &path, Handler handler)
+        {
+            add_route(http::verb::get, path, std::move(handler), vix::router::RouteOptions{.heavy = true});
+        }
+
+        template <typename Handler>
+        void post_heavy(const std::string &path, Handler handler)
+        {
+            add_route(http::verb::post, path, std::move(handler), vix::router::RouteOptions{.heavy = true});
+        }
+
         vix::config::Config &config() noexcept { return config_; }
         std::shared_ptr<vix::router::Router> router() const noexcept { return router_; }
         vix::server::HTTPServer &server() noexcept { return server_; }
@@ -127,20 +140,29 @@ namespace vix
         template <typename Handler>
         void add_route(http::verb method, const std::string &path, Handler handler)
         {
+            add_route(method, path, std::move(handler), vix::router::RouteOptions{});
+        }
+
+        template <typename Handler>
+        void add_route(http::verb method,
+                       const std::string &path,
+                       Handler handler,
+                       vix::router::RouteOptions opt)
+        {
             auto &log = Logger::getInstance();
             if (!router_)
-            {
                 log.throwError("Router is not initialized in App");
-            }
 
             using Adapter = vix::vhttp::RequestHandler<Handler>;
             auto request_handler = std::make_shared<Adapter>(path, std::move(handler));
-            router_->add_route(method, path, request_handler);
+
+            router_->add_route(method, path, request_handler, opt);
 
             log.logf(Logger::Level::DEBUG,
                      "Route registered",
                      "method", static_cast<int>(method),
-                     "path", path.c_str());
+                     "path", path.c_str(),
+                     "heavy", opt.heavy ? "true" : "false");
         }
     };
 

@@ -164,9 +164,14 @@ namespace vix::server
 
     std::size_t HTTPServer::calculate_io_thread_count()
     {
-        const unsigned int hc = std::thread::hardware_concurrency();
-        const unsigned int v = (hc != 0u) ? (hc / 2u) : 1u;
-        return static_cast<std::size_t>(std::max(1u, v));
+        int forced = config_.getIOThreads();
+        if (forced > 0)
+            return static_cast<std::size_t>(forced);
+
+        unsigned int hc = std::thread::hardware_concurrency();
+        if (hc == 0)
+            hc = 1;
+        return static_cast<std::size_t>(hc);
     }
 
     void HTTPServer::start_accept()
@@ -174,19 +179,18 @@ namespace vix::server
         auto socket = std::make_shared<tcp::socket>(*io_context_);
         acceptor_->async_accept(*socket, [this, socket](boost::system::error_code ec)
                                 {
-            if (!ec && !stop_requested_)
-            {
-                auto timeout = std::chrono::milliseconds(config_.getRequestTimeout());
-              executor_->post([this, socket]() {
-                    handle_client(socket, router_);
-              }, vix::executor::TaskOptions{.priority = 1, .timeout = timeout});
-            }
-            if (!stop_requested_) start_accept(); });
+        if (!ec && !stop_requested_)
+        {
+            handle_client(socket);
+        }
+        if (!stop_requested_)
+            start_accept(); });
     }
 
-    void HTTPServer::handle_client(std::shared_ptr<tcp::socket> socket_ptr, std::shared_ptr<vix::router::Router> router)
+    void HTTPServer::handle_client(std::shared_ptr<tcp::socket> socket_ptr)
     {
-        auto session = std::make_shared<vix::session::Session>(socket_ptr, *router);
+        auto session = std::make_shared<vix::session::Session>(
+            socket_ptr, *router_, config_, executor_);
         session->run();
     }
 
