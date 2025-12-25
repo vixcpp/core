@@ -175,18 +175,23 @@ namespace vix::router
         bool handle_request(const http::request<http::string_body> &req,
                             http::response<http::string_body> &res)
         {
-            // CORS preflight
+            // CORS preflight (OPTIONS)
+            // If the app registered an OPTIONS route for this path, DO NOT auto-answer.
+            // Let the normal routing + middleware pipeline handle it (ex: strict CORS).
             if (req.method() == http::verb::options)
             {
-                res.result(http::status::no_content);
-                res.set(http::field::access_control_allow_origin, "*");
-                res.set(http::field::access_control_allow_methods,
-                        "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD");
-                res.set(http::field::access_control_allow_headers,
-                        "Content-Type, Authorization");
-                res.set(http::field::connection, "close");
-                res.prepare_payload();
-                return true;
+                const std::string target = strip_query(std::string(req.target()));
+
+                if (!has_route(http::verb::options, target))
+                {
+                    // Safe fallback: 204 with NO permissive CORS
+                    res.result(http::status::no_content);
+                    res.set(http::field::connection, "close");
+                    res.content_length(0);
+                    res.prepare_payload();
+                    return true;
+                }
+                // else: continue normal lookup below (will hit OPTIONS route handler)
             }
 
             // Chemin complet utilisé pour la recherche dans le trie
@@ -269,6 +274,38 @@ namespace vix::router
             return target;
         }
 
+        bool has_route(http::verb method, const std::string &path) const
+        {
+            std::string target = strip_query(path);
+            std::string full_path = method_to_string(method) + target;
+
+            const RouteNode *node = root_.get();
+            size_t start = 0;
+
+            while (start <= full_path.size() && node)
+            {
+                if (start == full_path.size())
+                    break;
+
+                size_t end = full_path.find('/', start);
+                if (end == std::string::npos)
+                    end = full_path.size();
+
+                std::string segment = full_path.substr(start, end - start);
+
+                if (node->children.count(segment))
+                    node = node->children.at(segment).get();
+                else if (node->children.count("*"))
+                    node = node->children.at("*").get();
+                else
+                    return false;
+
+                start = end + 1;
+            }
+
+            return node && node->handler;
+        }
+
     private:
         std::unique_ptr<RouteNode> root_;
         NotFoundHandler notFound_{};
@@ -302,9 +339,6 @@ namespace vix::router
 
         const RouteNode *match_node(const http::request<http::string_body> &req) const
         {
-            if (req.method() == http::verb::options)
-                return nullptr;
-
             std::string target = strip_query(std::string(req.target()));
             std::string full_path = method_to_string(req.method()) + target;
 
