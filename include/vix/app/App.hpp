@@ -129,10 +129,148 @@ namespace vix
         using Next = std::function<void()>;
         using Middleware = std::function<void(vix::vhttp::Request &, vix::vhttp::ResponseWrapper &, Next)>;
 
+        class Group
+        {
+        public:
+            Group(App &app, std::string prefix)
+                : app_(&app), prefix_(normalize_prefix(std::move(prefix)))
+            {
+            }
+
+            // Nested groups
+            template <class Fn>
+            void group(std::string sub, Fn fn)
+            {
+                Group g(*app_, join(prefix_, std::move(sub)));
+                fn(g);
+            }
+
+            // -------- Fluent middlewares --------
+            Group &use(Middleware mw)
+            {
+                app_->use(prefix_, std::move(mw));
+                return *this;
+            }
+
+            Group &protect(std::string sub_prefix, Middleware mw)
+            {
+                app_->protect(join(prefix_, std::move(sub_prefix)), std::move(mw));
+                return *this;
+            }
+
+            Group &protect_exact(std::string sub_path, Middleware mw)
+            {
+                app_->protect_exact(join(prefix_, std::move(sub_path)), std::move(mw));
+                return *this;
+            }
+
+            // -------- Routes --------
+            template <typename Handler>
+            void get(const std::string &path, Handler handler)
+            {
+                app_->get(join(prefix_, path), std::move(handler));
+            }
+
+            template <typename Handler>
+            void post(const std::string &path, Handler handler)
+            {
+                app_->post(join(prefix_, path), std::move(handler));
+            }
+
+            template <typename Handler>
+            void put(const std::string &path, Handler handler)
+            {
+                app_->put(join(prefix_, path), std::move(handler));
+            }
+
+            template <typename Handler>
+            void patch(const std::string &path, Handler handler)
+            {
+                app_->patch(join(prefix_, path), std::move(handler));
+            }
+
+            template <typename Handler>
+            void del(const std::string &path, Handler handler)
+            {
+                app_->del(join(prefix_, path), std::move(handler));
+            }
+
+        private:
+            static std::string normalize_prefix(std::string p)
+            {
+                if (p.empty())
+                    return "";
+
+                if (p.front() != '/')
+                    p.insert(p.begin(), '/');
+
+                while (p.size() > 1 && p.back() == '/')
+                    p.pop_back();
+
+                return p;
+            }
+
+            static std::string join(std::string base, std::string sub)
+            {
+                base = normalize_prefix(std::move(base));
+
+                if (sub.empty())
+                    return base;
+
+                if (sub.front() != '/')
+                    sub.insert(sub.begin(), '/');
+
+                while (sub.size() > 1 && sub.back() == '/')
+                    sub.pop_back();
+
+                if (base.empty())
+                    return sub;
+
+                return base + sub;
+            }
+
+        private:
+            App *app_{nullptr};
+            std::string prefix_;
+        };
+
+        // Callback style (Express)
+        template <class Fn>
+        void group(std::string prefix, Fn fn)
+        {
+            Group g(*this, std::move(prefix));
+            fn(g);
+        }
+
+        // Builder / fluent style (FastAPI-like)
+        Group group(std::string prefix)
+        {
+            return Group(*this, std::move(prefix));
+        }
+
         // Global middleware
         void use(Middleware mw);
         // Scoped middleware by path prefix (ex: "/api/")
         void use(std::string prefix, Middleware mw);
+
+        // Protect a path prefix (alias of use(prefix, mw))
+        void protect(std::string prefix, Middleware mw)
+        {
+            use(normalize_prefix(std::move(prefix)), std::move(mw));
+        }
+
+        // Protect an exact path (runs mw only when req.path() == path)
+        void protect_exact(std::string path, Middleware mw)
+        {
+            std::string match = normalize_prefix(std::move(path));
+            // prefix-scoped first (fast path), then exact check
+            use(match, [mw = std::move(mw), match](vix::vhttp::Request &req,
+                                                   vix::vhttp::ResponseWrapper &res,
+                                                   Next next) mutable
+                {
+        if (req.path() == match) mw(req, res, std::move(next));
+        else next(); });
+        }
 
     private:
         vix::config::Config &config_;
@@ -181,8 +319,6 @@ namespace vix
             auto chain = collect_middlewares_for_(path);
             auto final = std::move(handler);
 
-            // ✅ wrapped MUST be a ValidHandler for RequestHandler
-            // => choose: (Request&, ResponseWrapper&)
             auto wrapped = [chain = std::move(chain), final = std::move(final)](
                                vix::vhttp::Request &req,
                                vix::vhttp::ResponseWrapper &res) mutable
@@ -211,6 +347,11 @@ namespace vix
             auto request_handler = std::make_shared<Adapter>(path, std::move(wrapped));
 
             router_->add_route(method, path, request_handler, opt);
+
+            if (method != http::verb::options)
+            {
+                ensure_options_route_for_path_(path);
+            }
 
             log.logf(Logger::Level::DEBUG,
                      "Route registered",
@@ -248,6 +389,58 @@ namespace vix
             };
 
             chain[i](req, res, std::move(next));
+        }
+
+        static std::string normalize_prefix(std::string p)
+        {
+            if (p.empty())
+                return "";
+            if (p.front() != '/')
+                p.insert(p.begin(), '/');
+            while (p.size() > 1 && p.back() == '/')
+                p.pop_back();
+            return p;
+        }
+
+        void ensure_options_route_for_path_(const std::string &path)
+        {
+            if (!router_)
+                return;
+
+            // Already exists => do nothing
+            if (router_->has_route(http::verb::options, path))
+                return;
+
+            // Build middleware chain for THIS path (same as other routes)
+            auto chain = collect_middlewares_for_(path);
+
+            // OPTIONS handler: run middleware chain, then if nothing responded => 204
+            auto wrapped = [chain = std::move(chain)](
+                               vix::vhttp::Request &req,
+                               vix::vhttp::ResponseWrapper &res) mutable
+            {
+                std::function<void()> final_handler = [&]()
+                {
+                    // If middleware already produced a response (body or status), do nothing.
+                    // Else return 204.
+                    if (res.res.result() == http::status::unknown && res.res.body().empty())
+                    {
+                        res.status(204).send();
+                    }
+                    else if (res.res.result() == http::status::unknown)
+                    {
+                        // Status unknown but body present => finalize
+                        res.send();
+                    }
+                };
+
+                run_middleware_chain_(chain, 0, req, res, final_handler);
+            };
+
+            using Adapter = vix::vhttp::RequestHandler<decltype(wrapped)>;
+            auto request_handler = std::make_shared<Adapter>(path, std::move(wrapped));
+
+            router_->add_route(http::verb::options, path, request_handler, vix::router::RouteOptions{});
         }
     };
 
