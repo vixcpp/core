@@ -4,6 +4,7 @@
 #include <vix/utils/Env.hpp>
 #include <vix/utils/Logger.hpp>
 #include <vix/utils/ServerPrettyLogs.hpp>
+#include <vix/utils/ScopeGuard.hpp>
 
 #include <boost/beast/http.hpp>
 
@@ -12,9 +13,62 @@
 #include <exception>
 #include <string>
 #include <thread>
+#include <atomic>
 
 namespace
 {
+    static std::atomic<std::uint64_t> g_rid_seq{0};
+
+    static std::string make_rid()
+    {
+        const auto n = g_rid_seq.fetch_add(1, std::memory_order_relaxed) + 1;
+        return "r-" + std::to_string(n);
+    }
+
+    static void install_access_logs(vix::App &app)
+    {
+        app.use([](vix::vhttp::Request &req,
+                   vix::vhttp::ResponseWrapper &res,
+                   vix::App::Next next)
+                {
+        auto& log = vix::utils::Logger::getInstance();
+
+        if (!vix::utils::env_bool("VIX_ACCESS_LOGS", true))
+        {
+            next();
+            return;
+        }
+
+        const auto prev = log.getContext();
+
+        auto restore = vix::utils::make_scope_guard([&log, prev]() mutable {
+            log.setContext(std::move(prev));
+        });
+
+        using clock = std::chrono::steady_clock;
+        const auto t0 = clock::now();
+
+        vix::utils::Logger::Context ctx;
+        ctx.request_id = make_rid();
+        ctx.module = "http";
+        ctx.fields["path"]   = req.path();
+        ctx.fields["method"] = req.method();
+
+        log.setContext(std::move(ctx));
+
+        next();
+
+        const auto t1 = clock::now();
+        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+
+        const unsigned int status = res.res.result_int();
+
+        log.logf(vix::utils::Logger::Level::INFO,
+                 "request_done",
+                 "status", status,
+                 "duration_ms", static_cast<long long>(ms)); });
+    }
+
     vix::utils::Logger::Level parse_log_level_from_env()
     {
         using Level = vix::utils::Logger::Level;
@@ -93,8 +147,8 @@ namespace vix
     {
         auto &log = Logger::getInstance();
 
-        log.setPattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
-        log.setLevel(parse_log_level_from_env());
+        log.setLevelFromEnv("VIX_LOG_LEVEL");
+        log.setFormatFromEnv("VIX_LOG_FORMAT");
 
         if (vix::utils::env_bool("VIX_LOG_ASYNC", true))
         {
@@ -105,12 +159,6 @@ namespace vix
         {
             log.setAsync(false);
             log.log(Logger::Level::DEBUG, "Logger initialized in SYNC mode");
-        }
-
-        if (!vix::utils::env_bool("VIX_INTERNAL_LOGS", false))
-        {
-            // Le CLI/bannière gèrent l'affichage. On coupe les logs internes.
-            log.setLevel(Logger::Level::CRITICAL);
         }
 
         Logger::Context ctx;
@@ -125,6 +173,7 @@ namespace vix
                 log.throwError("Failed to get Router from HTTPServer");
             }
 
+            install_access_logs(*this);
             register_bench_route(*router_);
         }
         catch (const std::exception &e)
@@ -167,8 +216,7 @@ namespace vix
         }
         else
         {
-            // Le CLI s’occupe déjà d'afficher.
-            log.setLevel(Logger::Level::CRITICAL); // quasi muet
+            log.setLevel(Logger::Level::CRITICAL);
         }
 
         Logger::Context ctx;
@@ -181,6 +229,7 @@ namespace vix
             if (!router_)
                 log.throwError("Failed to get Router from HTTPServer");
 
+            install_access_logs(*this);
             register_bench_route(*router_);
         }
         catch (const std::exception &e)
@@ -191,7 +240,6 @@ namespace vix
 
     App::~App()
     {
-        // Additive safety: if user used listen() and forgot close(), we avoid a running thread.
         close();
     }
 
@@ -200,7 +248,6 @@ namespace vix
         stop_requested_.store(true, std::memory_order_relaxed);
         stop_cv_.notify_one();
 
-        // ask server to stop (idempotent)
         server_.stop_async();
     }
 
@@ -214,12 +261,10 @@ namespace vix
     void App::listen(int port, ListenCallback on_listen)
     {
         using clock = std::chrono::steady_clock;
-
         auto &log = Logger::getInstance();
 
         if (started_.exchange(true, std::memory_order_relaxed))
         {
-            // si tu veux 0 logs, tu peux juste return;
             log.log(Logger::Level::WARN, "App::listen() called but server is already running");
             return;
         }
@@ -238,8 +283,6 @@ namespace vix
         server_thread_ = std::thread([this]()
                                      { server_.run(); });
 
-        log.log(Logger::Level::DEBUG, "[http] listen() called port={}", port);
-
         const auto t1 = clock::now();
         int ready_ms = static_cast<int>(
             std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
@@ -250,10 +293,8 @@ namespace vix
         info.app = "vix";
         info.version = "Vix.cpp v1.16.2";
         info.ready_ms = ready_ms;
-        // Source de vérité: runtime/CLI
         info.mode = dev_mode_ ? "dev" : "run";
 
-        // Optionnel: permettre override explicite
         if (const char *v = std::getenv("VIX_MODE"); v && *v)
             info.mode = vix::utils::RuntimeBanner::mode_from_env();
 
@@ -261,7 +302,6 @@ namespace vix
         info.host = "localhost";
         info.port = port;
         info.base_path = "/";
-
         info.show_ws = false;
 
         if (auto *tp = dynamic_cast<vix::experimental::ThreadPoolExecutor *>(executor_.get()))
@@ -277,12 +317,20 @@ namespace vix
         }
 
         if (on_listen)
-        {
             on_listen(info);
-            return;
+        else
+            vix::utils::RuntimeBanner::emit_server_ready(info);
+
+        if (vix::utils::env_bool("VIX_STARTUP_LOGS", true))
+        {
+            log.logf(Logger::Level::INFO,
+                     "server_start",
+                     "host", "0.0.0.0",
+                     "port", port,
+                     "mode", (dev_mode_ ? "dev" : "run"));
         }
 
-        vix::utils::RuntimeBanner::emit_server_ready(info);
+        log.log(Logger::Level::DEBUG, "[http] listen() called port={}", port);
     }
 
     void App::wait()
