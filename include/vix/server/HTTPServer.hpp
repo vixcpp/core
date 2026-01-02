@@ -73,7 +73,6 @@
 #include <vector>
 #include <system_error>
 #include <boost/system/error_code.hpp>
-#include <boost/filesystem.hpp>
 #include <atomic>
 #include <cstring>
 

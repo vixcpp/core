@@ -320,17 +320,6 @@ namespace vix
             on_listen(info);
         else
             vix::utils::RuntimeBanner::emit_server_ready(info);
-
-        if (vix::utils::env_bool("VIX_STARTUP_LOGS", true))
-        {
-            log.logf(Logger::Level::INFO,
-                     "server_start",
-                     "host", "0.0.0.0",
-                     "port", port,
-                     "mode", (dev_mode_ ? "dev" : "run"));
-        }
-
-        log.log(Logger::Level::DEBUG, "[http] listen() called port={}", port);
     }
 
     void App::wait()
