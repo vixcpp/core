@@ -300,7 +300,7 @@ namespace vix
 
         info.scheme = "http";
         info.host = "localhost";
-        info.port = port;
+        info.port = config_.getServerPort();
         info.base_path = "/";
         info.show_ws = false;
 
