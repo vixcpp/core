@@ -126,10 +126,6 @@ endfunction()
 if (CORE_SOURCES)
   message(STATUS "[core] Building STATIC library with detected sources.")
 
-  # Required runtime deps when compiling sources
-  find_package(Boost 1.78 REQUIRED COMPONENTS filesystem system)
-  # NOTE: no spdlog lookup in core (logger is owned by vix::utils)
-
   if (VIX_CORE_WITH_OPENSSL)
     find_package(OpenSSL REQUIRED)
   endif()
@@ -161,8 +157,6 @@ if (CORE_SOURCES)
   target_link_libraries(vix_core
     PUBLIC
       ${VIX_UTILS_TARGET}
-      Boost::filesystem
-      Boost::system
   )
 
   # JSON (optional: AUTO/ON/OFF)
