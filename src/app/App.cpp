@@ -27,46 +27,44 @@ namespace
 
     static void install_access_logs(vix::App &app)
     {
-        app.use([](vix::vhttp::Request &req,
-                   vix::vhttp::ResponseWrapper &res,
-                   vix::App::Next next)
+        app.use(
+            [](vix::vhttp::Request &req,
+               vix::vhttp::ResponseWrapper &res,
+               vix::App::Next next)
+            {
+                auto &log = vix::utils::Logger::getInstance();
+
+                static const bool kAccessLogs = vix::utils::env_bool("VIX_ACCESS_LOGS", true);
+                if (!kAccessLogs)
                 {
-        auto& log = vix::utils::Logger::getInstance();
+                    next();
+                    return;
+                }
 
-        if (!vix::utils::env_bool("VIX_ACCESS_LOGS", true))
-        {
-            next();
-            return;
-        }
+                if (!log.enabled(vix::utils::Logger::Level::DEBUG))
+                {
+                    next();
+                    return;
+                }
 
-        const auto prev = log.getContext();
+                using clock = std::chrono::steady_clock;
+                const auto t0 = clock::now();
 
-        auto restore = vix::utils::make_scope_guard([&log, prev]() mutable {
-            log.setContext(std::move(prev));
-        });
+                const auto rid = g_rid_seq.fetch_add(1, std::memory_order_relaxed) + 1;
 
-        using clock = std::chrono::steady_clock;
-        const auto t0 = clock::now();
+                next();
 
-        vix::utils::Logger::Context ctx;
-        ctx.request_id = make_rid();
-        ctx.module = "http";
-        ctx.fields["path"]   = req.path();
-        ctx.fields["method"] = req.method();
+                const auto t1 = clock::now();
+                const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+                const unsigned int status = res.res.result_int();
 
-        log.setContext(std::move(ctx));
-
-        next();
-
-        const auto t1 = clock::now();
-        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
-
-        const unsigned int status = res.res.result_int();
-
-        log.logf(vix::utils::Logger::Level::INFO,
-                 "request_done",
-                 "status", status,
-                 "duration_ms", static_cast<long long>(ms)); });
+                log.logf(vix::utils::Logger::Level::DEBUG,
+                         "request_done",
+                         "rid", static_cast<unsigned long long>(rid),
+                         "method", req.method(),
+                         "path", req.path(),
+                         "status", status,
+                         "duration_ms", static_cast<long long>(ms)); });
     }
 
     vix::utils::Logger::Level parse_log_level_from_env()
@@ -300,7 +298,7 @@ namespace vix
 
         info.scheme = "http";
         info.host = "localhost";
-        info.port = port;
+        info.port = config_.getServerPort();
         info.base_path = "/";
         info.show_ws = false;
 

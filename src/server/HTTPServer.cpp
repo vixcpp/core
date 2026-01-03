@@ -71,15 +71,6 @@ namespace vix::server
                     res.prepare_payload();
                 });
 
-            int port = config_.getServerPort();
-            if (port < 1024 || port > 65535)
-            {
-                log.log(Logger::Level::ERROR, "Server port {} out of range (1024-65535)", port);
-                throw std::invalid_argument("Invalid port number");
-            }
-
-            init_acceptor(static_cast<unsigned short>(port));
-
             log.log(Logger::Level::DEBUG,
                     "[http] config timeout={}ms",
                     config_.getRequestTimeout());
@@ -157,6 +148,20 @@ namespace vix::server
 
     void HTTPServer::run()
     {
+        auto &log = Logger::getInstance();
+
+        if (!acceptor_ || !acceptor_->is_open())
+        {
+            int port = config_.getServerPort();
+            if (port < 1024 || port > 65535)
+            {
+                log.log(Logger::Level::ERROR, "Server port {} out of range (1024-65535)", port);
+                throw std::invalid_argument("Invalid port number");
+            }
+
+            init_acceptor(static_cast<unsigned short>(port));
+        }
+
         start_accept();
         monitor_metrics();
         start_io_threads();
