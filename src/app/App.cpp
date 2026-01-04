@@ -19,12 +19,6 @@ namespace
 {
     static std::atomic<std::uint64_t> g_rid_seq{0};
 
-    static std::string make_rid()
-    {
-        const auto n = g_rid_seq.fetch_add(1, std::memory_order_relaxed) + 1;
-        return "r-" + std::to_string(n);
-    }
-
     static void install_access_logs(vix::App &app)
     {
         app.use(
