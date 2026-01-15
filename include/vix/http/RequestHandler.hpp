@@ -654,8 +654,8 @@ namespace vix::vhttp
             if (code < 100 || code > 599)
             {
 #ifndef NDEBUG
-                assert(false && "Invalid HTTP status code [100..599]");
-                throw std::range_error(
+                // assert(false && "Invalid HTTP status code [100..599]");
+                throw std::runtime_error(
                     "Invalid HTTP status code: " + std::to_string(code) +
                     ". Status code must be between 100 and 599.");
 #else

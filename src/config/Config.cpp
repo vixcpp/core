@@ -218,7 +218,6 @@ namespace vix::config
         if (port < 1024 || port > 65535)
             log.throwError("Server port out of range (1024-65535).");
         server_port = port;
-        log.log(Logger::Level::DEBUG, "Server port set to {}", std::to_string(port));
     }
 
     bool Config::has(const std::string &dottedKey) const noexcept
