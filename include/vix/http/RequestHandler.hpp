@@ -26,6 +26,11 @@ namespace vix::vhttp
   namespace http = boost::beast::http;
   using RawRequest = http::request<http::string_body>;
 
+  inline vix::utils::Logger &log()
+  {
+    return vix::utils::Logger::getInstance();
+  }
+
   inline std::unordered_map<std::string, std::string>
   extract_params_from_path(const std::string &pattern, std::string_view path)
   {
@@ -323,11 +328,10 @@ namespace vix::vhttp
 
       catch (const std::range_error &e)
       {
-        auto &log = vix::utils::Logger::getInstance();
-        log.log(vix::utils::Logger::Level::ERROR,
-                "Route '{}' threw range_error: {} (method={}, path={})",
-                route_pattern_, e.what(),
-                std::string(rawReq.method_string()), std::string(rawReq.target()));
+        log().log(vix::utils::Logger::Level::ERROR,
+                  "Route '{}' threw range_error: {} (method={}, path={})",
+                  route_pattern_, e.what(),
+                  std::string(rawReq.method_string()), std::string(rawReq.target()));
 
 #ifndef NDEBUG
         res.result(http::status::internal_server_error);
@@ -349,11 +353,10 @@ namespace vix::vhttp
       }
       catch (const std::exception &e)
       {
-        auto &log = vix::utils::Logger::getInstance();
-        log.log(vix::utils::Logger::Level::ERROR,
-                "Route '{}' threw exception: {} (method={}, path={})",
-                route_pattern_, e.what(),
-                std::string(rawReq.method_string()), std::string(rawReq.target()));
+        log().log(vix::utils::Logger::Level::ERROR,
+                  "Route '{}' threw exception: {} (method={}, path={})",
+                  route_pattern_, e.what(),
+                  std::string(rawReq.method_string()), std::string(rawReq.target()));
 
 #ifndef NDEBUG
         res.result(http::status::internal_server_error);
@@ -377,9 +380,10 @@ namespace vix::vhttp
     Handler handler_;
 
     template <class T>
-    static void maybe_auto_send(ResponseWrapper &wrapped,
-                                http::response<http::string_body> &res,
-                                T &&value)
+    static void maybe_auto_send(
+        ResponseWrapper &wrapped,
+        http::response<http::string_body> &res,
+        T &&value)
     {
       if (!res.body().empty())
         return;

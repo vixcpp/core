@@ -48,6 +48,11 @@ namespace vix
   namespace http = boost::beast::http;
   using Logger = vix::utils::Logger;
 
+  inline Logger &log()
+  {
+    return Logger::getInstance();
+  }
+
   class App
   {
   public:
@@ -306,9 +311,8 @@ namespace vix
                    Handler handler,
                    vix::router::RouteOptions opt)
     {
-      auto &log = Logger::getInstance();
       if (!router_)
-        log.throwError("Router is not initialized in App");
+        log().throwError("Router is not initialized in App");
 
       static_assert(is_facade_handler_v<Handler> || is_raw_handler_v<Handler>,
                     "Invalid handler: expected (vix::vhttp::Request&, ResponseWrapper&) "
@@ -350,17 +354,11 @@ namespace vix
       {
         ensure_options_route_for_path_(path);
       }
-
-      log.logf(Logger::Level::DEBUG,
-               "Route registered",
-               "method", static_cast<int>(method),
-               "path", path.c_str(),
-               "heavy", opt.heavy ? "true" : "false");
     }
 
     struct MiddlewareEntry
     {
-      std::string prefix; // empty => global
+      std::string prefix;
       Middleware mw;
     };
 

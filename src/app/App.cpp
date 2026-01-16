@@ -32,6 +32,11 @@ namespace
 {
   static std::atomic<std::uint64_t> g_rid_seq{0};
 
+  inline vix::utils::Logger &log()
+  {
+    return vix::utils::Logger::getInstance();
+  }
+
   static void install_access_logs(vix::App &app)
   {
     app.use(
@@ -39,8 +44,6 @@ namespace
            vix::vhttp::ResponseWrapper &res,
            vix::App::Next next)
         {
-          auto &log = vix::utils::Logger::getInstance();
-
           static const bool kAccessLogs = vix::utils::env_bool("VIX_ACCESS_LOGS", true);
           if (!kAccessLogs)
           {
@@ -48,7 +51,7 @@ namespace
             return;
           }
 
-          if (!log.enabled(vix::utils::Logger::Level::DEBUG))
+          if (!log().enabled(vix::utils::Logger::Level::DEBUG))
           {
             next();
             return;
@@ -64,7 +67,7 @@ namespace
           const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
           const unsigned int status = res.res.result_int();
 
-          log.logf(
+          log().logf(
               vix::utils::Logger::Level::DEBUG,
               "request_done",
               "rid", static_cast<unsigned long long>(rid),
@@ -150,30 +153,28 @@ namespace vix
             /*defaultPriority*/ 1)),
         server_(config_, executor_)
   {
-    auto &log = Logger::getInstance();
-
-    log.setLevelFromEnv("VIX_LOG_LEVEL");
-    log.setFormatFromEnv("VIX_LOG_FORMAT");
+    log().setLevelFromEnv("VIX_LOG_LEVEL");
+    log().setFormatFromEnv("VIX_LOG_FORMAT");
 
     if (vix::utils::env_bool("VIX_LOG_ASYNC", true))
     {
-      log.setAsync(true);
+      log().setAsync(true);
     }
     else
     {
-      log.setAsync(false);
+      log().setAsync(false);
     }
 
     Logger::Context ctx;
     ctx.module = "App";
-    log.setContext(ctx);
+    log().setContext(ctx);
 
     try
     {
       router_ = server_.getRouter();
       if (!router_)
       {
-        log.throwError("Failed to get Router from HTTPServer");
+        log().throwError("Failed to get Router from HTTPServer");
       }
 
       install_access_logs(*this);
@@ -181,7 +182,7 @@ namespace vix
     }
     catch (const std::exception &e)
     {
-      log.throwError("Failed to initialize App: {}", e.what());
+      log().throwError("Failed to initialize App: {}", e.what());
     }
   }
 
@@ -191,51 +192,49 @@ namespace vix
         executor_(std::move(executor)),
         server_(config_, executor_)
   {
-    auto &log = Logger::getInstance();
-
     if (!executor_)
     {
-      log.throwError("App: executor cannot be null");
+      log().throwError("App: executor cannot be null");
     }
 
-    log.setPattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
-    log.setLevel(parse_log_level_from_env());
+    log().setPattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
+    log().setLevel(parse_log_level_from_env());
 
     if (vix::utils::env_bool("VIX_LOG_ASYNC", true))
     {
-      log.setAsync(true);
+      log().setAsync(true);
     }
     else
     {
-      log.setAsync(false);
+      log().setAsync(false);
     }
 
     if (vix::utils::env_bool("VIX_INTERNAL_LOGS", false))
     {
-      log.setPattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
-      log.setLevel(parse_log_level_from_env());
+      log().setPattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
+      log().setLevel(parse_log_level_from_env());
     }
     else
     {
-      log.setLevel(Logger::Level::CRITICAL);
+      log().setLevel(Logger::Level::CRITICAL);
     }
 
     Logger::Context ctx;
     ctx.module = "App";
-    log.setContext(ctx);
+    log().setContext(ctx);
 
     try
     {
       router_ = server_.getRouter();
       if (!router_)
-        log.throwError("Failed to get Router from HTTPServer");
+        log().throwError("Failed to get Router from HTTPServer");
 
       install_access_logs(*this);
       register_bench_route(*router_);
     }
     catch (const std::exception &e)
     {
-      log.throwError("Failed to initialize App: {}", e.what());
+      log().throwError("Failed to initialize App: {}", e.what());
     }
   }
 
@@ -262,11 +261,10 @@ namespace vix
   void App::listen(int port, ListenCallback on_listen)
   {
     using clock = std::chrono::steady_clock;
-    auto &log = Logger::getInstance();
 
     if (started_.exchange(true, std::memory_order_relaxed))
     {
-      log.log(Logger::Level::WARN, "App::listen() called but server is already running");
+      log().log(Logger::Level::WARN, "App::listen() called but server is already running");
       return;
     }
 
@@ -292,8 +290,8 @@ namespace vix
       ready_ms = 1;
 
     vix::utils::ServerReadyInfo info;
-    info.app = "vix";
-    info.version = "Vix.cpp v1.16.2";
+    info.app = "vix.cpp";
+    info.version = "v1.16.2";
     info.ready_ms = ready_ms;
     info.mode = dev_mode_ ? "dev" : "run";
 
@@ -327,8 +325,9 @@ namespace vix
   void App::wait()
   {
     std::unique_lock<std::mutex> lock(stop_mutex_);
-    stop_cv_.wait(lock, [this]()
-                  { return stop_requested_.load(std::memory_order_relaxed); });
+    stop_cv_.wait(
+        lock, [this]()
+        { return stop_requested_.load(std::memory_order_relaxed); });
   }
 
   void App::close()
@@ -341,8 +340,6 @@ namespace vix
     stop_requested_.store(true, std::memory_order_relaxed);
     stop_cv_.notify_one();
 
-    auto &log = Logger::getInstance();
-
     if (shutdown_cb_)
     {
       try
@@ -351,11 +348,11 @@ namespace vix
       }
       catch (const std::exception &e)
       {
-        log.log(Logger::Level::ERROR, "Shutdown callback threw: {}", e.what());
+        log().log(Logger::Level::ERROR, "Shutdown callback threw: {}", e.what());
       }
       catch (...)
       {
-        log.log(Logger::Level::ERROR, "Shutdown callback threw unknown exception");
+        log().log(Logger::Level::ERROR, "Shutdown callback threw unknown exception");
       }
     }
 
@@ -370,7 +367,7 @@ namespace vix
     g_app_ptr.store(nullptr, std::memory_order_relaxed);
     started_.store(false, std::memory_order_relaxed);
 
-    log.log(Logger::Level::DEBUG, "Application shutdown complete");
+    log().log(Logger::Level::DEBUG, "Application shutdown complete");
   }
 
   void App::run(int port)

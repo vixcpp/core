@@ -41,6 +41,11 @@ namespace vix::server
 {
   using Logger = vix::utils::Logger;
 
+  inline Logger &log()
+  {
+    return Logger::getInstance();
+  }
+
   void set_affinity(std::size_t thread_index)
   {
 #ifdef __linux__
@@ -69,7 +74,6 @@ namespace vix::server
         stop_requested_(false),
         startup_t0_(std::chrono::steady_clock::now())
   {
-    auto &log = Logger::getInstance();
     try
     {
       router_->setNotFoundHandler(
@@ -100,7 +104,7 @@ namespace vix::server
     }
     catch (const std::exception &e)
     {
-      log.log(Logger::Level::ERROR, "Error initializing HTTPServer: {}", e.what());
+      log().log(Logger::Level::ERROR, "Error initializing HTTPServer: {}", e.what());
       throw;
     }
   }
@@ -109,7 +113,6 @@ namespace vix::server
 
   void HTTPServer::init_acceptor(unsigned short port)
   {
-    auto &log = Logger::getInstance();
     acceptor_ = std::make_unique<tcp::acceptor>(*io_context_);
     boost::system::error_code ec;
 
@@ -167,14 +170,12 @@ namespace vix::server
 
   void HTTPServer::run()
   {
-    auto &log = Logger::getInstance();
-
     if (!acceptor_ || !acceptor_->is_open())
     {
       int port = config_.getServerPort();
       if (port < 1024 || port > 65535)
       {
-        log.log(Logger::Level::ERROR, "Server port {} out of range (1024-65535)", port);
+        log().log(Logger::Level::ERROR, "Server port {} out of range (1024-65535)", port);
         throw std::invalid_argument("Invalid port number");
       }
 

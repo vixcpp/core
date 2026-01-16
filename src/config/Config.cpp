@@ -32,6 +32,11 @@ namespace vix::config
   using json = nlohmann::json;
   using Logger = vix::utils::Logger;
 
+  inline Logger &log()
+  {
+    return Logger::getInstance();
+  }
+
   Config::Config(const fs::path &configPath)
       : configPath_(configPath),
         db_host(DEFAULT_DB_HOST), db_user(DEFAULT_DB_USER), db_pass(DEFAULT_DB_PASS),
@@ -39,7 +44,6 @@ namespace vix::config
         server_port(DEFAULT_SERVER_PORT), request_timeout(DEFAULT_REQUEST_TIMEOUT),
         rawConfig_(nlohmann::json::object()), io_threads_(DEFAULT_IO_THREADS), log_async_(DEFAULT_LOG_ASYNC), log_queue_max_(DEFAULT_LOG_QUEUE_MAX), log_drop_on_overflow_(DEFAULT_LOG_DROP_ON_OVERFLOW), waf_mode_(DEFAULT_WAF_MODE), waf_max_target_len_(DEFAULT_WAF_MAX_TARGET_LEN), waf_max_body_bytes_(DEFAULT_WAF_MAX_BODY_BYTES)
   {
-    auto &log = vix::utils::Logger::getInstance();
     std::vector<fs::path> candidate_paths;
 
     if (!configPath.empty())
@@ -82,7 +86,7 @@ namespace vix::config
 
     if (!found)
     {
-      log.log(Logger::Level::DEBUG, "No config file found. Using default settings.");
+      log().log(Logger::Level::DEBUG, "No config file found. Using default settings.");
       return;
     }
 
@@ -97,17 +101,15 @@ namespace vix::config
 
   void Config::loadConfig()
   {
-    auto &log = Logger::getInstance();
-
     if (configPath_.empty() || !fs::exists(configPath_))
     {
-      log.log(Logger::Level::DEBUG, "No config file found. Using default settings.");
+      log().log(Logger::Level::DEBUG, "No config file found. Using default settings.");
       return;
     }
 
     std::ifstream file(configPath_, std::ios::in | std::ios::binary);
     if (!file.is_open())
-      log.throwError(fmt::format("Unable to open configuration file: {}", configPath_.string()));
+      log().throwError(fmt::format("Unable to open configuration file: {}", configPath_.string()));
 
     json cfg;
     try
@@ -116,7 +118,7 @@ namespace vix::config
     }
     catch (const json::parse_error &e)
     {
-      log.throwError(fmt::format("JSON parsing error in config file: {}", e.what()));
+      log().throwError(fmt::format("JSON parsing error in config file: {}", e.what()));
     }
 
     rawConfig_ = cfg;
@@ -136,22 +138,16 @@ namespace vix::config
       const auto &server = cfg["server"];
       server_port = server.value("port", DEFAULT_SERVER_PORT);
       request_timeout = server.value("request_timeout", DEFAULT_REQUEST_TIMEOUT);
-
-      // NEW
       io_threads_ = server.value("io_threads", DEFAULT_IO_THREADS);
     }
     else
     {
-      // fallback via dotted path (si jamais tu changes de schema)
       io_threads_ = getInt("server.io_threads", DEFAULT_IO_THREADS);
     }
 
-    // NEW: logging
     log_async_ = getBool("logging.async", DEFAULT_LOG_ASYNC);
     log_queue_max_ = getInt("logging.queue_max", DEFAULT_LOG_QUEUE_MAX);
     log_drop_on_overflow_ = getBool("logging.drop_on_overflow", DEFAULT_LOG_DROP_ON_OVERFLOW);
-
-    // NEW: waf
     waf_mode_ = getString("waf.mode", DEFAULT_WAF_MODE);
     waf_max_target_len_ = getInt("waf.max_target_len", DEFAULT_WAF_MAX_TARGET_LEN);
     waf_max_body_bytes_ = getInt("waf.max_body_bytes", DEFAULT_WAF_MAX_BODY_BYTES);
@@ -182,21 +178,18 @@ namespace vix::config
 
   std::string Config::getDbPasswordFromEnv()
   {
-    auto &log = Logger::getInstance();
     if (const char *password = std::getenv("DB_PASSWORD"))
     {
-      log.log(Logger::Level::DEBUG, "Using DB_PASSWORD from environment.");
+      log().log(Logger::Level::DEBUG, "Using DB_PASSWORD from environment.");
       return password;
     }
-    log.log(Logger::Level::DEBUG, "No DB_PASSWORD found in environment; using config/default password.");
+    log().log(Logger::Level::DEBUG, "No DB_PASSWORD found in environment; using config/default password.");
     return db_pass;
   }
 
 #if VIX_CORE_WITH_MYSQL
   std::shared_ptr<sql::Connection> Config::getDbConnection()
   {
-    auto &log = Logger::getInstance();
-
     sql::Driver *driver = sql::mysql::get_driver_instance();
 
     const std::string host = "tcp://" + db_host + ":" + std::to_string(db_port);
@@ -207,7 +200,7 @@ namespace vix::config
     if (!db_name.empty())
       con->setSchema(db_name);
 
-    log.log(Logger::Level::DEBUG, "Database connection established (host={}, db={}).", host, db_name);
+    log().log(Logger::Level::DEBUG, "Database connection established (host={}, db={}).", host, db_name);
     return con;
   }
 #endif // VIX_CORE_WITH_MYSQL
@@ -221,9 +214,8 @@ namespace vix::config
 
   void Config::setServerPort(int port)
   {
-    auto &log = Logger::getInstance();
     if (port < 1024 || port > 65535)
-      log.throwError("Server port out of range (1024-65535).");
+      log().throwError("Server port out of range (1024-65535).");
     server_port = port;
   }
 
@@ -280,8 +272,9 @@ namespace vix::config
     return defaultValue;
   }
 
-  std::string Config::getString(const std::string &dottedKey,
-                                const std::string &defaultValue) const noexcept
+  std::string Config::getString(
+      const std::string &dottedKey,
+      const std::string &defaultValue) const noexcept
   {
     const auto *node = findNode(dottedKey);
     if (!node)
@@ -299,7 +292,6 @@ namespace vix::config
     }
   }
 
-  // --- Prod-safe server knobs -----------------------------------------
   int Config::getIOThreads() const noexcept { return io_threads_; }
 
   bool Config::isBenchMode() const noexcept
@@ -311,12 +303,9 @@ namespace vix::config
 #endif
   }
 
-  // --- Logging knobs ---------------------------------------------------
   bool Config::getLogAsync() const noexcept { return log_async_; }
   int Config::getLogQueueMax() const noexcept { return log_queue_max_; }
   bool Config::getLogDropOnOverflow() const noexcept { return log_drop_on_overflow_; }
-
-  // --- WAF knobs -------------------------------------------------------
   const std::string &Config::getWafMode() const noexcept { return waf_mode_; }
   int Config::getWafMaxTargetLen() const noexcept { return waf_max_target_len_; }
   int Config::getWafMaxBodyBytes() const noexcept { return waf_max_body_bytes_; }

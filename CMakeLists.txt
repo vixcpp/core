@@ -1,6 +1,13 @@
-# ====================================================================
-# Vix.cpp — Core Module
-# ====================================================================
+#  @file CMakeLists.cpp
+#  @author Gaspard Kirira
+#
+#  Copyright 2025, Gaspard Kirira.  All rights reserved.
+#  https://github.com/vixcpp/vix
+#  Use of this source code is governed by a MIT license
+#  that can be found in the License file.
+#
+#  Vix.cpp
+#
 # Purpose:
 #   Build configuration for the Vix core module (HTTP server, routing,
 #   configuration, sessions, etc.). If any sources are found under ./src,
@@ -43,7 +50,7 @@ project(vix_core VERSION 1.6.2 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 
-# ------------------------ Global settings ----------------------------
+# Global settings
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -52,13 +59,11 @@ option(VIX_CORE_WITH_OPENSSL "Enable HTTPS/TLS support using OpenSSL" ON)
 option(VIX_CORE_WITH_MYSQL   "Enable MySQL client linkage" OFF)
 option(VIX_BENCH_MODE "Enable ultra-minimal /bench route for benchmarking" OFF)
 
-# ------------------------ Sources discovery --------------------------
+# Sources discovery
 # If any .cpp exists under src/, we switch to STATIC build mode.
 file(GLOB_RECURSE CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
-# ------------------------ Utils dependency (robust) ------------------
-# We need vix::utils. Try:
-# 1) already defined, 2) umbrella ../utils, 3) FetchContent, else fail.
+# Utils dependency
 option(VIX_CORE_FETCH_UTILS "Auto-fetch vix::utils if missing" ON)
 
 if (NOT TARGET vix::utils)
@@ -68,10 +73,9 @@ if (NOT TARGET vix::utils)
   elseif (VIX_CORE_FETCH_UTILS)
     include(FetchContent)
     message(STATUS "[core] Fetching vix::utils via FetchContent")
-    # ⚠️ Aligne le tag avec ta release umbrella
     FetchContent_Declare(vix_utils
       GIT_REPOSITORY https://github.com/vixcpp/utils.git
-      GIT_TAG        v1.7.1
+      GIT_TAG       dev
     )
     FetchContent_MakeAvailable(vix_utils)
   else()
@@ -79,20 +83,15 @@ if (NOT TARGET vix::utils)
   endif()
 endif()
 
-# Normalize the utils target name into VIX_UTILS_TARGET
 set(VIX_UTILS_TARGET vix::utils)
 if (NOT TARGET ${VIX_UTILS_TARGET} AND TARGET vix::utils)
   set(VIX_UTILS_TARGET vix::utils)
 endif()
 
-# ------------------------ JSON linkage policy ------------------------
-# AUTO: link if a known JSON target exists, else compile with VIX_CORE_NO_JSON
-# ON  : require JSON target (error if absent)
-# OFF : never link JSON, define VIX_CORE_NO_JSON
+# JSON linkage policy
 set(VIX_CORE_WITH_JSON "AUTO" CACHE STRING "Link JSON backend (AUTO|ON|OFF)")
 set_property(CACHE VIX_CORE_WITH_JSON PROPERTY STRINGS AUTO ON OFF)
 
-# Helper to optionally link JSON or define VIX_CORE_NO_JSON
 function(vix_core_try_link_json onto link_scope)
   if (VIX_CORE_WITH_JSON STREQUAL "OFF")
     message(STATUS "[core] JSON disabled (OFF)")
@@ -147,7 +146,6 @@ if (CORE_SOURCES)
   target_compile_features(vix_core PUBLIC cxx_std_20)
 
 
-  # Public headers for #include <vix/...>
   target_include_directories(vix_core
     PUBLIC
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -159,14 +157,12 @@ if (CORE_SOURCES)
       ${VIX_UTILS_TARGET}
   )
 
-  # JSON (optional: AUTO/ON/OFF)
   vix_core_try_link_json(vix_core PUBLIC)
 
   if (VIX_CORE_WITH_OPENSSL)
     target_link_libraries(vix_core PUBLIC OpenSSL::SSL OpenSSL::Crypto)
   endif()
 
-  # ----- Optional: MySQL linkage -----
   if (VIX_CORE_WITH_MYSQL)
     find_library(MYSQLCPP_CONN8_LIB mysqlcppconn8)
     if (MYSQLCPP_CONN8_LIB)
@@ -228,13 +224,10 @@ else()
     target_link_libraries(vix_core INTERFACE vix_sanitizers)
   endif()
 
-  # JSON (optional: AUTO/ON/OFF)
   vix_core_try_link_json(vix_core INTERFACE)
 
-  # Feature macro parity
   target_compile_definitions(vix_core INTERFACE VIX_CORE_WITH_MYSQL=0)
 
-  # ---- INSTALL: join the umbrella export-set (VixTargets) ----
   install(TARGETS vix_core
     EXPORT VixTargets
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
@@ -246,7 +239,6 @@ endif()
 # ----------------------------- Tests ---------------------------------
 option(VIX_CORE_BUILD_TESTS "Build core module tests" OFF)
 
-# Build tests only when explicitly enabled.
 if (VIX_CORE_BUILD_TESTS)
   include(CTest)
   enable_testing()
