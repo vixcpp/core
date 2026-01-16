@@ -12,8 +12,8 @@
  *
  */
 
-#ifndef VIX_APP_HPP
-#define VIX_APP_HPP
+#ifndef VIX_HTTP_APP_HPP
+#define VIX_HTTP_APP_HPP
 
 #include <atomic>
 #include <condition_variable>
