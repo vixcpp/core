@@ -1,3 +1,16 @@
+/**
+ *
+ *  @file App.cpp
+ *  @author Gaspard Kirira
+ *
+ *  Copyright 2025, Gaspard Kirira.  All rights reserved.
+ *  https://github.com/vixcpp/vix
+ *  Use of this source code is governed by a MIT license
+ *  that can be found in the License file.
+ *
+ *  Vix.cpp
+ *
+ */
 #include <vix/app/App.hpp>
 
 #include <vix/router/Router.hpp>
@@ -17,405 +30,399 @@
 
 namespace
 {
-    static std::atomic<std::uint64_t> g_rid_seq{0};
+  static std::atomic<std::uint64_t> g_rid_seq{0};
 
-    static void install_access_logs(vix::App &app)
-    {
-        app.use(
-            [](vix::vhttp::Request &req,
-               vix::vhttp::ResponseWrapper &res,
-               vix::App::Next next)
-            {
-                auto &log = vix::utils::Logger::getInstance();
-
-                static const bool kAccessLogs = vix::utils::env_bool("VIX_ACCESS_LOGS", true);
-                if (!kAccessLogs)
-                {
-                    next();
-                    return;
-                }
-
-                if (!log.enabled(vix::utils::Logger::Level::DEBUG))
-                {
-                    next();
-                    return;
-                }
-
-                using clock = std::chrono::steady_clock;
-                const auto t0 = clock::now();
-
-                const auto rid = g_rid_seq.fetch_add(1, std::memory_order_relaxed) + 1;
-
-                next();
-
-                const auto t1 = clock::now();
-                const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
-                const unsigned int status = res.res.result_int();
-
-                log.logf(vix::utils::Logger::Level::DEBUG,
-                         "request_done",
-                         "rid", static_cast<unsigned long long>(rid),
-                         "method", req.method(),
-                         "path", req.path(),
-                         "status", status,
-                         "duration_ms", static_cast<long long>(ms)); });
-    }
-
-    vix::utils::Logger::Level parse_log_level_from_env()
-    {
-        using Level = vix::utils::Logger::Level;
-
-        const std::string raw = vix::utils::env_or("VIX_LOG_LEVEL", std::string{"warn"});
-
-        std::string s;
-        s.reserve(raw.size());
-        for (char c : raw)
+  static void install_access_logs(vix::App &app)
+  {
+    app.use(
+        [](vix::vhttp::Request &req,
+           vix::vhttp::ResponseWrapper &res,
+           vix::App::Next next)
         {
-            s.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-        }
+          auto &log = vix::utils::Logger::getInstance();
 
-        if (s == "trace")
-            return Level::TRACE;
-        if (s == "debug")
-            return Level::DEBUG;
-        if (s == "info")
-            return Level::INFO;
-        if (s == "warn" || s == "warning")
-            return Level::WARN;
-        if (s == "error")
-            return Level::ERROR;
-        if (s == "critical")
-            return Level::CRITICAL;
-        return Level::WARN;
-    }
+          static const bool kAccessLogs = vix::utils::env_bool("VIX_ACCESS_LOGS", true);
+          if (!kAccessLogs)
+          {
+            next();
+            return;
+          }
 
-    std::size_t compute_executor_threads()
+          if (!log.enabled(vix::utils::Logger::Level::DEBUG))
+          {
+            next();
+            return;
+          }
+
+          using clock = std::chrono::steady_clock;
+          const auto t0 = clock::now();
+          const auto rid = g_rid_seq.fetch_add(1, std::memory_order_relaxed) + 1;
+
+          next();
+
+          const auto t1 = clock::now();
+          const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+          const unsigned int status = res.res.result_int();
+
+          log.logf(
+              vix::utils::Logger::Level::DEBUG,
+              "request_done",
+              "rid", static_cast<unsigned long long>(rid),
+              "method", req.method(),
+              "path", req.path(),
+              "status", status,
+              "duration_ms", static_cast<long long>(ms));
+        });
+  }
+
+  vix::utils::Logger::Level parse_log_level_from_env()
+  {
+    using Level = vix::utils::Logger::Level;
+
+    const std::string raw = vix::utils::env_or("VIX_LOG_LEVEL", std::string{"warn"});
+    std::string s;
+    s.reserve(raw.size());
+    for (char c : raw)
     {
-        auto hc = std::thread::hardware_concurrency();
-        if (hc == 0)
-            hc = 4;
-        return static_cast<std::size_t>(hc);
+      s.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
     }
 
-    void register_bench_route(vix::router::Router &router)
+    if (s == "trace")
+      return Level::TRACE;
+    if (s == "debug")
+      return Level::DEBUG;
+    if (s == "info")
+      return Level::INFO;
+    if (s == "warn" || s == "warning")
+      return Level::WARN;
+    if (s == "error")
+      return Level::ERROR;
+    if (s == "critical")
+      return Level::CRITICAL;
+    return Level::WARN;
+  }
+
+  std::size_t compute_executor_threads()
+  {
+    auto hc = std::thread::hardware_concurrency();
+    if (hc == 0)
+      hc = 4;
+    return static_cast<std::size_t>(hc);
+  }
+
+  void register_bench_route(vix::router::Router &router)
+  {
+    namespace http = boost::beast::http;
+
+    auto handler = [](vix::vhttp::Request &req, vix::vhttp::ResponseWrapper &res)
     {
-        namespace http = boost::beast::http;
+      (void)req;
+      res.ok().text("OK");
+    };
 
-        auto handler = [](vix::vhttp::Request &req, vix::vhttp::ResponseWrapper &res)
-        {
-            (void)req;
-            res.ok().text("OK");
-        };
+    using HandlerT = vix::vhttp::RequestHandler<decltype(handler)>;
+    auto h = std::make_shared<HandlerT>("/bench", handler);
+    router.add_route(http::verb::get, "/bench", h);
+  }
 
-        using HandlerT = vix::vhttp::RequestHandler<decltype(handler)>;
-        auto h = std::make_shared<HandlerT>("/bench", handler);
-        router.add_route(http::verb::get, "/bench", h);
-    }
+  static std::atomic<vix::App *> g_app_ptr{nullptr};
 
-    static std::atomic<vix::App *> g_app_ptr{nullptr};
-
-    static void handle_stop_signal(int /*signum*/)
+  static void handle_stop_signal(int /*signum*/)
+  {
+    if (auto *app = g_app_ptr.load(std::memory_order_relaxed))
     {
-        if (auto *app = g_app_ptr.load(std::memory_order_relaxed))
-        {
-            app->request_stop_from_signal();
-        }
+      app->request_stop_from_signal();
     }
+  }
 
 } // namespace
 
 namespace vix
 {
-    using Logger = vix::utils::Logger;
+  using Logger = vix::utils::Logger;
 
-    App::App()
-        : config_(vix::config::Config::getInstance()),
-          router_(nullptr),
-          executor_(std::make_shared<vix::experimental::ThreadPoolExecutor>(
-              compute_executor_threads(),
-              compute_executor_threads(),
-              /*defaultPriority*/ 1)),
-          server_(config_, executor_)
+  App::App()
+      : config_(vix::config::Config::getInstance()),
+        router_(nullptr),
+        executor_(std::make_shared<vix::experimental::ThreadPoolExecutor>(
+            compute_executor_threads(),
+            compute_executor_threads(),
+            /*defaultPriority*/ 1)),
+        server_(config_, executor_)
+  {
+    auto &log = Logger::getInstance();
+
+    log.setLevelFromEnv("VIX_LOG_LEVEL");
+    log.setFormatFromEnv("VIX_LOG_FORMAT");
+
+    if (vix::utils::env_bool("VIX_LOG_ASYNC", true))
     {
-        auto &log = Logger::getInstance();
-
-        log.setLevelFromEnv("VIX_LOG_LEVEL");
-        log.setFormatFromEnv("VIX_LOG_FORMAT");
-
-        if (vix::utils::env_bool("VIX_LOG_ASYNC", true))
-        {
-            log.setAsync(true);
-            log.log(Logger::Level::DEBUG, "Logger initialized in ASYNC mode");
-        }
-        else
-        {
-            log.setAsync(false);
-            log.log(Logger::Level::DEBUG, "Logger initialized in SYNC mode");
-        }
-
-        Logger::Context ctx;
-        ctx.module = "App";
-        log.setContext(ctx);
-
-        try
-        {
-            router_ = server_.getRouter();
-            if (!router_)
-            {
-                log.throwError("Failed to get Router from HTTPServer");
-            }
-
-            install_access_logs(*this);
-            register_bench_route(*router_);
-        }
-        catch (const std::exception &e)
-        {
-            log.throwError("Failed to initialize App: {}", e.what());
-        }
+      log.setAsync(true);
+    }
+    else
+    {
+      log.setAsync(false);
     }
 
-    App::App(std::shared_ptr<vix::executor::IExecutor> executor)
-        : config_(vix::config::Config::getInstance()),
-          router_(nullptr),
-          executor_(std::move(executor)),
-          server_(config_, executor_)
+    Logger::Context ctx;
+    ctx.module = "App";
+    log.setContext(ctx);
+
+    try
     {
-        auto &log = Logger::getInstance();
+      router_ = server_.getRouter();
+      if (!router_)
+      {
+        log.throwError("Failed to get Router from HTTPServer");
+      }
 
-        if (!executor_)
-        {
-            log.throwError("App: executor cannot be null");
-        }
+      install_access_logs(*this);
+      register_bench_route(*router_);
+    }
+    catch (const std::exception &e)
+    {
+      log.throwError("Failed to initialize App: {}", e.what());
+    }
+  }
 
-        log.setPattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
-        log.setLevel(parse_log_level_from_env());
+  App::App(std::shared_ptr<vix::executor::IExecutor> executor)
+      : config_(vix::config::Config::getInstance()),
+        router_(nullptr),
+        executor_(std::move(executor)),
+        server_(config_, executor_)
+  {
+    auto &log = Logger::getInstance();
 
-        if (vix::utils::env_bool("VIX_LOG_ASYNC", true))
-        {
-            log.setAsync(true);
-            log.log(Logger::Level::DEBUG, "Logger initialized in ASYNC mode");
-        }
-        else
-        {
-            log.setAsync(false);
-            log.log(Logger::Level::DEBUG, "Logger initialized in SYNC mode");
-        }
-
-        if (vix::utils::env_bool("VIX_INTERNAL_LOGS", false))
-        {
-            log.setPattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
-            log.setLevel(parse_log_level_from_env());
-        }
-        else
-        {
-            log.setLevel(Logger::Level::CRITICAL);
-        }
-
-        Logger::Context ctx;
-        ctx.module = "App";
-        log.setContext(ctx);
-
-        try
-        {
-            router_ = server_.getRouter();
-            if (!router_)
-                log.throwError("Failed to get Router from HTTPServer");
-
-            install_access_logs(*this);
-            register_bench_route(*router_);
-        }
-        catch (const std::exception &e)
-        {
-            log.throwError("Failed to initialize App: {}", e.what());
-        }
+    if (!executor_)
+    {
+      log.throwError("App: executor cannot be null");
     }
 
-    App::~App()
+    log.setPattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
+    log.setLevel(parse_log_level_from_env());
+
+    if (vix::utils::env_bool("VIX_LOG_ASYNC", true))
     {
-        close();
+      log.setAsync(true);
+    }
+    else
+    {
+      log.setAsync(false);
     }
 
-    void App::request_stop_from_signal() noexcept
+    if (vix::utils::env_bool("VIX_INTERNAL_LOGS", false))
     {
-        stop_requested_.store(true, std::memory_order_relaxed);
-        stop_cv_.notify_one();
-
-        server_.stop_async();
+      log.setPattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
+      log.setLevel(parse_log_level_from_env());
+    }
+    else
+    {
+      log.setLevel(Logger::Level::CRITICAL);
     }
 
-    void App::listen_port(int port, ListenPortCallback cb)
+    Logger::Context ctx;
+    ctx.module = "App";
+    log.setContext(ctx);
+
+    try
     {
-        listen(port, [cb = std::move(cb)](const vix::utils::ServerReadyInfo &info)
-               {
+      router_ = server_.getRouter();
+      if (!router_)
+        log.throwError("Failed to get Router from HTTPServer");
+
+      install_access_logs(*this);
+      register_bench_route(*router_);
+    }
+    catch (const std::exception &e)
+    {
+      log.throwError("Failed to initialize App: {}", e.what());
+    }
+  }
+
+  App::~App()
+  {
+    close();
+  }
+
+  void App::request_stop_from_signal() noexcept
+  {
+    stop_requested_.store(true, std::memory_order_relaxed);
+    stop_cv_.notify_one();
+
+    server_.stop_async();
+  }
+
+  void App::listen_port(int port, ListenPortCallback cb)
+  {
+    listen(port, [cb = std::move(cb)](const vix::utils::ServerReadyInfo &info)
+           {
         if (cb) cb(info.port); });
+  }
+
+  void App::listen(int port, ListenCallback on_listen)
+  {
+    using clock = std::chrono::steady_clock;
+    auto &log = Logger::getInstance();
+
+    if (started_.exchange(true, std::memory_order_relaxed))
+    {
+      log.log(Logger::Level::WARN, "App::listen() called but server is already running");
+      return;
     }
 
-    void App::listen(int port, ListenCallback on_listen)
-    {
-        using clock = std::chrono::steady_clock;
-        auto &log = Logger::getInstance();
+    const auto t0 = clock::now();
 
-        if (started_.exchange(true, std::memory_order_relaxed))
-        {
-            log.log(Logger::Level::WARN, "App::listen() called but server is already running");
-            return;
-        }
+    stop_requested_.store(false, std::memory_order_relaxed);
+    config_.setServerPort(port);
 
-        const auto t0 = clock::now();
-
-        stop_requested_.store(false, std::memory_order_relaxed);
-        config_.setServerPort(port);
-
-        g_app_ptr.store(this, std::memory_order_relaxed);
-        std::signal(SIGINT, handle_stop_signal);
+    g_app_ptr.store(this, std::memory_order_relaxed);
+    std::signal(SIGINT, handle_stop_signal);
 #ifdef SIGTERM
-        std::signal(SIGTERM, handle_stop_signal);
+    std::signal(SIGTERM, handle_stop_signal);
 #endif
 
-        server_thread_ = std::thread([this]()
-                                     { server_.run(); });
+    server_thread_ = std::thread(
+        [this]()
+        { server_.run(); });
 
-        const auto t1 = clock::now();
-        int ready_ms = static_cast<int>(
-            std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
-        if (ready_ms < 1)
-            ready_ms = 1;
+    const auto t1 = clock::now();
+    int ready_ms = static_cast<int>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
+    if (ready_ms < 1)
+      ready_ms = 1;
 
-        vix::utils::ServerReadyInfo info;
-        info.app = "vix";
-        info.version = "Vix.cpp v1.16.2";
-        info.ready_ms = ready_ms;
-        info.mode = dev_mode_ ? "dev" : "run";
+    vix::utils::ServerReadyInfo info;
+    info.app = "vix";
+    info.version = "Vix.cpp v1.16.2";
+    info.ready_ms = ready_ms;
+    info.mode = dev_mode_ ? "dev" : "run";
 
-        if (const char *v = std::getenv("VIX_MODE"); v && *v)
-            info.mode = vix::utils::RuntimeBanner::mode_from_env();
+    if (const char *v = std::getenv("VIX_MODE"); v && *v)
+      info.mode = vix::utils::RuntimeBanner::mode_from_env();
 
-        info.scheme = "http";
-        info.host = "localhost";
-        info.port = config_.getServerPort();
-        info.base_path = "/";
-        info.show_ws = false;
+    info.scheme = "http";
+    info.host = "localhost";
+    info.port = config_.getServerPort();
+    info.base_path = "/";
+    info.show_ws = false;
 
-        if (auto *tp = dynamic_cast<vix::experimental::ThreadPoolExecutor *>(executor_.get()))
-        {
-            info.threads = tp->threads();
-            info.max_threads = tp->max_threads();
-        }
-        else
-        {
-            const auto th = compute_executor_threads();
-            info.threads = th;
-            info.max_threads = th;
-        }
-
-        if (on_listen)
-            on_listen(info);
-        else
-            vix::utils::RuntimeBanner::emit_server_ready(info);
-    }
-
-    void App::wait()
+    if (auto *tp = dynamic_cast<vix::experimental::ThreadPoolExecutor *>(executor_.get()))
     {
-        std::unique_lock<std::mutex> lock(stop_mutex_);
-        stop_cv_.wait(lock, [this]()
-                      { return stop_requested_.load(std::memory_order_relaxed); });
+      info.threads = tp->threads();
+      info.max_threads = tp->max_threads();
     }
-
-    void App::close()
+    else
     {
-        if (!started_.load(std::memory_order_relaxed))
-        {
-            return;
-        }
-
-        stop_requested_.store(true, std::memory_order_relaxed);
-        stop_cv_.notify_one();
-
-        auto &log = Logger::getInstance();
-
-        if (shutdown_cb_)
-        {
-            try
-            {
-                shutdown_cb_();
-            }
-            catch (const std::exception &e)
-            {
-                log.log(Logger::Level::ERROR, "Shutdown callback threw: {}", e.what());
-            }
-            catch (...)
-            {
-                log.log(Logger::Level::ERROR, "Shutdown callback threw unknown exception");
-            }
-        }
-
-        server_.stop_async();
-        server_.stop_blocking();
-
-        if (server_thread_.joinable())
-        {
-            server_thread_.join();
-        }
-
-        g_app_ptr.store(nullptr, std::memory_order_relaxed);
-        started_.store(false, std::memory_order_relaxed);
-
-        log.log(Logger::Level::DEBUG, "Application shutdown complete");
+      const auto th = compute_executor_threads();
+      info.threads = th;
+      info.max_threads = th;
     }
 
-    void App::run(int port)
+    if (on_listen)
+      on_listen(info);
+    else
+      vix::utils::RuntimeBanner::emit_server_ready(info);
+  }
+
+  void App::wait()
+  {
+    std::unique_lock<std::mutex> lock(stop_mutex_);
+    stop_cv_.wait(lock, [this]()
+                  { return stop_requested_.load(std::memory_order_relaxed); });
+  }
+
+  void App::close()
+  {
+    if (!started_.load(std::memory_order_relaxed))
     {
-        // app.run(8080) still blocks until SIGINT/SIGTERM, then shuts down gracefully.
-        listen(port);
-        wait();
-        close();
+      return;
     }
 
-    void App::use(Middleware mw)
+    stop_requested_.store(true, std::memory_order_relaxed);
+    stop_cv_.notify_one();
+
+    auto &log = Logger::getInstance();
+
+    if (shutdown_cb_)
     {
-        middlewares_.push_back(MiddlewareEntry{"", std::move(mw)});
+      try
+      {
+        shutdown_cb_();
+      }
+      catch (const std::exception &e)
+      {
+        log.log(Logger::Level::ERROR, "Shutdown callback threw: {}", e.what());
+      }
+      catch (...)
+      {
+        log.log(Logger::Level::ERROR, "Shutdown callback threw unknown exception");
+      }
     }
 
-    void App::use(std::string prefix, Middleware mw)
+    server_.stop_async();
+    server_.stop_blocking();
+
+    if (server_thread_.joinable())
     {
-        middlewares_.push_back(MiddlewareEntry{normalize_prefix(std::move(prefix)), std::move(mw)});
+      server_thread_.join();
     }
 
-    bool App::match_middleware_prefix_(const std::string &prefix,
-                                       const std::string &path) const
-    {
-        if (prefix.empty())
-            return true;
+    g_app_ptr.store(nullptr, std::memory_order_relaxed);
+    started_.store(false, std::memory_order_relaxed);
 
-        if (path.size() < prefix.size())
-            return false;
+    log.log(Logger::Level::DEBUG, "Application shutdown complete");
+  }
 
-        if (path.compare(0, prefix.size(), prefix) != 0)
-            return false;
+  void App::run(int port)
+  {
+    listen(port);
+    wait();
+    close();
+  }
 
-        // If exact match => OK
-        if (path.size() == prefix.size())
-            return true;
+  void App::use(Middleware mw)
+  {
+    middlewares_.push_back(MiddlewareEntry{"", std::move(mw)});
+  }
 
-        // Boundary rule: next char must be '/'
-        // so "/api" matches "/api/..." but NOT "/apix"
-        return path[prefix.size()] == '/';
-    }
+  void App::use(std::string prefix, Middleware mw)
+  {
+    middlewares_.push_back(MiddlewareEntry{normalize_prefix(std::move(prefix)), std::move(mw)});
+  }
 
-    std::vector<App::Middleware> App::collect_middlewares_for_(const std::string &path) const
-    {
-        std::vector<Middleware> out;
-        out.reserve(middlewares_.size());
+  bool App::match_middleware_prefix_(
+      const std::string &prefix,
+      const std::string &path) const
+  {
+    if (prefix.empty())
+      return true;
 
-        for (const auto &e : middlewares_)
-            if (e.prefix.empty())
-                out.push_back(e.mw);
+    if (path.size() < prefix.size())
+      return false;
 
-        for (const auto &e : middlewares_)
-            if (!e.prefix.empty() && match_middleware_prefix_(e.prefix, path))
-                out.push_back(e.mw);
+    if (path.compare(0, prefix.size(), prefix) != 0)
+      return false;
 
-        return out;
-    }
+    if (path.size() == prefix.size())
+      return true;
+
+    return path[prefix.size()] == '/';
+  }
+
+  std::vector<App::Middleware> App::collect_middlewares_for_(const std::string &path) const
+  {
+    std::vector<Middleware> out;
+    out.reserve(middlewares_.size());
+
+    for (const auto &e : middlewares_)
+      if (e.prefix.empty())
+        out.push_back(e.mw);
+
+    for (const auto &e : middlewares_)
+      if (!e.prefix.empty() && match_middleware_prefix_(e.prefix, path))
+        out.push_back(e.mw);
+
+    return out;
+  }
 
 } // namespace vix

@@ -1,6 +1,6 @@
 /**
  *
- *  @file mw.hpp
+ *  @file RouteOptions.hpp
  *  @author Gaspard Kirira
  *
  *  Copyright 2025, Gaspard Kirira.  All rights reserved.
@@ -11,12 +11,15 @@
  *  Vix.cpp
  *
  */
-#ifndef VIX_MW_HPP
-#define VIX_MW_HPP
+#ifndef VIX_ROUTE_OPTIONS_HPP
+#define VIX_ROUTE_OPTIONS_HPP
 
-#include <vix/mw/context.hpp>
-#include <vix/mw/next.hpp>
-#include <vix/mw/result.hpp>
-#include <vix/mw/hooks.hpp>
+namespace vix::router
+{
+  struct RouteOptions
+  {
+    bool heavy{false}; // DB/CPU heavy => executor
+  };
+}
 
 #endif
