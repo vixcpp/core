@@ -20,6 +20,7 @@
 #include <vix/http/IRequestHandler.hpp>
 #include <vix/http/Request.hpp>
 #include <vix/http/ResponseWrapper.hpp>
+#include <vix/utils/String.hpp>
 
 namespace vix::vhttp
 {
@@ -29,76 +30,6 @@ namespace vix::vhttp
   inline vix::utils::Logger &log()
   {
     return vix::utils::Logger::getInstance();
-  }
-
-  inline std::unordered_map<std::string, std::string>
-  extract_params_from_path(const std::string &pattern, std::string_view path)
-  {
-    std::unordered_map<std::string, std::string> params;
-
-    std::size_t rpos = 0;
-    std::size_t ppos = 0;
-
-    while (rpos < pattern.size() && ppos <= path.size())
-    {
-      if (pattern[rpos] == '{')
-      {
-        const std::size_t end_brace = pattern.find('}', rpos);
-        if (end_brace == std::string::npos)
-        {
-          break;
-        }
-
-        const std::string name = pattern.substr(rpos + 1, end_brace - rpos - 1);
-
-        const std::size_t next_slash = path.find('/', ppos);
-        const std::string_view value =
-            (next_slash == std::string_view::npos)
-                ? path.substr(ppos)
-                : path.substr(ppos, next_slash - ppos);
-
-        if (!name.empty())
-        {
-          params.emplace(name, std::string(value));
-        }
-
-        rpos = end_brace + 1;
-        if (next_slash == std::string_view::npos)
-        {
-          ppos = path.size();
-        }
-        else
-        {
-          ppos = next_slash + 1;
-        }
-
-        continue;
-      }
-
-      if (ppos >= path.size() || pattern[rpos] != path[ppos])
-      {
-        return {};
-      }
-
-      ++rpos;
-      ++ppos;
-    }
-
-    while (rpos < pattern.size())
-    {
-      if (pattern[rpos] != '/')
-        return {};
-      ++rpos;
-    }
-
-    while (ppos < path.size())
-    {
-      if (path[ppos] != '/')
-        return {};
-      ++ppos;
-    }
-
-    return params;
   }
 
   template <class H, class... Args>
@@ -249,11 +180,12 @@ namespace vix::vhttp
   template <ValidHandler Handler>
   class RequestHandler : public IRequestHandler
   {
-    static_assert(ValidHandler<Handler>,
-                  "Invalid handler signature. Expected:\n"
-                  "  void (Request&, ResponseWrapper&)\n"
-                  "  or\n"
-                  "  void (Request&, ResponseWrapper&, unordered_map<string,string>&)");
+    static_assert(
+        ValidHandler<Handler>,
+        "Invalid handler signature. Expected:\n"
+        "  void (Request&, ResponseWrapper&)\n"
+        "  or\n"
+        "  void (Request&, ResponseWrapper&, unordered_map<string,string>&)");
 
   public:
     RequestHandler(std::string route_pattern, Handler handler)
@@ -271,7 +203,7 @@ namespace vix::vhttp
       std::string_view path_only =
           (qpos == std::string_view::npos) ? target : target.substr(0, qpos);
 
-      auto params = extract_params_from_path(route_pattern_, path_only);
+      auto params = vix::utils::extract_params_from_path(route_pattern_, path_only);
       auto state = std::make_shared<vix::vhttp::RequestState>();
       vix::vhttp::Request req(rawReq, std::move(params), std::move(state));
 

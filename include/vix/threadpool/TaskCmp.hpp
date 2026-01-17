@@ -24,9 +24,9 @@ namespace vix::threadpool
     {
       if (a.priority != b.priority)
       {
-        return a.priority < b.priority; // plus grand = priorite (plus haut = avant)
+        return a.priority < b.priority;
       }
-      return a.seq > b.seq; // plus ancien (seq plus petit) d'abord (plus ancien = avant)
+      return a.seq > b.seq;
     }
   };
 

@@ -27,101 +27,11 @@
 #include <vix/http/Status.hpp>
 #include <vix/json/Simple.hpp>
 #include <vix/utils/Logger.hpp>
+#include <vix/utils/String.hpp>
 #include <vix/http/RequestState.hpp>
 
 namespace vix::vhttp
 {
-
-  inline std::string url_decode(std::string_view in)
-  {
-    std::string out;
-    out.reserve(in.size());
-
-    for (size_t i = 0; i < in.size(); ++i)
-    {
-      const unsigned char c = static_cast<unsigned char>(in[i]);
-      if (c == '+')
-      {
-        out.push_back(' ');
-      }
-      else if (c == '%' && i + 2 < in.size())
-      {
-        auto hex = [](unsigned char ch) -> int
-        {
-          if (ch >= '0' && ch <= '9')
-            return ch - '0';
-          if (ch >= 'a' && ch <= 'f')
-            return 10 + (ch - 'a');
-          if (ch >= 'A' && ch <= 'F')
-            return 10 + (ch - 'A');
-          return -1;
-        };
-
-        int hi = hex(static_cast<unsigned char>(in[i + 1]));
-        int lo = hex(static_cast<unsigned char>(in[i + 2]));
-        if (hi >= 0 && lo >= 0)
-        {
-          out.push_back(static_cast<char>((hi << 4) | lo));
-          i += 2;
-        }
-        else
-        {
-          out.push_back(static_cast<char>(c));
-        }
-      }
-      else
-      {
-        out.push_back(static_cast<char>(c));
-      }
-    }
-
-    return out;
-  }
-
-  inline std::unordered_map<std::string, std::string>
-  parse_query_string(std::string_view qs)
-  {
-    std::unordered_map<std::string, std::string> out;
-
-    size_t pos = 0;
-    while (pos < qs.size())
-    {
-      size_t amp = qs.find('&', pos);
-      if (amp == std::string_view::npos)
-        amp = qs.size();
-
-      std::string_view pair = qs.substr(pos, amp - pos);
-      if (!pair.empty())
-      {
-        size_t eq = pair.find('=');
-        std::string_view key, val;
-        if (eq == std::string_view::npos)
-        {
-          key = pair;
-          val = std::string_view{};
-        }
-        else
-        {
-          key = pair.substr(0, eq);
-          val = pair.substr(eq + 1);
-        }
-
-        auto key_dec = url_decode(key);
-        auto val_dec = url_decode(val);
-        if (!key_dec.empty())
-        {
-          out[std::move(key_dec)] = std::move(val_dec);
-        }
-      }
-
-      if (amp == qs.size())
-        break;
-      pos = amp + 1;
-    }
-
-    return out;
-  }
-
   class Request
   {
   public:
@@ -327,7 +237,7 @@ namespace vix::vhttp
       }
       else
       {
-        query_cache_ = std::make_shared<const QueryMap>(parse_query_string(query_raw_));
+        query_cache_ = std::make_shared<const QueryMap>(vix::utils::parse_query_string(query_raw_));
       }
     }
 
