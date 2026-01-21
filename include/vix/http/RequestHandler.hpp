@@ -32,6 +32,92 @@ namespace vix::vhttp
     return vix::utils::Logger::getInstance();
   }
 
+  /**
+   * @brief Extracts path parameters from a URL path according to a route pattern.
+   *
+   * Supported syntax:
+   *  - Static segments: `/posts`
+   *  - Param segments:  `/{name}` or `/posts/{year}/{slug}`
+   *
+   * Rules:
+   *  - Matching is done **segment-by-segment** (split by '/'), not char-by-char.
+   *  - The number of segments must match (except for leading/trailing slashes).
+   *  - For `{param}` segments, the corresponding path segment is captured as a string.
+   *  - For static segments, the segment must match exactly; otherwise returns `{}`.
+   *
+   * Examples:
+   *  - pattern: "/hello/{name}", path: "/hello/Alice"
+   *      -> { "name": "Alice" }
+   *  - pattern: "/posts/{year}/{slug}", path: "/posts/2026/hello-world"
+   *      -> { "year": "2026", "slug": "hello-world" }
+   *
+   * @param pattern Route pattern (must start with '/'; trailing '/' is allowed).
+   * @param path Actual request path (query string must already be removed).
+   * @return Map of extracted params, or empty map `{}` on mismatch.
+   */
+  inline std::unordered_map<std::string, std::string>
+  extract_params_from_path(const std::string &pattern, std::string_view path)
+  {
+    auto split_path_views = [](std::string_view s) -> std::vector<std::string_view>
+    {
+      std::vector<std::string_view> out;
+      out.reserve(8);
+
+      std::size_t i = 0;
+
+      // skip leading slashes
+      while (i < s.size() && s[i] == '/')
+        ++i;
+
+      while (i < s.size())
+      {
+        std::size_t j = i;
+        while (j < s.size() && s[j] != '/')
+          ++j;
+
+        if (j > i)
+          out.emplace_back(s.substr(i, j - i));
+
+        i = j;
+        while (i < s.size() && s[i] == '/')
+          ++i; // skip repeated slashes
+      }
+
+      return out;
+    };
+
+    std::unordered_map<std::string, std::string> params;
+
+    const auto pSeg = split_path_views(std::string_view(pattern));
+    const auto aSeg = split_path_views(path);
+
+    if (pSeg.size() != aSeg.size())
+      return {}; // mismatch
+
+    for (std::size_t i = 0; i < pSeg.size(); ++i)
+    {
+      const auto p = pSeg[i];
+      const auto a = aSeg[i];
+
+      const bool isParam =
+          p.size() >= 3 && p.front() == '{' && p.back() == '}';
+
+      if (isParam)
+      {
+        const auto name = p.substr(1, p.size() - 2);
+        if (!name.empty())
+          params.emplace(std::string(name), std::string(a));
+      }
+      else
+      {
+        if (p != a)
+          return {}; // static segment mismatch
+      }
+    }
+
+    return params;
+  }
+
   template <class H, class... Args>
   using invoke_result_t = std::invoke_result_t<H, Args...>;
   template <class T>
@@ -203,7 +289,7 @@ namespace vix::vhttp
       std::string_view path_only =
           (qpos == std::string_view::npos) ? target : target.substr(0, qpos);
 
-      auto params = vix::utils::extract_params_from_path(route_pattern_, path_only);
+      auto params = extract_params_from_path(route_pattern_, path_only);
       auto state = std::make_shared<vix::vhttp::RequestState>();
       vix::vhttp::Request req(rawReq, std::move(params), std::move(state));
 
