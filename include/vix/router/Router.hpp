@@ -139,10 +139,21 @@ namespace vix::router
       if (node && node->handler)
       {
         node->handler->handle_request(req, res);
-        if (res.need_eof() ||
-            res.body().size() ||
-            res.find(http::field::content_length) != res.end())
+
+        if (res.result() != http::status::unknown)
         {
+          const int s = static_cast<int>(res.result());
+          if (s == 204 || s == 304)
+          {
+            res.body().clear();
+          }
+
+          if (res.body().empty() &&
+              res.find(http::field::content_length) == res.end())
+          {
+            res.content_length(0);
+          }
+
           res.prepare_payload();
         }
         return true;

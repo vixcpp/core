@@ -327,18 +327,41 @@ namespace vix
       {
         std::function<void()> final_handler = [&]()
         {
+          auto should_auto_send = [&]() -> bool
+          {
+            return res.res.body().empty() &&
+                   res.res.find(http::field::content_length) == res.res.end();
+          };
+
           if constexpr (is_facade_handler_v<decltype(final)>)
           {
-            final(req, res);
+            using Ret = std::invoke_result_t<decltype(final), vix::vhttp::Request &, vix::vhttp::ResponseWrapper &>;
+
+            if constexpr (std::is_void_v<Ret>)
+            {
+              final(req, res);
+            }
+            else
+            {
+              auto out = final(req, res);
+              if (should_auto_send())
+                res.send(out);
+            }
           }
           else if constexpr (is_raw_handler_v<decltype(final)>)
           {
-            final(req.raw(), res);
-          }
-          else
-          {
-            static_assert(is_facade_handler_v<decltype(final)> || is_raw_handler_v<decltype(final)>,
-                          "Unsupported handler signature.");
+            using Ret = std::invoke_result_t<decltype(final), const RawRequestT &, vix::vhttp::ResponseWrapper &>;
+
+            if constexpr (std::is_void_v<Ret>)
+            {
+              final(req.raw(), res);
+            }
+            else
+            {
+              auto out = final(req.raw(), res);
+              if (should_auto_send())
+                res.send(out);
+            }
           }
         };
 
