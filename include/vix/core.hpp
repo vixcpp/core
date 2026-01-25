@@ -11,15 +11,18 @@
  *  Vix.cpp
  *
  */
-#ifndef VIX_CORE_HHPP
+#ifndef VIX_CORE_HPP
 #define VIX_CORE_HPP
 
 #include <memory>
 #include <string>
 #include <vector>
 #include <functional>
+
 #include <boost/asio.hpp>
 #include <boost/beast/http.hpp>
+
+#include <vix/console.hpp>
 #include <vix/app/App.hpp>
 #include <vix/server/HTTPServer.hpp>
 #include <vix/threadpool/ThreadPool.hpp>
@@ -27,7 +30,6 @@
 #include <vix/http/IRequestHandler.hpp>
 #include <vix/http/RequestHandler.hpp>
 #include <vix/http/Response.hpp>
-#include <vix/http/RequestHandler.hpp>
 #include <vix/session/Session.hpp>
 #include <vix/config/Config.hpp>
 #include <vix/http/Status.hpp>
