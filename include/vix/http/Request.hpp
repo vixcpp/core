@@ -12,7 +12,7 @@
  *
  */
 #ifndef VIX_REQUEST_HPP
-#define VIX_REQUEST_HP
+#define VIX_REQUEST_HPP
 
 #include <utility>
 #include <cassert>
