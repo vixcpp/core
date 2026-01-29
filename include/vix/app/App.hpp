@@ -140,6 +140,25 @@ namespace vix
     void setDevMode(bool v) { dev_mode_ = v; }
     bool isDevMode() const { return dev_mode_; }
 
+    using StaticHandler =
+        std::function<bool(App &, const std::filesystem::path &root,
+                           const std::string &mount,
+                           const std::string &index_file,
+                           bool add_cache_control,
+                           const std::string &cache_control,
+                           bool fallthrough)>;
+
+    static void set_static_handler(StaticHandler fn);
+    void static_dir(std::filesystem::path root,
+                    std::string mount = "/",
+                    std::string index_file = "index.html",
+                    bool add_cache_control = true,
+                    std::string cache_control = "public, max-age=3600",
+                    bool fallthrough = true);
+
+    using ModuleInitFn = void (*)();
+    static void set_module_init(ModuleInitFn fn);
+
     using Next = std::function<void()>;
     using Middleware = std::function<void(vix::vhttp::Request &, vix::vhttp::ResponseWrapper &, Next)>;
 

@@ -26,11 +26,13 @@
 #include <exception>
 #include <string>
 #include <thread>
+#include <mutex>
 #include <atomic>
 
 namespace
 {
   static std::atomic<std::uint64_t> g_rid_seq{0};
+  static std::once_flag g_module_init_once;
 
   inline vix::utils::Logger &log()
   {
@@ -144,6 +146,25 @@ namespace vix
 {
   using Logger = vix::utils::Logger;
 
+  static vix::App::ModuleInitFn &module_init_ref()
+  {
+    static vix::App::ModuleInitFn fn = nullptr;
+    return fn;
+  }
+
+  void vix::App::set_module_init(ModuleInitFn fn)
+  {
+    module_init_ref() = fn;
+  }
+
+  static void init_modules_once()
+  {
+    std::call_once(g_module_init_once, []
+                   {
+    if (auto fn = module_init_ref())
+      fn(); });
+  }
+
   App::App()
       : config_(vix::config::Config::getInstance()),
         router_(nullptr),
@@ -171,6 +192,7 @@ namespace vix
 
     try
     {
+      init_modules_once();
       router_ = server_.getRouter();
       if (!router_)
       {
@@ -225,6 +247,7 @@ namespace vix
 
     try
     {
+      init_modules_once();
       router_ = server_.getRouter();
       if (!router_)
         log().throwError("Failed to get Router from HTTPServer");
@@ -420,6 +443,41 @@ namespace vix
         out.push_back(e.mw);
 
     return out;
+  }
+
+  static App::StaticHandler &static_handler_ref()
+  {
+    static App::StaticHandler h{};
+    return h;
+  }
+
+  void App::set_static_handler(StaticHandler fn)
+  {
+    static_handler_ref() = std::move(fn);
+  }
+
+  void App::static_dir(std::filesystem::path root,
+                       std::string mount,
+                       std::string index_file,
+                       bool add_cache_control,
+                       std::string cache_control,
+                       bool fallthrough)
+  {
+    auto &h = static_handler_ref();
+    if (!h)
+    {
+      // middleware module not linked → message explicite
+      log().throwError("App::static_dir() requires vix::middleware module (static handler not registered)");
+      return;
+    }
+
+    const bool ok = h(*this, root, mount, index_file,
+                      add_cache_control, cache_control, fallthrough);
+
+    if (!ok)
+    {
+      log().throwError("App::static_dir() failed (static handler returned false)");
+    }
   }
 
 } // namespace vix

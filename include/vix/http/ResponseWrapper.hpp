@@ -17,6 +17,9 @@
 #include <string>
 #include <stdexcept>
 #include <initializer_list>
+#include <filesystem>
+#include <fstream>
+#include <unordered_map>
 
 #include <boost/beast/http.hpp>
 #include <boost/beast/core/string.hpp>
@@ -100,6 +103,98 @@ namespace vix::vhttp
     {
       if (res.result() == http::status::unknown)
         res.result(http::status::ok);
+    }
+
+    static inline std::string mime_from_ext(std::string_view ext)
+    {
+      static const std::unordered_map<std::string, std::string> m{
+          {".html", "text/html; charset=utf-8"},
+          {".css", "text/css; charset=utf-8"},
+          {".js", "application/javascript; charset=utf-8"},
+          {".json", "application/json; charset=utf-8"},
+          {".png", "image/png"},
+          {".jpg", "image/jpeg"},
+          {".jpeg", "image/jpeg"},
+          {".gif", "image/gif"},
+          {".svg", "image/svg+xml"},
+          {".ico", "image/x-icon"},
+          {".txt", "text/plain; charset=utf-8"},
+          {".woff", "font/woff"},
+          {".woff2", "font/woff2"},
+      };
+
+      auto it = m.find(std::string(ext));
+      return it == m.end() ? "application/octet-stream" : it->second;
+    }
+
+    static inline bool read_file_binary(const std::filesystem::path &p, std::string &out)
+    {
+      std::ifstream f(p, std::ios::binary);
+      if (!f)
+        return false;
+
+      f.seekg(0, std::ios::end);
+      const std::streamsize n = f.tellg();
+      if (n < 0)
+        return false;
+      f.seekg(0, std::ios::beg);
+
+      out.resize(static_cast<std::size_t>(n));
+      if (n > 0)
+        f.read(out.data(), n);
+      return true;
+    }
+
+    ResponseWrapper &file(std::filesystem::path p)
+    {
+      ensure_status();
+
+      const std::string s = p.lexically_normal().generic_string();
+      if (s.find("..") != std::string::npos)
+        return status(400).text("Bad path");
+
+      std::error_code ec;
+      if (std::filesystem::is_directory(p, ec))
+      {
+        p /= "index.html";
+      }
+
+      if (!std::filesystem::exists(p, ec) || !std::filesystem::is_regular_file(p, ec))
+        return status(404).text("Not Found");
+
+      std::string body;
+      if (!read_file_binary(p, body))
+        return status(500).text("File read error");
+
+      std::string ext = p.extension().string();
+      if (!ext.empty())
+      {
+        // lower-case
+        for (char &c : ext)
+          c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+      }
+
+      std::string mime = "application/octet-stream";
+      if (!ext.empty())
+      {
+        mime = mime_from_ext(ext);
+      }
+      else
+      {
+        if (body.rfind("<!doctype html", 0) == 0 || body.rfind("<html", 0) == 0)
+          mime = "text/html; charset=utf-8";
+      }
+
+      type(mime);
+      res.set("X-Content-Type-Options", "nosniff");
+
+      // cache-control
+      if (!has_header(http::field::cache_control))
+        header("Cache-Control", "public, max-age=3600");
+
+      res.body() = std::move(body);
+      res.prepare_payload();
+      return *this;
     }
 
     void ensure_status() noexcept

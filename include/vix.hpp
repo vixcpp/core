@@ -17,4 +17,24 @@
 #include <vix/core.hpp>
 #include <vix/json/json.hpp>
 
+#if defined(VIX_HAS_MIDDLEWARE)
+#include <vix/app/App.hpp>
+#include <vix/middleware/module_init.hpp>
+
+namespace vix::detail
+{
+  inline void register_modules_for_umbrella()
+  {
+    vix::App::set_module_init(&vix_middleware_module_init);
+  }
+
+  struct UmbrellaAutoInit
+  {
+    UmbrellaAutoInit() { register_modules_for_umbrella(); }
+  };
+
+  inline UmbrellaAutoInit g_umbrella_auto_init{};
+} // namespace vix::detail
+#endif
+
 #endif

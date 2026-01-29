@@ -152,7 +152,12 @@ namespace vix::vhttp
         std::string_view content_type = "application/json")
     {
       res.result(status);
-      res.set(http::field::content_type, std::string(content_type));
+
+      if (res.find(http::field::content_type) == res.end())
+      {
+        res.set(http::field::content_type, std::string(content_type));
+      }
+
       res.body() = nlohmann::json{{"message", message}}.dump();
       common_headers(res);
       res.prepare_payload();
@@ -176,6 +181,11 @@ namespace vix::vhttp
       static_assert(status_code_in_range<Code>::value,
                     "HTTP status code must be between 100 and 599");
       create_response(res, static_cast<http::status>(Code), message, content_type);
+    }
+
+    static bool has_header(const http::response<http::string_body> &res, http::field f) noexcept
+    {
+      return res.find(f) != res.end();
     }
 
     static void error_response(
@@ -214,7 +224,12 @@ namespace vix::vhttp
         std::string_view message = "No Content")
     {
       res.result(http::status::no_content);
-      res.set(http::field::content_type, "application/json");
+
+      if (res.find(http::field::content_type) == res.end())
+      {
+        res.set(http::field::content_type, "application/json; charset=utf-8");
+      }
+
       res.body() = nlohmann::json{{"message", message}}.dump();
       common_headers(res);
       res.prepare_payload();
@@ -226,7 +241,12 @@ namespace vix::vhttp
     {
       res.result(http::status::found);
       res.set(http::field::location, std::string(location));
-      res.set(http::field::content_type, "application/json");
+
+      if (res.find(http::field::content_type) == res.end())
+      {
+        res.set(http::field::content_type, "application/json; charset=utf-8");
+      }
+
       res.body() = nlohmann::json{
           {"message", std::string("Redirecting to ") + std::string(location)}}
                        .dump();
@@ -244,7 +264,12 @@ namespace vix::vhttp
         http::status status = http::status::ok)
     {
       res.result(status);
-      res.set(http::field::content_type, "application/json");
+
+      if (res.find(http::field::content_type) == res.end())
+      {
+        res.set(http::field::content_type, "application/json; charset=utf-8");
+      }
+
       res.body() = to_json_string(data);
       common_headers(res);
       res.prepare_payload();
@@ -280,7 +305,12 @@ namespace vix::vhttp
         http::status status = http::status::ok)
     {
       res.result(status);
-      res.set(http::field::content_type, "text/plain");
+
+      if (res.find(http::field::content_type) == res.end())
+      {
+        res.set(http::field::content_type, "text/plain; charset=utf-8");
+      }
+
       res.body() = std::string(data);
       common_headers(res);
       res.prepare_payload();
