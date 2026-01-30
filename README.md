@@ -1,152 +1,240 @@
-# vixcpp/core
+# Vix Core
 
-![C++](https://img.shields.io/badge/C%2B%2B-20-blue.svg)
-![License](https://img.shields.io/badge/License-MIT-green)
-![Status](https://img.shields.io/badge/Status-Stable-success)
-![Performance](https://img.shields.io/badge/Throughput-80k%2B%20req%2Fs-orange)
+Fast HTTP runtime • Router • Request/Response • JSON helpers • Production-ready primitives
 
-> **vix.cpp/core** — The foundational module of the [**Vix.cpp**](https://github.com/vixcpp/vix) framework.  
-> Provides the high-performance HTTP server, router, middleware system, and base runtime.  
-> Every other Vix module builds on top of this layer.
+`core` is the foundation of **Vix.cpp**.
+It provides the HTTP runtime primitives used across the ecosystem:
 
----
+* `vix::App` — the main HTTP application
+* routing (`get/post/...`) with path params
+* `Request` / `Response` wrappers
+* JSON helpers (`vix::json`) for fast structured responses
+* query params, headers, body access
+* predictable status codes + early return patterns
 
-## 🚀 Key Features
-
-- **⚡ High-Performance HTTP Server** — Async I/O using **Boost.Asio** & **Beast**
-- **🧭 Router System** — Supports `/users/{id}` syntax & HTTP method matching
-- **🧩 Middleware Pipeline** — Extend with logging, auth, rate limiting, etc.
-- **📦 JSON Utilities** — Built-in [nlohmann/json](https://github.com/nlohmann/json) (optional & pluggable)
-- **🧵 Thread-Safe Lifecycle** — Graceful shutdown via signal handlers
-- **🧠 Optimized Runtime** — Low allocations, `std::string_view` routing, fast parameter parsing
+If Vix.cpp is a runtime, **core is its execution engine for HTTP**.
 
 ---
 
-## 🧱 Architecture
+## Quick start
 
-```text
-+----------------------+
-|        App           |
-|  - Manages routes    |
-|  - Runs HTTP server  |
-+----------+-----------+
-           |
-           v
-+---------------------- +
-|       Router         |
-|  - Matches paths     |
-|  - Resolves params   |
-+----------+-----------+
-           |
-           v
-+---------------------- +
-|   RequestHandler<T>  |
-|  - Executes handler  |
-|  - Builds response   |
-+----------+-----------+
-           |
-           v
-+---------------------- +
-|   ResponseWrapper    |
-|  - JSON / Text       |
-|  - Status helpers    |
-+----------------------+
-```
-
----
-
-## ⚙️ Installation
+Run the showcase example:
 
 ```bash
-git clone https://github.com/vixcpp/core.git
-cd core
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(nproc)
+vix run examples/vix_routes_showcase.cpp
 ```
 
-**Requirements**
+Then hit a few endpoints:
 
-- C++20 compiler
-- CMake ≥ 3.20
-- Boost ≥ 1.78 (`filesystem`, `system`)
-- Optional: OpenSSL, nlohmann/json
+```bash
+curl -i http://127.0.0.1:8080/
+curl -i http://127.0.0.1:8080/health
+curl -i http://127.0.0.1:8080/users/42
+curl -i "http://127.0.0.1:8080/search?q=vix&page=2&limit=5"
+curl -i http://127.0.0.1:8080/headers
+curl -i http://127.0.0.1:8080/status/404
+```
 
 ---
 
-## 💻 Quick Example
+## Minimal HTTP server
 
 ```cpp
-#include <vix/core.h>
+#include <vix.hpp>
 
-int main() {
-    vix::App app;
+using namespace vix;
 
-    app.get("/hello", [](auto&, auto& res) {
-        res.json({{"message", "Hello, World!"}});
-    });
+int main()
+{
+  App app;
 
-    app.get("/users/{id}", [](auto&, auto& res, auto& params) {
-        res.json({{"user_id", params["id"]}});
-    });
+  app.get("/", [](Request&, Response& res) {
+    res.json({"message", "Hello, Vix!"});
+  });
 
-    app.run(8080);
+  app.run(8080);
 }
 ```
 
-✅ Supports `GET`, `POST`, `PUT`, `DELETE`  
-✅ Automatic path parameter extraction  
-✅ Helper methods: `res.json()`, `res.text()`, `res.status()`
-
 ---
 
-## 📊 Performance
+## Routing model
 
-**Command**
+Vix routes are designed to be:
 
-```bash
-wrk -t8 -c200 -d30s --latency http://localhost:8080/
+* **simple** to read
+* **copy/paste friendly** for real projects
+* explicit about status codes and early returns
+
+### Basic routes
+
+```cpp
+app.get("/hello", [](const Request&, Response&) {
+  return vix::json::o("message", "Hello", "id", 20);
+});
+
+app.get("/txt", [](const Request&, Response&) {
+  return "Hello world";
+});
 ```
 
-**Results**
+### Status codes
+
+```cpp
+app.get("/status/{code}", [](Request& req, Response& res) {
+  const int code = /* parse */ 200;
+  res.status(code).json({
+    "status", code,
+    "ok", (code >= 200 && code < 300)
+  });
+});
+```
+
+### Path params
+
+```cpp
+app.get("/users/{id}", [](Request& req, Response& res) {
+  const std::string id = req.param("id", "0");
+
+  if (id == "0") {
+    res.status(404).json({"error", "User not found", "id", id});
+    return;
+  }
+
+  res.json({"id", id, "vip", (id == "42")});
+});
+```
+
+### Query params
+
+```cpp
+app.get("/search", [](Request& req, Response& res) {
+  const std::string q = req.query_value("q", "");
+  const std::string page = req.query_value("page", "1");
+  const std::string limit = req.query_value("limit", "10");
+
+  res.json({
+    "q", q,
+    "page", page,
+    "limit", limit
+  });
+});
+```
+
+### Headers
+
+```cpp
+app.get("/headers", [](Request& req, Response& res) {
+  res.json({
+    "host", req.header("Host"),
+    "user_agent", req.header("User-Agent"),
+    "accept", req.header("Accept")
+  });
+});
+```
+
+---
+
+## Request body + JSON parsing
+
+Core exposes the raw body and JSON parsing helpers.
+
+```cpp
+app.get("/echo/body", [](Request& req, Response& res) {
+  const std::string body = req.body();
+  res.json({"bytes", (long long)body.size(), "body", body});
+});
+
+app.get("/echo/json", [](Request& req, Response& res) {
+  const auto& j = req.json();
+  res.json(j);
+});
+```
+
+For defensive field access, the showcase demonstrates patterns like:
+
+* check `is_object()`
+* check `contains()` + type
+* return defaults on missing fields
+
+---
+
+## Mixed behaviors (send + return)
+
+Vix supports both:
+
+* explicit response (`res.send`, `res.json`)
+* return-value auto-send (string or JSON object)
+
+If you **already sent** a response explicitly, the returned value is ignored.
+
+```cpp
+app.get("/mix", [](Request&, Response& res) {
+  res.status(201).send("Created");
+  return vix::json::o("ignored", true);
+});
+```
+
+This makes it easy to write handlers in a style similar to Node/FastAPI:
+
+* short happy path
+* early return on errors
+
+---
+
+## Showcase example
+
+The recommended living reference for the public API style is:
+
+* `examples/vix_routes_showcase.cpp`
+
+It includes:
+
+* simple routes
+* JSON responses (flat + nested)
+* status codes
+* path params (`/users/{id}`)
+* query params (`?page=1&limit=20`)
+* headers
+* request body + JSON parsing
+* mixed behaviors (send + return)
+* many copy/paste route patterns
+
+---
+
+## How core fits in the umbrella
+
+* `core` powers the HTTP runtime (`vix::App`, routing, request/response)
+* `middleware` attaches on top of core (security, parsers, auth, cache)
+* `websocket` can run standalone or alongside HTTP
+* `p2p_http` uses core to expose P2P control endpoints
+
+---
+
+## Directory layout
+
+Typical layout:
 
 ```
-Requests/sec: 80,083.48
-Latency: p50=2.21ms, p99=3.27ms
-Transfer/sec: 18.25MB
+modules/core/
+│
+├─ include/vix/
+│  ├─ http/...
+│  ├─ router/...
+│  ├─ server/...
+│  ├─ session/...
+│  ├─ config/...
+│  ├─ utils/...
+│  └─ vix.hpp            # umbrella include for HTTP runtime
+│
+└─ examples/
+   └─ vix_routes_showcase.cpp
 ```
 
-**Benchmark Environment**
-
-- 8 threads · 200 connections · 30 seconds
-- C++20 (GCC 13 / Clang 17) · Boost 1.84
-- Ubuntu 24.04 x64
-- Build type: Release (LTO enabled)
-
-> 🧠 _Optimized for cache locality, async I/O, and minimal overhead._
-
 ---
 
-## 🧩 Configuration Options
+## License
 
-| Option                  | Default | Description                      |
-| ----------------------- | ------- | -------------------------------- |
-| `VIX_CORE_WITH_OPENSSL` | ON      | Enable HTTPS/TLS support         |
-| `VIX_CORE_WITH_MYSQL`   | OFF     | Link MySQL C++ Connector         |
-| `VIX_CORE_WITH_JSON`    | AUTO    | AUTO / ON / OFF                  |
-| `VIX_CORE_FETCH_UTILS`  | ON      | Auto-fetch vix::utils if missing |
+MIT — same as Vix.cpp
 
----
-
-## 🤝 Contributing
-
-1. Fork this repo
-2. Create a new branch `feature/...`
-3. Commit and open a PR
-4. Follow the [Vix coding style](https://github.com/vixcpp/vix/wiki/Code-Style)
-
----
-
-## 🧾 License
-
-**MIT License** © [Gaspard Kirira](https://github.com/gkirira)  
-See [LICENSE](../../LICENSE) for details.
+Repository: [https://github.com/vixcpp/vix](https://github.com/vixcpp/vix)
