@@ -54,12 +54,15 @@ namespace vix::config
       }
       else
       {
-        candidate_paths.push_back(fs::current_path() / configPath);
+        candidate_paths.push_back(fs::current_path() / "config/config.json");
+
         auto parent = fs::current_path().parent_path();
         if (!parent.empty())
-        {
-          candidate_paths.push_back(parent / configPath);
-        }
+          candidate_paths.push_back(parent / "config/config.json");
+
+        candidate_paths.push_back(
+            fs::path(__FILE__).parent_path().parent_path().parent_path().parent_path().parent_path() /
+            "config/config.json");
       }
     }
     else
@@ -95,7 +98,23 @@ namespace vix::config
 
   Config &Config::getInstance(const fs::path &configPath)
   {
-    static Config instance(configPath);
+    static Config instance("");
+
+    if (!configPath.empty())
+    {
+      fs::path p = configPath;
+      if (!p.is_absolute())
+        p = fs::current_path() / p;
+
+      std::error_code ec;
+      p = fs::weakly_canonical(p, ec);
+      if (ec)
+        p = fs::current_path() / configPath;
+
+      instance.configPath_ = p;
+      instance.loadConfig();
+    }
+
     return instance;
   }
 
@@ -123,7 +142,6 @@ namespace vix::config
 
     rawConfig_ = cfg;
 
-    // maintenant tu peux lire via getInt()
     session_timeout_sec_ = getInt("server.session_timeout_sec", DEFAULT_SESSION_TIMEOUT_SEC);
 
     if (cfg.contains("database") && cfg["database"].contains("default"))
