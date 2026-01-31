@@ -65,12 +65,14 @@ namespace vix::session
   void Session::start_timer()
   {
     timer_ = std::make_shared<net::steady_timer>(socket_->get_executor());
-    timer_->expires_after(REQUEST_TIMEOUT);
+    const auto timeout = std::chrono::seconds(config_.getSessionTimeoutSec());
+    timer_->expires_after(timeout);
 
     std::weak_ptr<net::steady_timer> weak_timer = timer_;
     auto self = shared_from_this();
+
     timer_->async_wait(
-        [this, self, weak_timer](const boost::system::error_code &ec)
+        [this, self, weak_timer, timeout](const boost::system::error_code &ec)
         {
           auto t = weak_timer.lock();
           if (!t)
@@ -78,7 +80,9 @@ namespace vix::session
 
           if (!ec)
           {
-            log().log(Logger::Level::WARN, "[Session] Timeout ({}s), closing socket", REQUEST_TIMEOUT.count());
+            log().log(Logger::Level::WARN,
+                      "[Session] Timeout ({}s), closing socket",
+                      timeout.count());
             close_socket_gracefully();
           }
         });

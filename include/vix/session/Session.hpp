@@ -49,7 +49,6 @@ namespace vix::session
   using tcp = net::ip::tcp;
 
   constexpr size_t MAX_REQUEST_BODY_SIZE = 10 * 1024 * 1024;
-  constexpr auto REQUEST_TIMEOUT = std::chrono::seconds(20);
 
   class Session : public std::enable_shared_from_this<Session>
   {

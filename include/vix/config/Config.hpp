@@ -63,6 +63,7 @@ namespace vix::config
     const std::string &getWafMode() const noexcept; // "off"|"basic"|"strict"
     int getWafMaxTargetLen() const noexcept;
     int getWafMaxBodyBytes() const noexcept;
+    int getSessionTimeoutSec() const noexcept;
 
   private:
     static constexpr const char *DEFAULT_DB_HOST = "localhost";
@@ -99,6 +100,9 @@ namespace vix::config
     std::string waf_mode_;
     int waf_max_target_len_;
     int waf_max_body_bytes_;
+
+    static constexpr int DEFAULT_SESSION_TIMEOUT_SEC = 20;
+    int session_timeout_sec_;
   };
 }
 

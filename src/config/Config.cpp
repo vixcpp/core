@@ -42,7 +42,7 @@ namespace vix::config
         db_host(DEFAULT_DB_HOST), db_user(DEFAULT_DB_USER), db_pass(DEFAULT_DB_PASS),
         db_name(DEFAULT_DB_NAME), db_port(DEFAULT_DB_PORT),
         server_port(DEFAULT_SERVER_PORT), request_timeout(DEFAULT_REQUEST_TIMEOUT),
-        rawConfig_(nlohmann::json::object()), io_threads_(DEFAULT_IO_THREADS), log_async_(DEFAULT_LOG_ASYNC), log_queue_max_(DEFAULT_LOG_QUEUE_MAX), log_drop_on_overflow_(DEFAULT_LOG_DROP_ON_OVERFLOW), waf_mode_(DEFAULT_WAF_MODE), waf_max_target_len_(DEFAULT_WAF_MAX_TARGET_LEN), waf_max_body_bytes_(DEFAULT_WAF_MAX_BODY_BYTES)
+        rawConfig_(nlohmann::json::object()), io_threads_(DEFAULT_IO_THREADS), log_async_(DEFAULT_LOG_ASYNC), log_queue_max_(DEFAULT_LOG_QUEUE_MAX), log_drop_on_overflow_(DEFAULT_LOG_DROP_ON_OVERFLOW), waf_mode_(DEFAULT_WAF_MODE), waf_max_target_len_(DEFAULT_WAF_MAX_TARGET_LEN), waf_max_body_bytes_(DEFAULT_WAF_MAX_BODY_BYTES), session_timeout_sec_(DEFAULT_SESSION_TIMEOUT_SEC)
   {
     std::vector<fs::path> candidate_paths;
 
@@ -122,6 +122,9 @@ namespace vix::config
     }
 
     rawConfig_ = cfg;
+
+    // maintenant tu peux lire via getInt()
+    session_timeout_sec_ = getInt("server.session_timeout_sec", DEFAULT_SESSION_TIMEOUT_SEC);
 
     if (cfg.contains("database") && cfg["database"].contains("default"))
     {
@@ -309,5 +312,6 @@ namespace vix::config
   const std::string &Config::getWafMode() const noexcept { return waf_mode_; }
   int Config::getWafMaxTargetLen() const noexcept { return waf_max_target_len_; }
   int Config::getWafMaxBodyBytes() const noexcept { return waf_max_body_bytes_; }
+  int Config::getSessionTimeoutSec() const noexcept { return session_timeout_sec_; }
 
 }
