@@ -24,7 +24,7 @@ namespace vix::vhttp
   class RequestState
   {
   public:
-    RequestState() : data_{} {};
+    RequestState() : data_{} {}
     RequestState(const RequestState &) = delete;
     RequestState &operator=(const RequestState &) = delete;
     RequestState(RequestState &&) noexcept = default;
@@ -84,7 +84,7 @@ namespace vix::vhttp
       auto it = data_.find(std::type_index(typeid(T)));
       if (it == data_.end())
         return nullptr;
-      return std::any_cast<T>(&it->second);
+      return std::any_cast<const T>(&it->second);
     }
 
   private:
