@@ -18,9 +18,11 @@
 #include <vix/http/RequestHandler.hpp>
 #include <vix/router/RouteOptions.hpp>
 #include <vix/router/RouteNode.hpp>
+#include <vix/router/RouteDoc.hpp>
 
 #include <boost/beast/http.hpp>
 #include <string>
+#include <vector>
 #include <functional>
 #include <nlohmann/json.hpp>
 
@@ -35,6 +37,14 @@ namespace vix::router
         const http::request<http::string_body> &,
         http::response<http::string_body> &)>;
 
+    struct RouteRecord
+    {
+      http::verb method{};
+      std::string path{};
+      bool heavy{false};
+      RouteDoc doc{};
+    };
+
     Router()
         : root_{std::make_unique<RouteNode>()},
           notFound_{} {}
@@ -46,7 +56,7 @@ namespace vix::router
         const std::string &path,
         std::shared_ptr<vix::vhttp::IRequestHandler> handler)
     {
-      add_route(method, path, std::move(handler), RouteOptions{});
+      add_route(method, path, std::move(handler), RouteOptions{}, RouteDoc{});
     }
 
     void add_route(
@@ -55,6 +65,17 @@ namespace vix::router
         std::shared_ptr<vix::vhttp::IRequestHandler> handler,
         RouteOptions opt)
     {
+      add_route(method, path, std::move(handler), std::move(opt), RouteDoc{});
+    }
+
+    void add_route(
+        http::verb method,
+        const std::string &path,
+        std::shared_ptr<vix::vhttp::IRequestHandler> handler,
+        RouteOptions opt,
+        RouteDoc doc)
+    {
+      // existing tree insert logic
       std::string full_path = method_to_string(method) + path;
       auto *node = root_.get();
       size_t start = 0;
@@ -83,6 +104,16 @@ namespace vix::router
 
       node->handler = std::move(handler);
       node->heavy = opt.heavy;
+
+      // record for OpenAPI generation
+      if (opt.heavy)
+        doc.x["x-vix-heavy"] = true;
+
+      registered_routes_.push_back(RouteRecord{
+          method,
+          path,
+          opt.heavy,
+          std::move(doc)});
     }
 
     bool handle_request(
@@ -223,9 +254,12 @@ namespace vix::router
       return node && node->handler;
     }
 
+    const std::vector<RouteRecord> &routes() const noexcept { return registered_routes_; }
+
   private:
     std::unique_ptr<RouteNode> root_;
     NotFoundHandler notFound_{};
+    std::vector<RouteRecord> registered_routes_{};
 
     std::string method_to_string(http::verb method) const
     {

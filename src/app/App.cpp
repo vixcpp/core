@@ -18,6 +18,7 @@
 #include <vix/utils/Logger.hpp>
 #include <vix/utils/ServerPrettyLogs.hpp>
 #include <vix/utils/ScopeGuard.hpp>
+#include <vix/openapi/register_docs.hpp>
 
 #include <boost/beast/http.hpp>
 
@@ -197,6 +198,13 @@ namespace vix
       if (!router_)
       {
         log().throwError("Failed to get Router from HTTPServer");
+      }
+
+      // Auto docs
+      // Disable with: VIX_DOCS=0
+      if (vix::utils::env_bool("VIX_DOCS", true))
+      {
+        vix::openapi::register_openapi_and_docs(*router_, "Vix API", "0.0.0");
       }
 
       install_access_logs(*this);
