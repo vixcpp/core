@@ -1,3 +1,15 @@
+/**
+ *
+ * @file OpenApi.hpp
+ * @author Gaspard Kirira
+ *
+ * Copyright 2025, Gaspard Kirira. All rights reserved.
+ * https://github.com/vixcpp/vix
+ * Use of this source code is governed by a MIT license that can be found in the License file.
+ *
+ * Vix.cpp
+ *
+ */
 #ifndef VIX_OPENAPI_HPP
 #define VIX_OPENAPI_HPP
 
@@ -16,6 +28,7 @@ namespace vix::openapi
 {
   namespace http = boost::beast::http;
 
+  /** @brief Convert an HTTP verb to an OpenAPI operation name. */
   inline std::string method_to_openapi(http::verb v)
   {
     switch (v)
@@ -39,12 +52,18 @@ namespace vix::openapi
     }
   }
 
+  /** @brief Default OpenAPI responses when none are provided. */
   inline nlohmann::json default_responses()
   {
     return nlohmann::json{
         {"200", {{"description", "OK"}}}};
   }
 
+  /**
+   * @brief Build an OpenAPI 3 document from the HTTP router and the OpenAPI registry.
+   *
+   * Includes core HTTP routes and extra module docs registered in Registry.
+   */
   inline nlohmann::json build_from_router(
       const vix::router::Router &router,
       std::string title = "Vix API",

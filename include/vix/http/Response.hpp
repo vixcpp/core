@@ -1,26 +1,25 @@
 /**
+ * @file Response.hpp
+ * @author Gaspard Kirira
  *
- *  @file Response.hpp
- *  @author Gaspard Kirira
+ * Copyright 2025, Gaspard Kirira. All rights reserved.
+ * https://github.com/vixcpp/vix
+ * Use of this source code is governed by a MIT license that can be found in the License file.
  *
- *  Copyright 2025, Gaspard Kirira.  All rights reserved.
- *  https://github.com/vixcpp/vix
- *  Use of this source code is governed by a MIT license
- *  that can be found in the License file.
- *
- *  Vix.cpp
- *
+ * Vix.cpp
  */
+
 #ifndef VIX_RESPONSE_HPP
 #define VIX_RESPONSE_HPP
 
-#include <string>
-#include <string_view>
 #include <chrono>
 #include <ctime>
-#include <sstream>
 #include <iomanip>
+#include <sstream>
+#include <string>
+#include <string_view>
 #include <type_traits>
+#include <utility>
 
 #include <boost/beast/http.hpp>
 #include <nlohmann/json.hpp>
@@ -36,7 +35,6 @@
 
 namespace vix::vhttp
 {
-
   namespace http = boost::beast::http;
 
 #if __cpp_concepts
@@ -51,11 +49,11 @@ namespace vix::vhttp
 #endif
       HasDump<T>;
 #else
-  // Fallback SFINAE (sans concepts)
   template <class, class = void>
   struct has_dump : std::false_type
   {
   };
+
   template <class T>
   struct has_dump<T, std::void_t<decltype(std::declval<const T &>().dump())>> : std::true_type
   {
@@ -73,6 +71,7 @@ namespace vix::vhttp
   };
 #endif
 
+  /** @brief Convert a JSON-like value into a string using either vix::json or a .dump() API. */
   template <class J>
   inline std::string to_json_string(const J &j)
   {
@@ -109,6 +108,7 @@ namespace vix::vhttp
     }
   }
 
+  /** @brief Return the current time formatted as an HTTP date (RFC 7231) in GMT. */
   inline std::string http_date_now() noexcept
   {
     using clock = std::chrono::system_clock;
@@ -135,16 +135,18 @@ namespace vix::vhttp
     static constexpr bool value = (Code >= 100) && (Code <= 599);
   };
 
+  /** @brief Static helpers for building Boost.Beast HTTP responses (JSON, text, errors, redirects). */
   class Response
   {
   public:
-    // Common headers
+    /** @brief Apply common headers (Server, Date) to a response. */
     static void common_headers(http::response<http::string_body> &res) noexcept
     {
       res.set(http::field::server, "Vix/master");
       res.set(http::field::date, http_date_now());
     }
 
+    /** @brief Create a JSON response with {"message": "..."} and the given status. */
     static void create_response(
         http::response<http::string_body> &res,
         http::status status,
@@ -163,6 +165,7 @@ namespace vix::vhttp
       res.prepare_payload();
     }
 
+    /** @brief Create a JSON response with {"message": "..."} and a numeric status code. */
     static void create_response(
         http::response<http::string_body> &res,
         int status,
@@ -172,22 +175,24 @@ namespace vix::vhttp
       create_response(res, to_status(status), message, content_type);
     }
 
+    /** @brief Create a JSON response with {"message": "..."} and a compile-time status code. */
     template <int Code>
     static void create_response(
         http::response<http::string_body> &res,
         std::string_view message,
         std::string_view content_type = "application/json")
     {
-      static_assert(status_code_in_range<Code>::value,
-                    "HTTP status code must be between 100 and 599");
+      static_assert(status_code_in_range<Code>::value, "HTTP status code must be between 100 and 599");
       create_response(res, static_cast<http::status>(Code), message, content_type);
     }
 
+    /** @brief Return true if the response already contains the given header. */
     static bool has_header(const http::response<http::string_body> &res, http::field f) noexcept
     {
       return res.find(f) != res.end();
     }
 
+    /** @brief Send an error response with a JSON {"message": "..."} body. */
     static void error_response(
         http::response<http::string_body> &res,
         http::status status,
@@ -195,6 +200,8 @@ namespace vix::vhttp
     {
       create_response(res, status, message);
     }
+
+    /** @brief Send an error response with a numeric status code. */
     static void error_response(
         http::response<http::string_body> &res,
         int status,
@@ -202,16 +209,18 @@ namespace vix::vhttp
     {
       create_response(res, to_status(status), message);
     }
+
+    /** @brief Send an error response with a compile-time status code. */
     template <int Code>
     static void error_response(
         http::response<http::string_body> &res,
         std::string_view message)
     {
-      static_assert(status_code_in_range<Code>::value,
-                    "HTTP status code must be between 100 and 599");
+      static_assert(status_code_in_range<Code>::value, "HTTP status code must be between 100 and 599");
       create_response(res, static_cast<http::status>(Code), message);
     }
 
+    /** @brief Send a 200 OK JSON {"message": "..."} response. */
     static void success_response(
         http::response<http::string_body> &res,
         std::string_view message)
@@ -219,6 +228,7 @@ namespace vix::vhttp
       create_response(res, http::status::ok, message);
     }
 
+    /** @brief Send a 204 No Content response with a JSON {"message": "..."} body. */
     static void no_content_response(
         http::response<http::string_body> &res,
         std::string_view message = "No Content")
@@ -235,6 +245,7 @@ namespace vix::vhttp
       res.prepare_payload();
     }
 
+    /** @brief Send a 302 Found redirect response with a JSON body and Location header. */
     static void redirect_response(
         http::response<http::string_body> &res,
         std::string_view location)
@@ -254,6 +265,7 @@ namespace vix::vhttp
       res.prepare_payload();
     }
 
+    /** @brief Send a JSON response with the given status. */
     template <class J>
 #if __cpp_concepts
       requires SupportedJson<J>
@@ -275,6 +287,7 @@ namespace vix::vhttp
       res.prepare_payload();
     }
 
+    /** @brief Send a JSON response using a numeric status code. */
     template <class J>
 #if __cpp_concepts
       requires SupportedJson<J>
@@ -286,6 +299,7 @@ namespace vix::vhttp
       json_response(res, data, to_status(status));
     }
 
+    /** @brief Send a JSON response using a compile-time status code. */
     template <int Code, class J>
 #if __cpp_concepts
       requires SupportedJson<J>
@@ -294,11 +308,11 @@ namespace vix::vhttp
         http::response<http::string_body> &res,
         const J &data)
     {
-      static_assert(status_code_in_range<Code>::value,
-                    "HTTP status code must be between 100 and 599");
+      static_assert(status_code_in_range<Code>::value, "HTTP status code must be between 100 and 599");
       json_response(res, data, static_cast<http::status>(Code));
     }
 
+    /** @brief Send a plain text response with the given status. */
     static void text_response(
         http::response<http::string_body> &res,
         std::string_view data,
@@ -316,6 +330,7 @@ namespace vix::vhttp
       res.prepare_payload();
     }
 
+    /** @brief Send a plain text response using a numeric status code. */
     static void text_response(
         http::response<http::string_body> &res,
         std::string_view data,
@@ -324,13 +339,13 @@ namespace vix::vhttp
       text_response(res, data, to_status(status));
     }
 
+    /** @brief Send a plain text response using a compile-time status code. */
     template <int Code>
     static void text_response(
         http::response<http::string_body> &res,
         std::string_view data)
     {
-      static_assert(status_code_in_range<Code>::value,
-                    "HTTP status code must be between 100 and 599");
+      static_assert(status_code_in_range<Code>::value, "HTTP status code must be between 100 and 599");
       text_response(res, data, static_cast<http::status>(Code));
     }
   };

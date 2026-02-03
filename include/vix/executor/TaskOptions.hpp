@@ -1,14 +1,13 @@
 /**
  *
- *  @file TaskOptions.hpp
- *  @author Gaspard Kirira
+ * @file TaskOptions.hpp
+ * @author Gaspard Kirira
  *
- *  Copyright 2025, Gaspard Kirira.  All rights reserved.
- *  https://github.com/vixcpp/vix
- *  Use of this source code is governed by a MIT license
- *  that can be found in the License file.
+ * Copyright 2025, Gaspard Kirira. All rights reserved.
+ * https://github.com/vixcpp/vix
+ * Use of this source code is governed by a MIT license that can be found in the License file.
  *
- *  Vix.cpp
+ * Vix.cpp
  *
  */
 #ifndef VIX_TASK_OPTIONS_HPP
@@ -18,6 +17,10 @@
 
 namespace vix::executor
 {
+
+  /**
+   * @brief Execution options associated with a task.
+   */
   struct TaskOptions
   {
     int priority = 0;
@@ -25,6 +28,7 @@ namespace vix::executor
     std::chrono::milliseconds deadline{0};
     bool may_block = false;
   };
-}
 
-#endif
+} // namespace vix::executor
+
+#endif // VIX_TASK_OPTIONS_HPP

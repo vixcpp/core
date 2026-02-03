@@ -1,14 +1,13 @@
 /**
  *
- *  @file result.hpp
- *  @author Gaspard Kirira
+ * @file result.hpp
+ * @author Gaspard Kirira
  *
- *  Copyright 2025, Gaspard Kirira.  All rights reserved.
- *  https://github.com/vixcpp/vix
- *  Use of this source code is governed by a MIT license
- *  that can be found in the License file.
+ * Copyright 2025, Gaspard Kirira. All rights reserved.
+ * https://github.com/vixcpp/vix
+ * Use of this source code is governed by a MIT license that can be found in the License file.
  *
- *  Vix.cpp
+ * Vix.cpp
  *
  */
 #ifndef VIX_RESULT_HPP
@@ -25,6 +24,10 @@
 
 namespace vix::mw
 {
+
+  /**
+   * @brief Standard error representation for middleware and handlers.
+   */
   struct Error final
   {
     int status{500};
@@ -33,6 +36,7 @@ namespace vix::mw
     std::unordered_map<std::string, std::string> details{};
   };
 
+  /** @brief Convert an Error to JSON. */
   inline nlohmann::json to_json(const Error &e)
   {
     nlohmann::json j;
@@ -44,6 +48,9 @@ namespace vix::mw
     return j;
   }
 
+  /**
+   * @brief Result type holding either a value or an Error.
+   */
   template <class T>
   class Result final
   {
@@ -56,21 +63,25 @@ namespace vix::mw
     Result &operator=(Result &&) noexcept = default;
     ~Result() = default;
 
+    /** @brief Create a successful result. */
     static Result ok(T value)
     {
       return Result(std::move(value));
     }
 
+    /** @brief Create a failed result. */
     static Result fail(Error err)
     {
       return Result(std::move(err));
     }
 
+    /** @brief Check whether the result is successful. */
     bool is_ok() const noexcept
     {
       return std::holds_alternative<T>(data_);
     }
 
+    /** @brief Check whether the result is an error. */
     bool is_err() const noexcept
     {
       return std::holds_alternative<Error>(data_);
@@ -78,26 +89,31 @@ namespace vix::mw
 
     explicit operator bool() const noexcept { return is_ok(); }
 
+    /** @brief Access the value (undefined if error). */
     T &value()
     {
       return std::get<T>(data_);
     }
 
+    /** @brief Access the value (const). */
     const T &value() const
     {
       return std::get<T>(data_);
     }
 
+    /** @brief Access the error (undefined if ok). */
     Error &error()
     {
       return std::get<Error>(data_);
     }
 
+    /** @brief Access the error (const). */
     const Error &error() const
     {
       return std::get<Error>(data_);
     }
 
+    /** @brief Return the value or a fallback. */
     T value_or(T fallback) const
     {
       return is_ok() ? std::get<T>(data_) : std::move(fallback);
@@ -118,6 +134,9 @@ namespace vix::mw
     std::variant<T, Error> data_;
   };
 
+  /**
+   * @brief Specialization of Result for void.
+   */
   template <>
   class Result<void> final
   {
@@ -128,11 +147,13 @@ namespace vix::mw
     Result &operator=(Result &&) noexcept = default;
     ~Result() = default;
 
+    /** @brief Create a successful result. */
     static Result ok()
     {
       return Result(true, Error{});
     }
 
+    /** @brief Create a failed result. */
     static Result fail(Error err)
     {
       return Result(false, std::move(err));
@@ -143,7 +164,10 @@ namespace vix::mw
 
     explicit operator bool() const noexcept { return ok_; }
 
+    /** @brief Access the error. */
     Error &error() { return err_; }
+
+    /** @brief Access the error (const). */
     const Error &error() const { return err_; }
 
   private:
@@ -157,17 +181,20 @@ namespace vix::mw
     Error err_{};
   };
 
+  /** @brief Helper to create a successful result with value. */
   template <class T>
   inline Result<T> ok(T v)
   {
     return Result<T>::ok(std::move(v));
   }
 
+  /** @brief Helper to create a successful void result. */
   inline Result<void> ok()
   {
     return Result<void>::ok();
   }
 
+  /** @brief Helper to create a failed result with details. */
   template <class T = void>
   inline Result<T> fail(
       int status,
@@ -183,12 +210,14 @@ namespace vix::mw
     return Result<T>::fail(std::move(e));
   }
 
+  /** @brief Helper to create a failed result from an Error. */
   template <class T = void>
   inline Result<T> fail(Error e)
   {
     return Result<T>::fail(std::move(e));
   }
 
+  /** @brief Common HTTP error helpers. */
   inline Error bad_request(std::string message = "Bad Request")
   {
     return Error{400, "bad_request", std::move(message), {}};
@@ -224,6 +253,7 @@ namespace vix::mw
     return Error{500, "internal_server_error", std::move(message), {}};
   }
 
+  /** @brief Clamp an HTTP status code to a valid range. */
   inline int clamp_http_status(int status) noexcept
   {
     if (status < 100)
@@ -233,6 +263,7 @@ namespace vix::mw
     return status;
   }
 
+  /** @brief Normalize an error (status, code, message). */
   inline Error normalize(Error e)
   {
     e.status = clamp_http_status(e.status);
@@ -245,4 +276,4 @@ namespace vix::mw
 
 } // namespace vix::mw
 
-#endif
+#endif // VIX_RESULT_HPP

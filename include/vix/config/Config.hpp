@@ -1,14 +1,13 @@
 /**
  *
- *  @file Config.hpp
- *  @author Gaspard Kirira
+ * @file Config.hpp
+ * @author Gaspard Kirira
  *
- *  Copyright 2025, Gaspard Kirira.  All rights reserved.
- *  https://github.com/vixcpp/vix
- *  Use of this source code is governed by a MIT license
- *  that can be found in the License file.
+ * Copyright 2025, Gaspard Kirira. All rights reserved.
+ * https://github.com/vixcpp/vix
+ * Use of this source code is governed by a MIT license that can be found in the License file.
  *
- *  Vix.cpp
+ * Vix.cpp
  *
  */
 #ifndef VIX_CONFIG_HPP
@@ -21,16 +20,26 @@
 
 namespace vix::config
 {
+
+  /**
+   * @brief Global configuration loader and accessor.
+   *
+   * Loads configuration from a JSON file and exposes typed accessors.
+   * Implemented as a singleton.
+   */
   class Config
   {
   public:
+    /** @brief Construct a configuration with an optional config file path. */
     explicit Config(const std::filesystem::path &configPath = "");
 
     Config(const Config &) = delete;
     Config &operator=(const Config &) = delete;
 
+    /** @brief Get the singleton instance (lazy-initialized). */
     static Config &getInstance(const std::filesystem::path &configPath = "");
 
+    /** @brief Load or reload the configuration file. */
     void loadConfig();
 
 #if VIX_CORE_WITH_MYSQL
@@ -38,31 +47,73 @@ namespace vix::config
     {
       class Connection;
     }
+    /** @brief Get a database connection if MySQL support is enabled. */
     std::shared_ptr<sql::Connection> getDbConnection();
 #endif
 
+    /** @brief Read database password from environment variables. */
     std::string getDbPasswordFromEnv();
+
+    /** @brief Database host. */
     const std::string &getDbHost() const noexcept;
+
+    /** @brief Database user. */
     const std::string &getDbUser() const noexcept;
+
+    /** @brief Database name. */
     const std::string &getDbName() const noexcept;
+
+    /** @brief Database port. */
     int getDbPort() const noexcept;
+
+    /** @brief HTTP server port. */
     int getServerPort() const noexcept;
+
+    /** @brief Request timeout in milliseconds. */
     int getRequestTimeout() const noexcept;
+
+    /** @brief Set the HTTP server port. */
     void setServerPort(int port);
+
+    /** @brief Check whether a dotted configuration key exists. */
     bool has(const std::string &dottedKey) const noexcept;
+
+    /** @brief Get an integer value with a default fallback. */
     int getInt(const std::string &dottedKey, int defaultValue) const noexcept;
+
+    /** @brief Get a boolean value with a default fallback. */
     bool getBool(const std::string &dottedKey, bool defaultValue) const noexcept;
+
+    /** @brief Get a string value with a default fallback. */
     std::string getString(
         const std::string &dottedKey,
         const std::string &defaultValue) const noexcept;
-    int getIOThreads() const noexcept; // 0 => auto
+
+    /** @brief Number of IO threads (0 means auto). */
+    int getIOThreads() const noexcept;
+
+    /** @brief Whether benchmark mode is enabled. */
     bool isBenchMode() const noexcept;
+
+    /** @brief Whether async logging is enabled. */
     bool getLogAsync() const noexcept;
+
+    /** @brief Maximum async log queue size. */
     int getLogQueueMax() const noexcept;
+
+    /** @brief Whether to drop logs on overflow. */
     bool getLogDropOnOverflow() const noexcept;
-    const std::string &getWafMode() const noexcept; // "off"|"basic"|"strict"
+
+    /** @brief WAF mode ("off", "basic", or "strict"). */
+    const std::string &getWafMode() const noexcept;
+
+    /** @brief Maximum WAF target length. */
     int getWafMaxTargetLen() const noexcept;
+
+    /** @brief Maximum WAF body size in bytes. */
     int getWafMaxBodyBytes() const noexcept;
+
+    /** @brief Session timeout in seconds. */
     int getSessionTimeoutSec() const noexcept;
 
   private:
@@ -104,6 +155,7 @@ namespace vix::config
     static constexpr int DEFAULT_SESSION_TIMEOUT_SEC = 20;
     int session_timeout_sec_;
   };
-}
+
+} // namespace vix::config
 
 #endif // VIX_CONFIG_HPP

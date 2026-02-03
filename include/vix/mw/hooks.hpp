@@ -1,14 +1,13 @@
 /**
  *
- *  @file hooks.hpp
- *  @author Gaspard Kirira
+ * @file hooks.hpp
+ * @author Gaspard Kirira
  *
- *  Copyright 2025, Gaspard Kirira.  All rights reserved.
- *  https://github.com/vixcpp/vix
- *  Use of this source code is governed by a MIT license
- *  that can be found in the License file.
+ * Copyright 2025, Gaspard Kirira. All rights reserved.
+ * https://github.com/vixcpp/vix
+ * Use of this source code is governed by a MIT license that can be found in the License file.
  *
- *  Vix.cpp
+ * Vix.cpp
  *
  */
 #ifndef VIX_HOOKS_HPP
@@ -23,6 +22,10 @@
 
 namespace vix::mw
 {
+
+  /**
+   * @brief Middleware lifecycle hooks.
+   */
   struct Hooks
   {
     std::function<void(Context &)> on_begin{};
@@ -30,6 +33,9 @@ namespace vix::mw
     std::function<void(Context &, const Error &)> on_error{};
   };
 
+  /**
+   * @brief Merge a list of hooks into a single hook set.
+   */
   inline Hooks merge_hooks(std::vector<Hooks> list)
   {
     Hooks out;
@@ -66,6 +72,9 @@ namespace vix::mw
     return out;
   }
 
+  /**
+   * @brief Merge multiple hooks into a single hook set.
+   */
   template <class... H>
   inline Hooks merge_hooks(H &&...hooks)
   {
@@ -77,4 +86,4 @@ namespace vix::mw
 
 } // namespace vix::mw
 
-#endif
+#endif // VIX_HOOKS_HPP

@@ -1,42 +1,46 @@
 /**
+ * @file Router.hpp
+ * @author Gaspard Kirira
  *
- *  @file Router.hpp
- *  @author Gaspard Kirira
+ * Copyright 2025, Gaspard Kirira. All rights reserved.
+ * https://github.com/vixcpp/vix
+ * Use of this source code is governed by a MIT license that can be found in the License file.
  *
- *  Copyright 2025, Gaspard Kirira.  All rights reserved.
- *  https://github.com/vixcpp/vix
- *  Use of this source code is governed by a MIT license
- *  that can be found in the License file.
- *
- *  Vix.cpp
- *
+ * Vix.cpp
  */
+
 #ifndef VIX_ROUTER_HPP
 #define VIX_ROUTER_HPP
 
-#include <vix/http/Response.hpp>
-#include <vix/http/RequestHandler.hpp>
-#include <vix/router/RouteOptions.hpp>
-#include <vix/router/RouteNode.hpp>
-#include <vix/router/RouteDoc.hpp>
+#include <functional>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include <boost/beast/http.hpp>
-#include <string>
-#include <vector>
-#include <functional>
 #include <nlohmann/json.hpp>
+
+#include <vix/http/RequestHandler.hpp>
+#include <vix/http/Response.hpp>
+#include <vix/router/RouteDoc.hpp>
+#include <vix/router/RouteNode.hpp>
+#include <vix/router/RouteOptions.hpp>
 
 namespace vix::router
 {
   namespace http = boost::beast::http;
 
+  /** @brief Lightweight route matcher/dispatcher backed by a route tree (method + path), with optional OpenAPI metadata. */
   class Router
   {
   public:
+    /** @brief Custom handler called when no route matches a request. */
     using NotFoundHandler = std::function<void(
         const http::request<http::string_body> &,
         http::response<http::string_body> &)>;
 
+    /** @brief Metadata for one registered route (used for docs/OpenAPI and runtime checks). */
     struct RouteRecord
     {
       http::verb method{};
@@ -45,12 +49,15 @@ namespace vix::router
       RouteDoc doc{};
     };
 
+    /** @brief Create an empty router with an initialized route tree. */
     Router()
         : root_{std::make_unique<RouteNode>()},
           notFound_{} {}
 
+    /** @brief Set a custom not-found handler (otherwise a default JSON 404 is returned). */
     void setNotFoundHandler(NotFoundHandler h) { notFound_ = std::move(h); }
 
+    /** @brief Register a route handler for (method, path). */
     void add_route(
         http::verb method,
         const std::string &path,
@@ -59,6 +66,7 @@ namespace vix::router
       add_route(method, path, std::move(handler), RouteOptions{}, RouteDoc{});
     }
 
+    /** @brief Register a route handler for (method, path) with options (e.g. heavy routes). */
     void add_route(
         http::verb method,
         const std::string &path,
@@ -68,6 +76,7 @@ namespace vix::router
       add_route(method, path, std::move(handler), std::move(opt), RouteDoc{});
     }
 
+    /** @brief Register a route handler for (method, path) with options and documentation metadata. */
     void add_route(
         http::verb method,
         const std::string &path,
@@ -75,16 +84,16 @@ namespace vix::router
         RouteOptions opt,
         RouteDoc doc)
     {
-      // existing tree insert logic
       std::string full_path = method_to_string(method) + path;
       auto *node = root_.get();
-      size_t start = 0;
+      std::size_t start = 0;
 
       while (start < full_path.size())
       {
-        size_t end = full_path.find('/', start);
+        std::size_t end = full_path.find('/', start);
         if (end == std::string::npos)
           end = full_path.size();
+
         std::string segment = full_path.substr(start, end - start);
 
         const bool isParam = !segment.empty() && segment.front() == '{' && segment.back() == '}';
@@ -105,7 +114,6 @@ namespace vix::router
       node->handler = std::move(handler);
       node->heavy = opt.heavy;
 
-      // record for OpenAPI generation
       if (opt.heavy)
         doc.x["x-vix-heavy"] = true;
 
@@ -116,6 +124,7 @@ namespace vix::router
           std::move(doc)});
     }
 
+    /** @brief Dispatch a request to the matching handler (returns true once handled, including 404). */
     bool handle_request(
         const http::request<http::string_body> &req,
         http::response<http::string_body> &res)
@@ -123,7 +132,6 @@ namespace vix::router
       if (req.method() == http::verb::options)
       {
         const std::string target = strip_query(std::string(req.target()));
-
         if (!has_route(http::verb::options, target))
         {
           res.result(http::status::no_content);
@@ -138,26 +146,23 @@ namespace vix::router
       std::string full_path = method_to_string(req.method()) + target;
 
       auto *node = root_.get();
-      size_t start = 0;
+      std::size_t start = 0;
 
       while (start <= full_path.size() && node)
       {
         if (start == full_path.size())
           break;
 
-        size_t end = full_path.find('/', start);
+        std::size_t end = full_path.find('/', start);
         if (end == std::string::npos)
           end = full_path.size();
+
         std::string segment = full_path.substr(start, end - start);
 
         if (node->children.count(segment))
-        {
           node = node->children.at(segment).get();
-        }
         else if (node->children.count("*"))
-        {
           node = node->children.at("*").get();
-        }
         else
         {
           node = nullptr;
@@ -175,15 +180,10 @@ namespace vix::router
         {
           const int s = static_cast<int>(res.result());
           if (s == 204 || s == 304)
-          {
             res.body().clear();
-          }
 
-          if (res.body().empty() &&
-              res.find(http::field::content_length) == res.end())
-          {
+          if (res.body().empty() && res.find(http::field::content_length) == res.end())
             res.content_length(0);
-          }
 
           res.prepare_payload();
         }
@@ -206,15 +206,18 @@ namespace vix::router
         res.set(http::field::connection, "close");
         res.prepare_payload();
       }
+
       return true;
     }
 
+    /** @brief Return true if the route matched by this request is marked as heavy. */
     bool is_heavy(const http::request<http::string_body> &req) const
     {
       const RouteNode *node = match_node(req);
       return node ? node->heavy : false;
     }
 
+    /** @brief Remove the query string from a request target and return only the path. */
     static std::string strip_query(std::string target)
     {
       if (auto q = target.find('?'); q != std::string::npos)
@@ -222,20 +225,21 @@ namespace vix::router
       return target;
     }
 
+    /** @brief Return true if a handler exists for (method, path). */
     bool has_route(http::verb method, const std::string &path) const
     {
       std::string target = strip_query(path);
       std::string full_path = method_to_string(method) + target;
 
       const RouteNode *node = root_.get();
-      size_t start = 0;
+      std::size_t start = 0;
 
       while (start <= full_path.size() && node)
       {
         if (start == full_path.size())
           break;
 
-        size_t end = full_path.find('/', start);
+        std::size_t end = full_path.find('/', start);
         if (end == std::string::npos)
           end = full_path.size();
 
@@ -254,6 +258,7 @@ namespace vix::router
       return node && node->handler;
     }
 
+    /** @brief Return the list of routes registered on this router (useful for docs generation). */
     const std::vector<RouteRecord> &routes() const noexcept { return registered_routes_; }
 
   private:
@@ -294,14 +299,14 @@ namespace vix::router
       std::string full_path = method_to_string(req.method()) + target;
 
       const RouteNode *node = root_.get();
-      size_t start = 0;
+      std::size_t start = 0;
 
       while (start <= full_path.size() && node)
       {
         if (start == full_path.size())
           break;
 
-        size_t end = full_path.find('/', start);
+        std::size_t end = full_path.find('/', start);
         if (end == std::string::npos)
           end = full_path.size();
 

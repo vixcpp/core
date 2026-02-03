@@ -1,16 +1,14 @@
 /**
+ * @file Status.hpp
+ * @author Gaspard Kirira
  *
- *  @file Status.hpp
- *  @author Gaspard Kirira
+ * Copyright 2025, Gaspard Kirira. All rights reserved.
+ * https://github.com/vixcpp/vix
+ * Use of this source code is governed by a MIT license that can be found in the License file.
  *
- *  Copyright 2025, Gaspard Kirira.  All rights reserved.
- *  https://github.com/vixcpp/vix
- *  Use of this source code is governed by a MIT license
- *  that can be found in the License file.
- *
- *  Vix.cpp
- *
+ * Vix.cpp
  */
+
 #ifndef VIX_STATUS_HPP
 #define VIX_STATUS_HPP
 
@@ -22,25 +20,30 @@ namespace vix::vhttp
 {
   namespace http = boost::beast::http;
 
+  /** @brief Common HTTP success status codes. */
   inline constexpr int OK = 200;
   inline constexpr int CREATED = 201;
   inline constexpr int ACCEPTED = 202;
   inline constexpr int NO_CONTENT = 204;
 
+  /** @brief Common HTTP redirection status codes. */
   inline constexpr int MOVED_PERMANENTLY = 301;
   inline constexpr int FOUND = 302;
 
+  /** @brief Common HTTP client error status codes. */
   inline constexpr int BAD_REQUEST = 400;
   inline constexpr int UNAUTHORIZED = 401;
   inline constexpr int FORBIDDEN = 403;
   inline constexpr int NOT_FOUND = 404;
   inline constexpr int CONFLICT = 409;
 
+  /** @brief Common HTTP server error status codes. */
   inline constexpr int INTERNAL_ERROR = 500;
   inline constexpr int NOT_IMPLEMENTED = 501;
   inline constexpr int BAD_GATEWAY = 502;
   inline constexpr int SERVICE_UNAVAILABLE = 503;
 
+  /** @brief Convert a numeric HTTP status code to boost::beast::http::status (returns 500 on invalid in release builds). */
   inline constexpr http::status to_status(int code) noexcept
   {
     if (code >= 100 && code <= 599)
@@ -52,6 +55,7 @@ namespace vix::vhttp
     return http::status::internal_server_error;
   }
 
+  /** @brief Return a human-readable string for a common HTTP status code (e.g. "404 Not Found"). */
   inline std::string status_to_string(int code)
   {
     switch (code)

@@ -1,14 +1,13 @@
 /**
  *
- *  @file ThreadPool.hpp
- *  @author Gaspard Kirira
+ * @file ThreadPool.hpp
+ * @author Gaspard Kirira
  *
- *  Copyright 2025, Gaspard Kirira.  All rights reserved.
- *  https://github.com/vixcpp/vix
- *  Use of this source code is governed by a MIT license
- *  that can be found in the License file.
+ * Copyright 2025, Gaspard Kirira. All rights reserved.
+ * https://github.com/vixcpp/vix
+ * Use of this source code is governed by a MIT license that can be found in the License file.
  *
- *  Vix.cpp
+ * Vix.cpp
  *
  */
 #ifndef VIX_THREAD_POOL_HPP
@@ -43,6 +42,9 @@ namespace vix::threadpool
     return Logger::getInstance();
   }
 
+  /**
+   * @brief Thread pool metrics snapshot.
+   */
   struct Metrics
   {
     std::uint64_t pendingTasks;
@@ -52,6 +54,9 @@ namespace vix::threadpool
 
   extern thread_local int threadId;
 
+  /**
+   * @brief Priority-based thread pool with optional periodic scheduling.
+   */
   class ThreadPool
   {
   private:
@@ -138,6 +143,14 @@ namespace vix::threadpool
     }
 
   public:
+    /**
+     * @brief Create a thread pool.
+     *
+     * @param threadCount Initial number of worker threads.
+     * @param maxThreadCount Maximum number of worker threads.
+     * @param priority Default priority used by enqueue() overloads.
+     * @param maxPeriodic Maximum concurrent periodic scheduler threads.
+     */
     ThreadPool(
         std::size_t threadCount,
         std::size_t maxThreadCount,
@@ -199,6 +212,9 @@ namespace vix::threadpool
                 threadCount, maxThreads, threadPriority, maxPeriodicThreads);
     }
 
+    /**
+     * @brief Return a snapshot of pool metrics.
+     */
     [[nodiscard]] Metrics getMetrics()
     {
       std::lock_guard<std::mutex> lock(m);
@@ -208,6 +224,15 @@ namespace vix::threadpool
           tasksTimedOut.load(std::memory_order_relaxed)};
     }
 
+    /**
+     * @brief Enqueue a task with a priority and an execution timeout warning.
+     *
+     * @param priority Task priority.
+     * @param timeout Timeout used only for warning/metrics (0 disables).
+     * @param f Callable.
+     * @param args Callable arguments.
+     * @return std::future for the callable result.
+     */
     template <class F, class... Args>
     auto enqueue(
         int priority,
@@ -268,6 +293,9 @@ namespace vix::threadpool
       return res;
     }
 
+    /**
+     * @brief Enqueue a task with explicit priority.
+     */
     template <class F, class... Args>
     auto enqueue(int priority, F &&f, Args &&...args)
         -> std::future<std::invoke_result_t<F, Args...>>
@@ -277,6 +305,9 @@ namespace vix::threadpool
           std::forward<F>(f), std::forward<Args>(args)...);
     }
 
+    /**
+     * @brief Enqueue a task using the pool default priority.
+     */
     template <class F, class... Args>
     auto enqueue(F &&f, Args &&...args)
         -> std::future<std::invoke_result_t<F, Args...>>
@@ -286,6 +317,13 @@ namespace vix::threadpool
           std::forward<F>(f), std::forward<Args>(args)...);
     }
 
+    /**
+     * @brief Schedule a periodic task posted to the pool at each interval.
+     *
+     * @param priority Task priority.
+     * @param func Task callback.
+     * @param interval Period between executions.
+     */
     void periodicTask(int priority, std::function<void()> func, std::chrono::milliseconds interval)
     {
       {
@@ -382,12 +420,18 @@ namespace vix::threadpool
       }
     }
 
+    /**
+     * @brief Check whether the pool has no pending tasks and no active workers.
+     */
     [[nodiscard]] bool isIdle() noexcept
     {
       std::lock_guard<std::mutex> lock(m);
       return activeTasks.load(std::memory_order_relaxed) == 0 && tasks.empty();
     }
 
+    /**
+     * @brief Block until the pool becomes idle.
+     */
     void waitUntilIdle()
     {
       std::unique_lock<std::mutex> lock(m);
@@ -395,12 +439,16 @@ namespace vix::threadpool
                   { return tasks.empty() && activeTasks.load(std::memory_order_relaxed) == 0; });
     }
 
+    /**
+     * @brief Stop periodic scheduling threads (best-effort).
+     */
     void stopPeriodicTasks() noexcept
     {
       stopPeriodic.store(true, std::memory_order_relaxed);
       condition.notify_all();
     }
 
+    /** @brief Destructor: stops workers and joins all threads. */
     ~ThreadPool() noexcept
     {
       {
@@ -428,4 +476,4 @@ namespace vix::threadpool
 
 } // namespace vix::threadpool
 
-#endif // VIX_THREADPOOL_HPP
+#endif // VIX_THREAD_POOL_HPP

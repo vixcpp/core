@@ -1,14 +1,13 @@
 /**
  *
- *  @file IExecutor.hpp
- *  @author Gaspard Kirira
+ * @file IExecutor.hpp
+ * @author Gaspard Kirira
  *
- *  Copyright 2025, Gaspard Kirira.  All rights reserved.
- *  https://github.com/vixcpp/vix
- *  Use of this source code is governed by a MIT license
- *  that can be found in the License file.
+ * Copyright 2025, Gaspard Kirira. All rights reserved.
+ * https://github.com/vixcpp/vix
+ * Use of this source code is governed by a MIT license that can be found in the License file.
  *
- *  Vix.cpp
+ * Vix.cpp
  *
  */
 #ifndef VIX_IEXECUTOR_HPP
@@ -24,14 +23,34 @@
 
 namespace vix::executor
 {
+
+  /**
+   * @brief Generic task execution interface.
+   *
+   * Provides asynchronous task posting, metrics access, and idle synchronization.
+   */
   struct IExecutor
   {
+    /** @brief Virtual destructor. */
     virtual ~IExecutor() = default;
 
+    /** @brief Post a task for execution. */
     virtual bool post(std::function<void()> fn, TaskOptions opt = {}) = 0;
+
+    /** @brief Return executor metrics snapshot. */
     virtual vix::executor::Metrics metrics() const = 0;
+
+    /** @brief Block until the executor becomes idle. */
     virtual void wait_idle() = 0;
 
+    /**
+     * @brief Submit a callable and obtain a future to its result.
+     *
+     * @param f Callable.
+     * @param args Callable arguments.
+     * @param opt Task options.
+     * @return std::future for the callable result.
+     */
     template <class F, class... Args>
     auto submit(F &&f, Args &&...args, TaskOptions opt = {})
         -> std::future<std::invoke_result_t<F, Args...>>
@@ -51,6 +70,7 @@ namespace vix::executor
       return fut;
     }
   };
-}
 
-#endif
+} // namespace vix::executor
+
+#endif // VIX_IEXECUTOR_HPP

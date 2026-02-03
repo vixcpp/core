@@ -1,14 +1,13 @@
 /**
  *
- *  @file Registry.hpp
- *  @author Gaspard Kirira
+ * @file Register.hpp
+ * @author Gaspard Kirira
  *
- *  Copyright 2025, Gaspard Kirira.  All rights reserved.
- *  https://github.com/vixcpp/vix
- *  Use of this source code is governed by a MIT license
- *  that can be found in the License file.
+ * Copyright 2025, Gaspard Kirira. All rights reserved.
+ * https://github.com/vixcpp/vix
+ * Use of this source code is governed by a MIT license that can be found in the License file.
  *
- *  Vix.cpp
+ * Vix.cpp
  *
  */
 #ifndef VIX_OPENAPI_REGISTRY_HPP
@@ -26,6 +25,9 @@ namespace vix::openapi
 {
   namespace http = boost::beast::http;
 
+  /**
+   * @brief Route documentation entry registered outside the core HTTP router.
+   */
   struct ExtraRouteDoc
   {
     http::verb method{};
@@ -33,9 +35,13 @@ namespace vix::openapi
     vix::router::RouteDoc doc{};
   };
 
+  /**
+   * @brief Global registry for additional OpenAPI route docs (websocket, modules, etc.).
+   */
   class Registry
   {
   public:
+    /** @brief Register an extra documented route. */
     static void add(http::verb method, std::string path, vix::router::RouteDoc doc)
     {
       auto &self = instance();
@@ -43,6 +49,7 @@ namespace vix::openapi
       self.extras_.push_back(ExtraRouteDoc{method, std::move(path), std::move(doc)});
     }
 
+    /** @brief Return a snapshot of all registered extra route docs. */
     static std::vector<ExtraRouteDoc> snapshot()
     {
       auto &self = instance();

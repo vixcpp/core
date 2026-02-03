@@ -1,14 +1,13 @@
 /**
  *
- *  @file register_docs.hpp
- *  @author Gaspard Kirira
+ * @file register_docs.hpp
+ * @author Gaspard Kirira
  *
- *  Copyright 2025, Gaspard Kirira.  All rights reserved.
- *  https://github.com/vixcpp/vix
- *  Use of this source code is governed by a MIT license
- *  that can be found in the License file.
+ * Copyright 2025, Gaspard Kirira. All rights reserved.
+ * https://github.com/vixcpp/vix
+ * Use of this source code is governed by a MIT license that can be found in the License file.
  *
- *  Vix.cpp
+ * Vix.cpp
  *
  */
 #ifndef VIX_REGISTER_DOCS_HPP
@@ -31,6 +30,14 @@
 
 namespace vix::openapi
 {
+
+  /**
+   * @brief Register OpenAPI and Swagger UI routes on a router.
+   *
+   * Adds:
+   * - GET /openapi.json : generated OpenAPI 3 document
+   * - GET /docs        : Swagger UI page rendering /openapi.json
+   */
   inline void register_openapi_and_docs(
       vix::router::Router &router,
       std::string title = "Vix API",
@@ -98,6 +105,7 @@ namespace vix::openapi
           std::move(doc));
     }
   }
-}
+
+} // namespace vix::openapi
 
 #endif // VIX_REGISTER_DOCS_HPP

@@ -1,14 +1,13 @@
 /**
  *
- *  @file core.hpp
- *  @author Gaspard Kirira
+ * @file core.hpp
+ * @author Gaspard Kirira
  *
- *  Copyright 2025, Gaspard Kirira.  All rights reserved.
- *  https://github.com/vixcpp/vix
- *  Use of this source code is governed by a MIT license
- *  that can be found in the License file.
+ * Copyright 2025, Gaspard Kirira. All rights reserved.
+ * https://github.com/vixcpp/vix
+ * Use of this source code is governed by a MIT license that can be found in the License file.
  *
- *  Vix.cpp
+ * Vix.cpp
  *
  */
 #ifndef VIX_CORE_HPP
@@ -40,13 +39,24 @@ namespace bhttp = boost::beast::http;
 
 namespace vix
 {
+
+  /**
+   * @brief Core type aliases and common includes for Vix.
+   */
   using tcp = asio::ip::tcp;
 
+  /** @brief Shared pointer to App. */
   using AppPtr = std::shared_ptr<App>;
+
+  /** @brief Shared pointer to HTTP session. */
   using SessionPtr = std::shared_ptr<vix::session::Session>;
 
+  /** @brief HTTP request alias. */
   using Request = vix::vhttp::Request;
+
+  /** @brief HTTP response alias. */
   using Response = vix::vhttp::ResponseWrapper;
+
 } // namespace vix
 
-#endif
+#endif // VIX_CORE_HPP
