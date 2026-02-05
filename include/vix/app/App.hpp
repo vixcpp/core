@@ -36,6 +36,80 @@
 #include <vix/experimental/ThreadPoolExecutor.hpp>
 #include <vix/utils/ServerPrettyLogs.hpp>
 
+/**
+ * @file App.hpp
+ * @brief High-level HTTP application entry point.
+ *
+ * @details
+ * `vix::App` is the main object you use to build a Vix HTTP server.
+ *
+ * It owns and wires together:
+ * - a router (routes, middlewares, groups)
+ * - an HTTP server (listening, accept loop, request dispatch)
+ * - an execution context (executor for running request handlers)
+ *
+ * The goal is to keep the beginner experience close to Python frameworks:
+ * you declare routes, start the server, and focus on your app logic.
+ *
+ * Minimal example
+ * @code
+ * #include <vix.hpp>
+ * using namespace vix;
+ * namespace J = vix::json;
+ *
+ * int main()
+ * {
+ *   App app;
+ *
+ *   app.get("/", [](Request &, Response &res)
+ *   {
+ *     res.json({"message", "Hello, Vix!"});
+ *   });
+ *
+ *   app.get("/user", [](Request &, Response &res)
+ *   {
+ *     res.json({"name", "Ada",
+ *               "tags", J::array({"c++", "net", "http"}),
+ *               "profile", J::obj({"id", 42, "vip", true})});
+ *   });
+ *
+ *   app.run(8080);
+ * }
+ * @endcode
+ *
+ * Route handlers
+ * A handler can be written in 2 styles:
+ *
+ * 1) Facade handler (most common, beginner-friendly):
+ *    - `(vix::vhttp::Request&, vix::vhttp::ResponseWrapper&)`
+ *
+ * 2) Raw handler (advanced, closer to HTTP internals):
+ *    - `(const vix::vhttp::RawRequest&, vix::vhttp::ResponseWrapper&)`
+ *
+ * Return values
+ * A handler may:
+ * - return `void` and write into the response explicitly (`res.send()`, `res.json()`, etc.)
+ * - or return a value (string/JSON/etc.) and let Vix auto-send it if nothing was written yet
+ *
+ * Middlewares
+ * Use `use()` / `protect()` / `protect_exact()` to attach middleware:
+ * - globally
+ * - per prefix
+ * - or exactly for one path
+ *
+ * Groups
+ * Use `group("/api", ...)` to prefix routes and attach shared middleware.
+ *
+ * Concurrency
+ * The server executes handlers using an `IExecutor`. The default is suitable
+ * for most apps, but advanced users can inject a custom executor.
+ *
+ * Shutdown
+ * `run()` blocks the current thread.
+ * `listen()` runs the server in a background thread and returns immediately.
+ * Use `close()` and `wait()` to stop and join cleanly.
+ */
+
 namespace vix::router
 {
   class Router;
@@ -46,13 +120,27 @@ namespace vix
   namespace http = boost::beast::http;
   using Logger = vix::utils::Logger;
 
-  /** @brief Return the global Vix logger instance. */
+  /**
+   * @brief Return the global Vix logger instance.
+   *
+   * This is a short alias to the internal logger used across the runtime.
+   */
   inline Logger &log()
   {
     return Logger::getInstance();
   }
 
-  /** @brief HTTP application wrapper that owns the router, server, and execution context. */
+  /**
+   * @brief HTTP application wrapper that owns routing, server, and execution context.
+   *
+   * `App` is designed to be the single object a user needs for typical servers:
+   * - register routes (get/post/put/patch/del/head/options)
+   * - attach middleware
+   * - start listening (`run` or `listen`)
+   *
+   * It keeps the public API small, while still exposing advanced controls
+   * (executor injection, static files, module init hook, signal-safe stop).
+   */
   class App
   {
   public:
@@ -65,10 +153,20 @@ namespace vix
     /** @brief Callback invoked with the bound listening port. */
     using ListenPortCallback = std::function<void(int)>;
 
-    /** @brief Create an app using the default executor. */
+    /**
+     * @brief Create an app using the default executor.
+     *
+     * The default executor is intended to be a good baseline for most applications.
+     */
     App();
 
-    /** @brief Create an app using a custom executor shared by the HTTP server. */
+    /**
+     * @brief Create an app using a custom executor shared by the HTTP server.
+     *
+     * Use this when you want explicit control over concurrency and scheduling.
+     *
+     * @param executor Executor used to run request handlers.
+     */
     explicit App(std::shared_ptr<vix::executor::IExecutor> executor);
 
     /** @brief Destroy the app and stop the server if still running. */
@@ -79,19 +177,37 @@ namespace vix
     App(App &&) = delete;
     App &operator=(App &&) = delete;
 
-    /** @brief Run the HTTP server and block the current thread until it stops. */
+    /**
+     * @brief Run the HTTP server and block the current thread until it stops.
+     *
+     * @param port Listening port (default: 8080).
+     */
     void run(int port = 8080);
 
-    /** @brief Start listening on a port in a background thread and optionally receive a ready callback. */
+    /**
+     * @brief Start listening on a port in a background thread.
+     *
+     * @param port Listening port (default: 8080).
+     * @param on_listen Optional callback invoked once the server is ready.
+     */
     void listen(int port = 8080, ListenCallback on_listen = {});
 
     /** @brief Block until the server has fully stopped. */
     void wait();
 
-    /** @brief Request the server to stop and wake any waiting thread. */
+    /**
+     * @brief Request the server to stop and wake any waiting thread.
+     *
+     * This is a graceful stop. Use `wait()` to join the background thread
+     * when `listen()` was used.
+     */
     void close();
 
-    /** @brief Set a callback executed once during shutdown. */
+    /**
+     * @brief Set a callback executed once during shutdown.
+     *
+     * @param cb Callback to run during shutdown.
+     */
     void set_shutdown_callback(ShutdownCallback cb)
     {
       shutdown_cb_ = std::move(cb);
@@ -175,10 +291,22 @@ namespace vix
     /** @brief Return true if the server has started. */
     bool is_running() const noexcept { return started_.load(std::memory_order_relaxed); }
 
-    /** @brief Request stop in a signal-safe way (intended for SIGINT/SIGTERM handlers). */
+    /**
+     * @brief Request stop in a signal-safe way (intended for SIGINT/SIGTERM handlers).
+     *
+     * This method is designed to be safe to call from a signal handler.
+     * It only sets flags and avoids heavy operations.
+     */
     void request_stop_from_signal() noexcept;
 
-    /** @brief Start listening on a port and optionally receive the resolved port value. */
+    /**
+     * @brief Start listening on a port and receive the final resolved port value.
+     *
+     * Useful when binding to port 0 (ephemeral port).
+     *
+     * @param port Requested port (0 means "choose automatically").
+     * @param cb Optional callback receiving the bound port.
+     */
     void listen_port(int port, ListenPortCallback cb = {});
 
     /** @brief Enable or disable development mode for the app. */
@@ -187,7 +315,12 @@ namespace vix
     /** @brief Return whether development mode is enabled. */
     bool isDevMode() const { return dev_mode_; }
 
-    /** @brief Signature for the static assets handler used by static_dir(). */
+    /**
+     * @brief Signature for the static assets handler used by static_dir().
+     *
+     * This allows the runtime to plug different static-file implementations
+     * without changing the public API.
+     */
     using StaticHandler =
         std::function<bool(App &, const std::filesystem::path &root,
                            const std::string &mount,
@@ -199,7 +332,16 @@ namespace vix
     /** @brief Set the global static assets handler used by all App instances. */
     static void set_static_handler(StaticHandler fn);
 
-    /** @brief Serve a directory of static files under a mount path with optional cache control. */
+    /**
+     * @brief Serve a directory of static files under a mount path.
+     *
+     * @param root Root directory containing static assets.
+     * @param mount URL path prefix (default: "/").
+     * @param index_file Default file for directory requests (default: "index.html").
+     * @param add_cache_control Whether to add a Cache-Control header.
+     * @param cache_control Cache-Control value (default: "public, max-age=3600").
+     * @param fallthrough If true, missing static files continue to next route/middleware.
+     */
     void static_dir(std::filesystem::path root,
                     std::string mount = "/",
                     std::string index_file = "index.html",
@@ -216,10 +358,26 @@ namespace vix
     /** @brief Continuation invoked to call the next middleware in the chain. */
     using Next = std::function<void()>;
 
-    /** @brief Middleware signature used by use(), protect(), and groups. */
+    /**
+     * @brief Middleware signature used by use(), protect(), and groups.
+     *
+     * A middleware can inspect/modify the request and response, then either:
+     * - call `next()` to continue the chain
+     * - or stop and send a response early
+     */
     using Middleware = std::function<void(vix::vhttp::Request &, vix::vhttp::ResponseWrapper &, Next)>;
 
-    /** @brief Route group helper that prefixes paths and shares middleware registration. */
+    /**
+     * @brief Route group helper that prefixes paths and shares middleware registration.
+     *
+     * Groups allow writing clean APIs like:
+     * @code
+     * app.group("/api", [](App::Group &g) {
+     *   g.use(auth_mw);
+     *   g.get("/users", users_handler);
+     * });
+     * @endcode
+     */
     class Group
     {
     public:
@@ -555,4 +713,4 @@ namespace vix
 
 } // namespace vix
 
-#endif // VIX_HTTP_APP_HPP
+#endif
