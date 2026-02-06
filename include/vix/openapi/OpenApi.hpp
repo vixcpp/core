@@ -46,8 +46,6 @@ namespace vix::openapi
       return "patch";
     case http::verb::head:
       return "head";
-    case http::verb::options:
-      return "options";
     default:
       return {};
     }
