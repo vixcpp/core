@@ -235,8 +235,9 @@ namespace vix::config
 
   void Config::setServerPort(int port)
   {
-    if (port < 1024 || port > 65535)
-      log().throwError("Server port out of range (1024-65535).");
+    if ((port != 0 && port < 1024) || port > 65535)
+      log().throwError("Server port out of range (0 or 1024-65535).");
+
     server_port = port;
   }
 

@@ -16,6 +16,7 @@
 #include <memory>
 #include <thread>
 #include <vector>
+#include <chrono>
 
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/beast/core.hpp>
@@ -73,6 +74,17 @@ namespace vix::server
     /** @brief Stop the server and block until all threads have exited. */
     void stop_blocking();
 
+    /**
+     * @brief Return the actual TCP port bound by the acceptor.
+     *
+     * This is useful when the configured port was 0 (ephemeral port).
+     * Returns 0 if the server is not bound yet.
+     */
+    int bound_port() const noexcept
+    {
+      return bound_port_.load(std::memory_order_relaxed);
+    }
+
   private:
     /** @brief Initialize the TCP acceptor on the given port. */
     void init_acceptor(unsigned short port);
@@ -95,6 +107,7 @@ namespace vix::server
     std::vector<std::thread> io_threads_;
     std::atomic<bool> stop_requested_{false};
     std::chrono::steady_clock::time_point startup_t0_;
+    std::atomic<int> bound_port_{0};
   };
 
 } // namespace vix::server

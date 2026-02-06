@@ -148,7 +148,7 @@ namespace vix
     using ShutdownCallback = std::function<void()>;
 
     /** @brief Callback invoked when the server is ready and listening. */
-    using ListenCallback = std::function<void(const vix::utils::ServerReadyInfo &)>;
+    using ListenCallback = std::function<void()>;
 
     /** @brief Callback invoked with the bound listening port. */
     using ListenPortCallback = std::function<void(int)>;
@@ -542,6 +542,8 @@ namespace vix
     std::mutex stop_mutex_;
     std::condition_variable stop_cv_;
     bool dev_mode_ = {false};
+    std::atomic<bool> wait_called_{false};
+    std::atomic<bool> listen_called_{false};
 
     using RawRequestT = vix::vhttp::RawRequest;
 

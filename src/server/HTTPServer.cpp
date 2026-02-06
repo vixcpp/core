@@ -141,6 +141,11 @@ namespace vix::server
     acceptor_->listen(boost::asio::socket_base::max_connections, ec);
     if (ec)
       throw std::system_error(ec, "listen acceptor");
+
+    boost::system::error_code ec2;
+    const auto ep = acceptor_->local_endpoint(ec2);
+    if (!ec2)
+      bound_port_.store(static_cast<int>(ep.port()), std::memory_order_relaxed);
   }
 
   void HTTPServer::start_io_threads()
@@ -173,7 +178,7 @@ namespace vix::server
     if (!acceptor_ || !acceptor_->is_open())
     {
       int port = config_.getServerPort();
-      if (port < 1024 || port > 65535)
+      if ((port != 0 && port < 1024) || port > 65535)
       {
         log().log(Logger::Level::ERROR, "Server port {} out of range (1024-65535)", port);
         throw std::invalid_argument("Invalid port number");

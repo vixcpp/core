@@ -278,6 +278,12 @@ namespace vix
 
   App::~App()
   {
+    if (listen_called_.load(std::memory_order_relaxed) &&
+        !wait_called_.load(std::memory_order_relaxed))
+    {
+      log().log(Logger::Level::WARN, "listen() without wait()");
+    }
+
     close();
   }
 
@@ -291,14 +297,17 @@ namespace vix
 
   void App::listen_port(int port, ListenPortCallback cb)
   {
-    listen(port, [cb = std::move(cb)](const vix::utils::ServerReadyInfo &info)
+    listen(port, [this, cb = std::move(cb)]()
            {
-        if (cb) cb(info.port); });
+           const int bound = server_.bound_port();
+           if (cb)
+             cb(bound); });
   }
 
   void App::listen(int port, ListenCallback on_listen)
   {
     using clock = std::chrono::steady_clock;
+    listen_called_.store(true, std::memory_order_relaxed);
 
     if (started_.exchange(true, std::memory_order_relaxed))
     {
@@ -317,9 +326,17 @@ namespace vix
     std::signal(SIGTERM, handle_stop_signal);
 #endif
 
-    server_thread_ = std::thread(
-        [this]()
-        { server_.run(); });
+    server_thread_ = std::thread([this]()
+                                 { server_.run(); });
+
+    int bound = 0;
+    for (int i = 0; i < 200; ++i) // ~200ms max
+    {
+      bound = server_.bound_port();
+      if (bound != 0)
+        break;
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
 
     const auto t1 = clock::now();
     int ready_ms = static_cast<int>(
@@ -338,7 +355,7 @@ namespace vix
 
     info.scheme = "http";
     info.host = "localhost";
-    info.port = config_.getServerPort();
+    info.port = (bound != 0) ? bound : config_.getServerPort(); // fallback
     info.base_path = "/";
     info.show_ws = false;
 
@@ -355,13 +372,14 @@ namespace vix
     }
 
     if (on_listen)
-      on_listen(info);
+      on_listen();
     else
       vix::utils::RuntimeBanner::emit_server_ready(info);
   }
 
   void App::wait()
   {
+    wait_called_.store(true, std::memory_order_relaxed);
     std::unique_lock<std::mutex> lock(stop_mutex_);
     stop_cv_.wait(
         lock, [this]()
