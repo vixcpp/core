@@ -346,7 +346,7 @@ namespace vix
 
     vix::utils::ServerReadyInfo info;
     info.app = "vix.cpp";
-    info.version = "v1.16.2";
+    info.version = "v1.31.0";
     info.ready_ms = ready_ms;
     info.mode = dev_mode_ ? "dev" : "run";
 
