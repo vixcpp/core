@@ -14,21 +14,22 @@
 #define VIX_OPENAPI_HPP
 
 #include <string>
-#include <unordered_map>
+#include <string_view>
+#include <unordered_set>
 #include <vector>
 
-#include <nlohmann/json.hpp>
 #include <boost/beast/http.hpp>
+#include <nlohmann/json.hpp>
 
-#include <vix/router/Router.hpp>
-#include <vix/router/RouteDoc.hpp>
 #include <vix/openapi/Registry.hpp>
+#include <vix/router/RouteDoc.hpp>
+#include <vix/router/Router.hpp>
 
 namespace vix::openapi
 {
   namespace http = boost::beast::http;
 
-  /** @brief Convert an HTTP verb to an OpenAPI operation name. */
+  /** @brief Convert an HTTP verb to an OpenAPI operation key (get, post...). Returns empty if unsupported. */
   inline std::string method_to_openapi(http::verb v)
   {
     switch (v)
@@ -48,7 +49,7 @@ namespace vix::openapi
     case http::verb::options:
       return "options";
     default:
-      return "x-other";
+      return {};
     }
   }
 
@@ -57,6 +58,35 @@ namespace vix::openapi
   {
     return nlohmann::json{
         {"200", {{"description", "OK"}}}};
+  }
+
+  /** @brief Build a stable operationId from method + path. */
+  inline std::string make_operation_id(std::string_view method, std::string_view path)
+  {
+    std::string id;
+    id.reserve(method.size() + path.size() + 8);
+
+    id.append(method);
+    id.push_back('_');
+
+    for (char c : path)
+    {
+      if ((c >= 'a' && c <= 'z') ||
+          (c >= 'A' && c <= 'Z') ||
+          (c >= '0' && c <= '9'))
+      {
+        id.push_back(c);
+      }
+      else
+      {
+        id.push_back('_');
+      }
+    }
+
+    while (!id.empty() && id.back() == '_')
+      id.pop_back();
+
+    return id;
   }
 
   /**
@@ -76,15 +106,29 @@ namespace vix::openapi
         {"version", std::move(version)}};
 
     doc["paths"] = nlohmann::json::object();
+    doc["components"] = nlohmann::json::object();
+
+    // Avoid duplicates if the same (method, path) appears in router + Registry.
+    std::unordered_set<std::string> seen;
 
     auto add_doc_to_paths = [&](http::verb method,
                                 const std::string &path,
                                 const vix::router::RouteDoc &rdoc)
     {
-      auto &pathItem = doc["paths"][path];
       const std::string m = method_to_openapi(method);
+      if (m.empty())
+        return;
 
+      const std::string key = m + " " + path;
+      if (seen.find(key) != seen.end())
+        return;
+      seen.insert(key);
+
+      auto &pathItem = doc["paths"][path];
       nlohmann::json op = nlohmann::json::object();
+
+      // Stable id for client generators
+      op["operationId"] = make_operation_id(m, path);
 
       if (!rdoc.summary.empty())
         op["summary"] = rdoc.summary;
@@ -109,15 +153,11 @@ namespace vix::openapi
 
     // 1) Routes declared in the HTTP router (core)
     for (const auto &r : router.routes())
-    {
       add_doc_to_paths(r.method, r.path, r.doc);
-    }
 
     // 2) Extra docs registered by other modules (websocket etc.)
     for (const auto &e : vix::openapi::Registry::snapshot())
-    {
       add_doc_to_paths(e.method, e.path, e.doc);
-    }
 
     return doc;
   }
