@@ -371,6 +371,12 @@ namespace vix
       info.max_threads = th;
     }
 
+    {
+      std::lock_guard<std::mutex> lock(ready_info_mutex_);
+      last_ready_info_ = info;
+      has_ready_info_.store(true, std::memory_order_relaxed);
+    }
+
     if (on_listen)
       on_listen();
     else

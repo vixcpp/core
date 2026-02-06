@@ -530,6 +530,23 @@ namespace vix
           next(); });
     }
 
+    /**
+     * @brief Return the last computed ServerReadyInfo (if available).
+     *
+     * This is set by listen() once the server has bound successfully.
+     */
+    vix::utils::ServerReadyInfo server_ready_info() const
+    {
+      std::lock_guard<std::mutex> lock(ready_info_mutex_);
+      return last_ready_info_;
+    }
+
+    /** @brief Return true if server_ready_info() is available. */
+    bool has_server_ready_info() const noexcept
+    {
+      return has_ready_info_.load(std::memory_order_relaxed);
+    }
+
   private:
     vix::config::Config &config_;
     std::shared_ptr<vix::router::Router> router_;
@@ -544,6 +561,9 @@ namespace vix
     bool dev_mode_ = {false};
     std::atomic<bool> wait_called_{false};
     std::atomic<bool> listen_called_{false};
+    mutable std::mutex ready_info_mutex_;
+    vix::utils::ServerReadyInfo last_ready_info_{};
+    std::atomic<bool> has_ready_info_{false};
 
     using RawRequestT = vix::vhttp::RawRequest;
 
