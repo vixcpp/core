@@ -90,9 +90,9 @@ namespace vix::openapi
           "/openapi.json",
           [&router, t = std::move(title), v = std::move(version)](
               vix::vhttp::Request &,
-              vix::vhttp::ResponseWrapper &res) mutable
+              vix::vhttp::ResponseWrapper &res)
           {
-            auto j = vix::openapi::build_from_router(router, std::move(t), std::move(v));
+            auto j = vix::openapi::build_from_router(router, t, v);
             res.type("application/json; charset=utf-8");
             res.header("Cache-Control", "no-store");
             res.header("X-Content-Type-Options", "nosniff");

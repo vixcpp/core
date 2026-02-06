@@ -129,6 +129,8 @@ namespace vix::router
         const http::request<http::string_body> &req,
         http::response<http::string_body> &res)
     {
+      const bool is_head = (req.method() == http::verb::head);
+
       if (req.method() == http::verb::options)
       {
         const std::string target = strip_query(std::string(req.target()));
@@ -142,34 +144,47 @@ namespace vix::router
         }
       }
 
-      std::string target = strip_query(std::string(req.target()));
-      std::string full_path = method_to_string(req.method()) + target;
+      const std::string target = strip_query(std::string(req.target()));
 
-      auto *node = root_.get();
-      std::size_t start = 0;
-
-      while (start <= full_path.size() && node)
+      auto match_handler_node = [&](http::verb m) -> RouteNode *
       {
-        if (start == full_path.size())
-          break;
+        std::string full_path = method_to_string(m) + target;
 
-        std::size_t end = full_path.find('/', start);
-        if (end == std::string::npos)
-          end = full_path.size();
+        auto *node = root_.get();
+        std::size_t start = 0;
 
-        std::string segment = full_path.substr(start, end - start);
-
-        if (node->children.count(segment))
-          node = node->children.at(segment).get();
-        else if (node->children.count("*"))
-          node = node->children.at("*").get();
-        else
+        while (start <= full_path.size() && node)
         {
-          node = nullptr;
-          break;
+          if (start == full_path.size())
+            break;
+
+          std::size_t end = full_path.find('/', start);
+          if (end == std::string::npos)
+            end = full_path.size();
+
+          std::string segment = full_path.substr(start, end - start);
+
+          if (node->children.count(segment))
+            node = node->children.at(segment).get();
+          else if (node->children.count("*"))
+            node = node->children.at("*").get();
+          else
+            return nullptr;
+
+          start = end + 1;
         }
 
-        start = end + 1;
+        if (node && node->handler)
+          return node;
+
+        return nullptr;
+      };
+
+      RouteNode *node = match_handler_node(req.method());
+
+      if (!node && is_head)
+      {
+        node = match_handler_node(http::verb::get);
       }
 
       if (node && node->handler)
@@ -179,14 +194,33 @@ namespace vix::router
         if (res.result() != http::status::unknown)
         {
           const int s = static_cast<int>(res.result());
+
+          // 204/304 must not include a body
           if (s == 204 || s == 304)
+          {
             res.body().clear();
+            res.content_length(0);
+            res.prepare_payload();
+            return true;
+          }
+
+          if (is_head)
+          {
+            const std::size_t body_len = res.body().size();
+
+            res.prepare_payload();
+            res.body().clear();
+            res.content_length(body_len);
+
+            return true;
+          }
 
           if (res.body().empty() && res.find(http::field::content_length) == res.end())
             res.content_length(0);
 
           res.prepare_payload();
         }
+
         return true;
       }
 
