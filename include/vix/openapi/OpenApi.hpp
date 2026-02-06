@@ -97,7 +97,7 @@ namespace vix::openapi
   inline nlohmann::json build_from_router(
       const vix::router::Router &router,
       std::string title = "Vix API",
-      std::string version = "0.0.0")
+      std::string version = "1.31.0")
   {
     nlohmann::json doc;
     doc["openapi"] = "3.0.3";
