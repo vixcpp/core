@@ -153,7 +153,17 @@ if (CORE_SOURCES)
   message(STATUS "[core] Building STATIC library with detected sources.")
 
   if (VIX_CORE_WITH_OPENSSL)
-    find_package(OpenSSL REQUIRED)
+    find_package(OpenSSL QUIET)
+
+    if (OpenSSL_FOUND)
+      target_compile_definitions(vix_core PRIVATE VIX_CORE_HAS_OPENSSL=1)
+      target_link_libraries(vix_core PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    else()
+      message(WARNING "OpenSSL requested but not found, building core without TLS")
+      target_compile_definitions(vix_core PRIVATE VIX_CORE_HAS_OPENSSL=0)
+    endif()
+  else()
+    target_compile_definitions(vix_core PRIVATE VIX_CORE_HAS_OPENSSL=0)
   endif()
 
   add_library(vix_core STATIC ${CORE_SOURCES})
