@@ -121,6 +121,23 @@ function(vix_core_try_link_json onto link_scope)
   endif()
 endfunction()
 
+# Boost (required because public headers include Boost.Beast)
+set(VIX_CORE_WITH_BOOST "ON" CACHE STRING "Use Boost (ON|OFF)")
+set_property(CACHE VIX_CORE_WITH_BOOST PROPERTY STRINGS ON OFF)
+
+if (VIX_CORE_WITH_BOOST STREQUAL "ON")
+  # Beast is header-only, but it relies on Boost.System (and often Asio).
+  # We require at least Boost::system, and expose Boost headers to consumers.
+  find_package(Boost REQUIRED COMPONENTS system)
+  # Normalize Boost header target name across toolchains
+  if (TARGET Boost::headers AND NOT TARGET Boost::boost)
+    add_library(Boost::boost ALIAS Boost::headers)
+  endif()
+else()
+  message(FATAL_ERROR "[core] Boost is required because core public headers include Boost.Beast. Set VIX_CORE_WITH_BOOST=ON.")
+endif()
+
+
 # ============================== STATIC ===============================
 if (CORE_SOURCES)
   message(STATUS "[core] Building STATIC library with detected sources.")
@@ -155,6 +172,12 @@ if (CORE_SOURCES)
   target_link_libraries(vix_core
     PUBLIC
       ${VIX_UTILS_TARGET}
+  )
+
+  target_link_libraries(vix_core
+    PUBLIC
+      Boost::boost
+      Boost::system
   )
 
   vix_core_try_link_json(vix_core PUBLIC)
@@ -218,6 +241,11 @@ else()
 
   target_link_libraries(vix_core INTERFACE
     ${VIX_UTILS_TARGET}
+  )
+
+  target_link_libraries(vix_core INTERFACE
+    Boost::boost
+    Boost::system
   )
 
   if (VIX_ENABLE_SANITIZERS AND TARGET vix_sanitizers)
