@@ -126,17 +126,27 @@ set(VIX_CORE_WITH_BOOST "ON" CACHE STRING "Use Boost (ON|OFF)")
 set_property(CACHE VIX_CORE_WITH_BOOST PROPERTY STRINGS ON OFF)
 
 if (VIX_CORE_WITH_BOOST STREQUAL "ON")
-  # Beast is header-only, but it relies on Boost.System (and often Asio).
-  # We require at least Boost::system, and expose Boost headers to consumers.
-  find_package(Boost REQUIRED COMPONENTS system)
-  # Normalize Boost header target name across toolchains
+  # Prefer CONFIG packages when available (Homebrew), then fallback.
+  set(Boost_NO_WARN_NEW_VERSIONS ON)
+
+  find_package(Boost CONFIG QUIET)
+
+  if (Boost_FOUND)
+    message(STATUS "[core] Boost found (CONFIG)")
+    # Homebrew may not provide Boost::system as a CMake package component.
+    # We will link system via the library file later if needed.
+  else()
+    message(STATUS "[core] Boost not found via CONFIG, using FindBoost")
+    find_package(Boost REQUIRED COMPONENTS system)
+  endif()
+
+  # Normalize headers target across toolchains
   if (TARGET Boost::headers AND NOT TARGET Boost::boost)
     add_library(Boost::boost ALIAS Boost::headers)
   endif()
 else()
   message(FATAL_ERROR "[core] Boost is required because core public headers include Boost.Beast. Set VIX_CORE_WITH_BOOST=ON.")
 endif()
-
 
 # ============================== STATIC ===============================
 if (CORE_SOURCES)
@@ -174,11 +184,20 @@ if (CORE_SOURCES)
       ${VIX_UTILS_TARGET}
   )
 
-  target_link_libraries(vix_core
-    PUBLIC
-      Boost::boost
-      Boost::system
-  )
+  target_link_libraries(vix_core PUBLIC Boost::boost)
+
+  if (TARGET Boost::system)
+    target_link_libraries(vix_core PUBLIC Boost::system)
+  elseif (TARGET boost_system)
+    target_link_libraries(vix_core PUBLIC boost_system)
+  else()
+    if (DEFINED Boost_SYSTEM_LIBRARY AND Boost_SYSTEM_LIBRARY)
+      target_link_libraries(vix_core PUBLIC ${Boost_SYSTEM_LIBRARY})
+    else()
+      target_link_libraries(vix_core PUBLIC boost_system)
+    endif()
+  endif()
+
 
   vix_core_try_link_json(vix_core PUBLIC)
 
@@ -243,10 +262,19 @@ else()
     ${VIX_UTILS_TARGET}
   )
 
-  target_link_libraries(vix_core INTERFACE
-    Boost::boost
-    Boost::system
-  )
+  target_link_libraries(vix_core INTERFACE Boost::boost)
+
+  if (TARGET Boost::system)
+    target_link_libraries(vix_core INTERFACE Boost::system)
+  elseif (TARGET boost_system)
+    target_link_libraries(vix_core INTERFACE boost_system)
+  else()
+    if (DEFINED Boost_SYSTEM_LIBRARY AND Boost_SYSTEM_LIBRARY)
+      target_link_libraries(vix_core INTERFACE ${Boost_SYSTEM_LIBRARY})
+    else()
+      target_link_libraries(vix_core INTERFACE boost_system)
+    endif()
+  endif()
 
   if (VIX_ENABLE_SANITIZERS AND TARGET vix_sanitizers)
     target_link_libraries(vix_core INTERFACE vix_sanitizers)
