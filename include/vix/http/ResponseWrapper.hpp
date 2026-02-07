@@ -424,16 +424,6 @@ namespace vix::vhttp
       return *this;
     }
 
-    ResponseWrapper &json(const OrderedJson &j)
-    {
-      return json_ordered(j);
-    }
-
-    ResponseWrapper &json(OrderedJson &&j)
-    {
-      return json_ordered(j);
-    }
-
     /** @brief Send JSON from a vix::json key-value list. */
     ResponseWrapper &json(const vix::json::kvs &kv)
     {
