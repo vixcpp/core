@@ -140,10 +140,38 @@ if (VIX_CORE_WITH_BOOST STREQUAL "ON")
     find_package(Boost REQUIRED COMPONENTS system)
   endif()
 
+  # ⚠️ macOS: detect mixed Homebrew Boost installs
+  if (APPLE)
+    if (EXISTS "/usr/local/include/boost" AND EXISTS "/opt/homebrew/include/boost")
+      message(WARNING
+        "[core] Both /usr/local and /opt/homebrew Boost detected. "
+        "Prefer one to avoid mixed includes.")
+    endif()
+  endif()
+
   # Normalize headers target across toolchains
   if (TARGET Boost::headers AND NOT TARGET Boost::boost)
     add_library(Boost::boost ALIAS Boost::headers)
   endif()
+
+  # Collect Boost include dirs (works for both CONFIG and FindBoost)
+  set(_vix_boost_includes "")
+
+  # FindBoost path
+  if (Boost_INCLUDE_DIRS)
+    list(APPEND _vix_boost_includes ${Boost_INCLUDE_DIRS})
+  endif()
+
+  # CONFIG target path
+  if (TARGET Boost::boost)
+    get_target_property(_boost_target_includes Boost::boost INTERFACE_INCLUDE_DIRECTORIES)
+    if (_boost_target_includes)
+      list(APPEND _vix_boost_includes ${_boost_target_includes})
+    endif()
+  endif()
+
+  list(REMOVE_DUPLICATES _vix_boost_includes)
+
 else()
   message(FATAL_ERROR "[core] Boost is required because core public headers include Boost.Beast. Set VIX_CORE_WITH_BOOST=ON.")
 endif()
@@ -195,13 +223,11 @@ if (CORE_SOURCES)
 
   target_link_libraries(vix_core PUBLIC Boost::boost)
 
-  # Treat Boost headers as SYSTEM to avoid third-party warnings breaking -Werror/-Wsign-conversion.
-  if (TARGET Boost::boost)
-    get_target_property(_boost_inc Boost::boost INTERFACE_INCLUDE_DIRECTORIES)
-    if (_boost_inc)
-      target_include_directories(vix_core SYSTEM PUBLIC ${_boost_inc})
-    endif()
+  # Treat Boost headers as SYSTEM (avoid third-party warnings)
+  if (_vix_boost_includes)
+    target_include_directories(vix_core SYSTEM PUBLIC ${_vix_boost_includes})
   endif()
+
 
   if (TARGET Boost::system)
     target_link_libraries(vix_core PUBLIC Boost::system)
@@ -278,11 +304,8 @@ else()
   target_link_libraries(vix_core INTERFACE Boost::boost)
 
   # Treat Boost headers as SYSTEM to avoid third-party warnings breaking -Werror/-Wsign-conversion.
-  if (TARGET Boost::boost)
-    get_target_property(_boost_inc Boost::boost INTERFACE_INCLUDE_DIRECTORIES)
-    if (_boost_inc)
-      target_include_directories(vix_core SYSTEM INTERFACE ${_boost_inc})
-    endif()
+  if (_vix_boost_includes)
+    target_include_directories(vix_core SYSTEM INTERFACE ${_vix_boost_includes})
   endif()
 
   if (TARGET Boost::system)
