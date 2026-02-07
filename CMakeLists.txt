@@ -172,6 +172,29 @@ if (VIX_CORE_WITH_BOOST STREQUAL "ON")
 
   list(REMOVE_DUPLICATES _vix_boost_includes)
 
+  function(vix_core_link_boost_system onto link_scope)
+    if (TARGET Boost::system)
+      target_link_libraries(${onto} ${link_scope} Boost::system)
+      return()
+    endif()
+
+    # Some Boost installs (especially on macOS/Homebrew) do not ship libboost_system.
+    # In that case Boost.System is header-only and must not be forced at link time.
+    find_library(_VIX_BOOST_SYSTEM_LIB
+      NAMES boost_system
+      PATHS
+        /opt/homebrew/lib
+        /usr/local/lib
+      PATH_SUFFIXES lib
+    )
+
+    if (_VIX_BOOST_SYSTEM_LIB)
+      target_link_libraries(${onto} ${link_scope} ${_VIX_BOOST_SYSTEM_LIB})
+    else()
+      message(STATUS "[core] Boost.System library not found; assuming header-only (no link needed).")
+    endif()
+  endfunction()
+
 else()
   message(FATAL_ERROR "[core] Boost is required because core public headers include Boost.Beast. Set VIX_CORE_WITH_BOOST=ON.")
 endif()
@@ -229,18 +252,7 @@ if (CORE_SOURCES)
   endif()
 
 
-  if (TARGET Boost::system)
-    target_link_libraries(vix_core PUBLIC Boost::system)
-  elseif (TARGET boost_system)
-    target_link_libraries(vix_core PUBLIC boost_system)
-  else()
-    if (DEFINED Boost_SYSTEM_LIBRARY AND Boost_SYSTEM_LIBRARY)
-      target_link_libraries(vix_core PUBLIC ${Boost_SYSTEM_LIBRARY})
-    else()
-      target_link_libraries(vix_core PUBLIC boost_system)
-    endif()
-  endif()
-
+  vix_core_link_boost_system(vix_core PUBLIC)
 
   vix_core_try_link_json(vix_core PUBLIC)
 
@@ -308,17 +320,7 @@ else()
     target_include_directories(vix_core SYSTEM INTERFACE ${_vix_boost_includes})
   endif()
 
-  if (TARGET Boost::system)
-    target_link_libraries(vix_core INTERFACE Boost::system)
-  elseif (TARGET boost_system)
-    target_link_libraries(vix_core INTERFACE boost_system)
-  else()
-    if (DEFINED Boost_SYSTEM_LIBRARY AND Boost_SYSTEM_LIBRARY)
-      target_link_libraries(vix_core INTERFACE ${Boost_SYSTEM_LIBRARY})
-    else()
-      target_link_libraries(vix_core INTERFACE boost_system)
-    endif()
-  endif()
+  vix_core_link_boost_system(vix_core INTERFACE)
 
   if (VIX_ENABLE_SANITIZERS AND TARGET vix_sanitizers)
     target_link_libraries(vix_core INTERFACE vix_sanitizers)
