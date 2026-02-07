@@ -152,21 +152,24 @@ endif()
 if (CORE_SOURCES)
   message(STATUS "[core] Building STATIC library with detected sources.")
 
+  add_library(vix_core STATIC ${CORE_SOURCES})
+  add_library(vix::core ALIAS vix_core)
+  target_compile_features(vix_core PUBLIC cxx_std_20)
+
+  # OpenSSL (optional)
   if (VIX_CORE_WITH_OPENSSL)
     find_package(OpenSSL QUIET)
 
     if (OpenSSL_FOUND)
-      target_compile_definitions(vix_core PRIVATE VIX_CORE_HAS_OPENSSL=1)
-      target_link_libraries(vix_core PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+      target_compile_definitions(vix_core PUBLIC VIX_CORE_HAS_OPENSSL=1)
+      target_link_libraries(vix_core PUBLIC OpenSSL::SSL OpenSSL::Crypto)
     else()
       message(WARNING "OpenSSL requested but not found, building core without TLS")
-      target_compile_definitions(vix_core PRIVATE VIX_CORE_HAS_OPENSSL=0)
+      target_compile_definitions(vix_core PUBLIC VIX_CORE_HAS_OPENSSL=0)
     endif()
   else()
-    target_compile_definitions(vix_core PRIVATE VIX_CORE_HAS_OPENSSL=0)
+    target_compile_definitions(vix_core PUBLIC VIX_CORE_HAS_OPENSSL=0)
   endif()
-
-  add_library(vix_core STATIC ${CORE_SOURCES})
 
   if (TARGET vix_warnings)
     message(STATUS "[core] vix_warnings detected (from umbrella)")
@@ -178,10 +181,6 @@ if (CORE_SOURCES)
   else()
     message(STATUS "[core] vix_warnings not found (building core standalone)")
   endif()
-
-  add_library(vix::core ALIAS vix_core)
-  target_compile_features(vix_core PUBLIC cxx_std_20)
-
 
   target_include_directories(vix_core
     PUBLIC
@@ -210,10 +209,6 @@ if (CORE_SOURCES)
 
 
   vix_core_try_link_json(vix_core PUBLIC)
-
-  if (VIX_CORE_WITH_OPENSSL)
-    target_link_libraries(vix_core PUBLIC OpenSSL::SSL OpenSSL::Crypto)
-  endif()
 
   if (VIX_CORE_WITH_MYSQL)
     find_library(MYSQLCPP_CONN8_LIB mysqlcppconn8)
