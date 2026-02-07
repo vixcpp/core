@@ -204,7 +204,7 @@ namespace vix
       // Disable with: VIX_DOCS=0
       if (vix::utils::env_bool("VIX_DOCS", true))
       {
-        vix::openapi::register_openapi_and_docs(*router_, "Vix API", "0.0.0");
+        vix::openapi::register_openapi_and_docs(*router_, "Vix API", "1.33.0");
       }
 
       install_access_logs(*this);
