@@ -92,8 +92,8 @@ namespace vix::session
   {
     if (timer_)
     {
-      boost::system::error_code ec;
-      timer_->cancel(ec);
+      const std::size_t n = timer_->cancel();
+      (void)n;
     }
   }
 

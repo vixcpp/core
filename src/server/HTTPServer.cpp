@@ -48,7 +48,9 @@ namespace vix::server
 
   void set_affinity(std::size_t thread_index)
   {
-#ifdef __linux__
+#ifndef __linux__
+    (void)thread_index;
+#else
     unsigned int hc = std::thread::hardware_concurrency();
     if (hc == 0u)
       hc = 1u;
@@ -138,7 +140,7 @@ namespace vix::server
       throw std::system_error(ec, "bind acceptor");
     }
 
-    acceptor_->listen(boost::asio::socket_base::max_connections, ec);
+    acceptor_->listen(boost::asio::socket_base::max_listen_connections, ec);
     if (ec)
       throw std::system_error(ec, "listen acceptor");
 
