@@ -195,6 +195,14 @@ if (CORE_SOURCES)
 
   target_link_libraries(vix_core PUBLIC Boost::boost)
 
+  # Treat Boost headers as SYSTEM to avoid third-party warnings breaking -Werror/-Wsign-conversion.
+  if (TARGET Boost::boost)
+    get_target_property(_boost_inc Boost::boost INTERFACE_INCLUDE_DIRECTORIES)
+    if (_boost_inc)
+      target_include_directories(vix_core SYSTEM PUBLIC ${_boost_inc})
+    endif()
+  endif()
+
   if (TARGET Boost::system)
     target_link_libraries(vix_core PUBLIC Boost::system)
   elseif (TARGET boost_system)
@@ -268,6 +276,14 @@ else()
   )
 
   target_link_libraries(vix_core INTERFACE Boost::boost)
+
+  # Treat Boost headers as SYSTEM to avoid third-party warnings breaking -Werror/-Wsign-conversion.
+  if (TARGET Boost::boost)
+    get_target_property(_boost_inc Boost::boost INTERFACE_INCLUDE_DIRECTORIES)
+    if (_boost_inc)
+      target_include_directories(vix_core SYSTEM INTERFACE ${_boost_inc})
+    endif()
+  endif()
 
   if (TARGET Boost::system)
     target_link_libraries(vix_core INTERFACE Boost::system)
