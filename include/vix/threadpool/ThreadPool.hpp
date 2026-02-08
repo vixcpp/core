@@ -25,6 +25,20 @@
 #include <stdexcept>
 #include <limits>
 
+#if defined(_WIN32)
+#if defined(min)
+#pragma push_macro("min")
+#undef min
+#define VIX_THREADPOOL_RESTORE_MIN 1
+#endif
+
+#if defined(max)
+#pragma push_macro("max")
+#undef max
+#define VIX_THREADPOOL_RESTORE_MAX 1
+#endif
+#endif
+
 #ifdef __linux__
 #include <pthread.h>
 #endif
@@ -475,5 +489,17 @@ namespace vix::threadpool
   };
 
 } // namespace vix::threadpool
+
+#if defined(_WIN32)
+#if defined(VIX_THREADPOOL_RESTORE_MAX)
+#pragma pop_macro("max")
+#undef VIX_THREADPOOL_RESTORE_MAX
+#endif
+
+#if defined(VIX_THREADPOOL_RESTORE_MIN)
+#pragma pop_macro("min")
+#undef VIX_THREADPOOL_RESTORE_MIN
+#endif
+#endif
 
 #endif // VIX_THREAD_POOL_HPP
