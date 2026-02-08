@@ -30,6 +30,12 @@
 #include <vix/utils/Logger.hpp>
 #include <vix/utils/String.hpp>
 
+#ifdef _WIN32
+#ifdef ERROR
+#undef ERROR
+#endif
+#endif
+
 namespace vix::vhttp
 {
   namespace http = boost::beast::http;
