@@ -24,6 +24,9 @@
 #include <chrono>
 #include <stdexcept>
 #include <limits>
+#include <functional>
+#include <type_traits>
+#include <utility>
 
 #if defined(_WIN32)
 #if defined(min)
