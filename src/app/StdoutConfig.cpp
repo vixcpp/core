@@ -14,6 +14,7 @@
 #include <iostream>
 #include <cstdlib>
 #include <string_view>
+#include <vix/utils/Env.hpp>
 
 namespace
 {
@@ -21,7 +22,7 @@ namespace
   {
     VixStdoutConfigurator()
     {
-      const char *env = std::getenv("VIX_STDOUT_MODE");
+      const char *env = vix::utils::vix_getenv("VIX_STDOUT_MODE");
       if (!env)
         return;
 

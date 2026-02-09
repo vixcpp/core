@@ -19,7 +19,7 @@
 #include <vix/utils/ServerPrettyLogs.hpp>
 #include <vix/utils/ScopeGuard.hpp>
 #include <vix/openapi/register_docs.hpp>
-
+#include <vix/utils/Env.hpp>
 #include <boost/beast/http.hpp>
 
 #include <csignal>
@@ -350,7 +350,7 @@ namespace vix
     info.ready_ms = ready_ms;
     info.mode = dev_mode_ ? "dev" : "run";
 
-    if (const char *v = std::getenv("VIX_MODE"); v && *v)
+    if (const char *v = vix::utils::vix_getenv("VIX_MODE"); v && *v)
       info.mode = vix::utils::RuntimeBanner::mode_from_env();
 
     info.scheme = "http";

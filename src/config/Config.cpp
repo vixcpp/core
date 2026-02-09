@@ -13,6 +13,7 @@
  */
 #include <vix/config/Config.hpp>
 #include <vix/utils/Logger.hpp>
+#include <vix/utils/Env.hpp>
 
 #if VIX_CORE_WITH_MYSQL
 #include <mysql_driver.h>
@@ -199,7 +200,7 @@ namespace vix::config
 
   std::string Config::getDbPasswordFromEnv()
   {
-    if (const char *password = std::getenv("DB_PASSWORD"))
+    if (const char *password = vix::utils::vix_getenv("DB_PASSWORD"))
     {
       log().log(Logger::Level::Debug, "Using DB_PASSWORD from environment.");
       return password;

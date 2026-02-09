@@ -27,6 +27,8 @@
 #include <type_traits>
 #include <utility>
 
+#include <vix/utils/Env.hpp>
+
 #if defined(_WIN32)
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -261,16 +263,16 @@ namespace vix
       stderr_tty_ = is_tty_stderr_();
 
       // 2) Level from env (stable)
-      if (const char *raw = std::getenv("VIX_CONSOLE_LEVEL"); raw && *raw)
+      if (const char *raw = vix::utils::vix_getenv("VIX_CONSOLE_LEVEL"); raw && *raw)
         level_.store(parse_level_(raw), std::memory_order_relaxed);
 
       // 3) Colors from env (stable)
       // NO_COLOR forces Never
-      if (const char *nc = std::getenv("NO_COLOR"); nc && *nc)
+      if (const char *nc = vix::utils::vix_getenv("NO_COLOR"); nc && *nc)
       {
         color_mode_.store(ColorMode::Never, std::memory_order_relaxed);
       }
-      else if (const char *cm = std::getenv("VIX_COLOR"); cm && *cm)
+      else if (const char *cm = vix::utils::vix_getenv("VIX_COLOR"); cm && *cm)
       {
         color_mode_.store(parse_color_mode_(cm), std::memory_order_relaxed);
       }
@@ -289,7 +291,7 @@ namespace vix
     bool colors_enabled_(Stream s) const noexcept
     {
       // NO_COLOR already handled in init; still respect it if set late.
-      if (const char *nc = std::getenv("NO_COLOR"); nc && *nc)
+      if (const char *nc = vix::utils::vix_getenv("NO_COLOR"); nc && *nc)
         return false;
 
       const ColorMode m = color_mode_.load(std::memory_order_relaxed);
