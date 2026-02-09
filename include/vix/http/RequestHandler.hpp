@@ -315,7 +315,7 @@ namespace vix::vhttp
       }
       catch (const std::range_error &e)
       {
-        log().log(vix::utils::Logger::Level::ERROR,
+        log().log(vix::utils::Logger::Level::Error,
                   "Route '{}' threw range_error: {} (method={}, path={})",
                   route_pattern_, e.what(),
                   std::string(rawReq.method_string()), std::string(rawReq.target()));
@@ -341,7 +341,7 @@ namespace vix::vhttp
       }
       catch (const std::exception &e)
       {
-        log().log(vix::utils::Logger::Level::ERROR,
+        log().log(vix::utils::Logger::Level::Error,
                   "Route '{}' threw exception: {} (method={}, path={})",
                   route_pattern_, e.what(),
                   std::string(rawReq.method_string()), std::string(rawReq.target()));

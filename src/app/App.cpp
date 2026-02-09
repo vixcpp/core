@@ -54,7 +54,7 @@ namespace
             return;
           }
 
-          if (!log().enabled(vix::utils::Logger::Level::DEBUG))
+          if (!log().enabled(vix::utils::Logger::Level::Debug))
           {
             next();
             return;
@@ -71,7 +71,7 @@ namespace
           const unsigned int status = res.res.result_int();
 
           log().logf(
-              vix::utils::Logger::Level::DEBUG,
+              vix::utils::Logger::Level::Debug,
               "request_done",
               "rid", static_cast<unsigned long long>(rid),
               "method", req.method(),
@@ -94,18 +94,18 @@ namespace
     }
 
     if (s == "trace")
-      return Level::TRACE;
+      return Level::Trace;
     if (s == "debug")
-      return Level::DEBUG;
+      return Level::Debug;
     if (s == "info")
-      return Level::INFO;
+      return Level::Info;
     if (s == "warn" || s == "warning")
-      return Level::WARN;
+      return Level::Warn;
     if (s == "error")
-      return Level::ERROR;
+      return Level::Error;
     if (s == "critical")
-      return Level::CRITICAL;
-    return Level::WARN;
+      return Level::Critical;
+    return Level::Warn;
   }
 
   std::size_t compute_executor_threads()
@@ -246,7 +246,7 @@ namespace vix
     }
     else
     {
-      log().setLevel(Logger::Level::CRITICAL);
+      log().setLevel(Logger::Level::Critical);
     }
 
     Logger::Context ctx;
@@ -281,7 +281,7 @@ namespace vix
     if (listen_called_.load(std::memory_order_relaxed) &&
         !wait_called_.load(std::memory_order_relaxed))
     {
-      log().log(Logger::Level::WARN, "listen() without wait()");
+      log().log(Logger::Level::Warn, "listen() without wait()");
     }
 
     close();
@@ -311,7 +311,7 @@ namespace vix
 
     if (started_.exchange(true, std::memory_order_relaxed))
     {
-      log().log(Logger::Level::WARN, "App::listen() called but server is already running");
+      log().log(Logger::Level::Warn, "App::listen() called but server is already running");
       return;
     }
 
@@ -410,11 +410,11 @@ namespace vix
       }
       catch (const std::exception &e)
       {
-        log().log(Logger::Level::ERROR, "Shutdown callback threw: {}", e.what());
+        log().log(Logger::Level::Error, "Shutdown callback threw: {}", e.what());
       }
       catch (...)
       {
-        log().log(Logger::Level::ERROR, "Shutdown callback threw unknown exception");
+        log().log(Logger::Level::Error, "Shutdown callback threw unknown exception");
       }
     }
 
@@ -429,7 +429,7 @@ namespace vix
     g_app_ptr.store(nullptr, std::memory_order_relaxed);
     started_.store(false, std::memory_order_relaxed);
 
-    log().log(Logger::Level::DEBUG, "Application shutdown complete");
+    log().log(Logger::Level::Debug, "Application shutdown complete");
   }
 
   void App::run(int port)
@@ -495,12 +495,13 @@ namespace vix
     static_handler_ref() = std::move(fn);
   }
 
-  void App::static_dir(std::filesystem::path root,
-                       std::string mount,
-                       std::string index_file,
-                       bool add_cache_control,
-                       std::string cache_control,
-                       bool fallthrough)
+  void App::static_dir(
+      std::filesystem::path root,
+      std::string mount,
+      std::string index_file,
+      bool add_cache_control,
+      std::string cache_control,
+      bool fallthrough)
   {
     auto &h = static_handler_ref();
     if (!h)

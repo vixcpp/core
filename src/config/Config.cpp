@@ -89,7 +89,7 @@ namespace vix::config
 
     if (!found)
     {
-      log().log(Logger::Level::DEBUG, "No config file found. Using default settings.");
+      log().log(Logger::Level::Debug, "No config file found. Using default settings.");
       return;
     }
 
@@ -122,7 +122,7 @@ namespace vix::config
   {
     if (configPath_.empty() || !fs::exists(configPath_))
     {
-      log().log(Logger::Level::DEBUG, "No config file found. Using default settings.");
+      log().log(Logger::Level::Debug, "No config file found. Using default settings.");
       return;
     }
 
@@ -201,10 +201,10 @@ namespace vix::config
   {
     if (const char *password = std::getenv("DB_PASSWORD"))
     {
-      log().log(Logger::Level::DEBUG, "Using DB_PASSWORD from environment.");
+      log().log(Logger::Level::Debug, "Using DB_PASSWORD from environment.");
       return password;
     }
-    log().log(Logger::Level::DEBUG, "No DB_PASSWORD found in environment; using config/default password.");
+    log().log(Logger::Level::Debug, "No DB_PASSWORD found in environment; using config/default password.");
     return db_pass;
   }
 
@@ -221,7 +221,7 @@ namespace vix::config
     if (!db_name.empty())
       con->setSchema(db_name);
 
-    log().log(Logger::Level::DEBUG, "Database connection established (host={}, db={}).", host, db_name);
+    log().log(Logger::Level::Debug, "Database connection established (host={}, db={}).", host, db_name);
     return con;
   }
 #endif // VIX_CORE_WITH_MYSQL

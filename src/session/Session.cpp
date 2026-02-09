@@ -45,7 +45,7 @@ namespace vix::session
     boost::system::error_code ec;
     socket_->set_option(tcp::no_delay(true), ec);
     if (ec)
-      log().log(Logger::Level::WARN, "[Session] Failed to disable Nagle: {}", ec.message());
+      log().log(Logger::Level::Warn, "[Session] Failed to disable Nagle: {}", ec.message());
   }
 
   void Session::send_response_strand(bhttp::response<bhttp::string_body> res)
@@ -58,7 +58,7 @@ namespace vix::session
 
   void Session::run()
   {
-    log().log(Logger::Level::DEBUG, "[Session] Starting new session");
+    log().log(Logger::Level::Debug, "[Session] Starting new session");
     read_request();
   }
 
@@ -80,7 +80,7 @@ namespace vix::session
 
           if (!ec)
           {
-            log().log(Logger::Level::WARN,
+            log().log(Logger::Level::Warn,
                       "[Session] Timeout ({}s), closing socket",
                       timeout.count());
             close_socket_gracefully();
@@ -101,7 +101,7 @@ namespace vix::session
   {
     if (!socket_ || !socket_->is_open())
     {
-      log().log(Logger::Level::DEBUG, "[Session] Socket closed before read_request()");
+      log().log(Logger::Level::Debug, "[Session] Socket closed before read_request()");
       return;
     }
 
@@ -123,12 +123,12 @@ namespace vix::session
             if (ec == bhttp::error::end_of_stream ||
                 ec == boost::asio::error::connection_reset)
             {
-              log().log(Logger::Level::DEBUG,
+              log().log(Logger::Level::Debug,
                         "[Session] Client closed connection: {}", ec.message());
             }
             else if (ec != boost::asio::error::operation_aborted)
             {
-              log().log(Logger::Level::ERROR,
+              log().log(Logger::Level::Error,
                         "[Session] Read error: {}", ec.message());
             }
 
@@ -143,7 +143,7 @@ namespace vix::session
           }
           catch (const std::exception &ex)
           {
-            log().log(Logger::Level::ERROR,
+            log().log(Logger::Level::Error,
                       "[Session] Parser release failed: {}", ex.what());
             close_socket_gracefully();
             return;
@@ -159,14 +159,14 @@ namespace vix::session
   {
     if (ec)
     {
-      log().log(Logger::Level::ERROR, "[Session] Error handling request: {}", ec.message());
+      log().log(Logger::Level::Error, "[Session] Error handling request: {}", ec.message());
       close_socket_gracefully();
       return;
     }
 
     if (!parsed_req)
     {
-      log().log(Logger::Level::WARN, "[Session] No request parsed");
+      log().log(Logger::Level::Warn, "[Session] No request parsed");
       close_socket_gracefully();
       return;
     }
@@ -175,7 +175,7 @@ namespace vix::session
 
     if (!waf_check_request(req_))
     {
-      log().log(Logger::Level::WARN, "[WAF] Request blocked by rules");
+      log().log(Logger::Level::Warn, "[WAF] Request blocked by rules");
       send_error(bhttp::status::bad_request, "Request blocked (security)");
       return;
     }
@@ -188,7 +188,7 @@ namespace vix::session
 
     if (req_.body().size() > MAX_REQUEST_BODY_SIZE)
     {
-      log().log(Logger::Level::WARN, "[Session] Body too large ({} bytes)", req_.body().size());
+      log().log(Logger::Level::Warn, "[Session] Body too large ({} bytes)", req_.body().size());
       send_error(too_large_status, "Request too large");
       return;
     }
@@ -208,7 +208,7 @@ namespace vix::session
       }
       catch (const std::exception &ex)
       {
-        log().log(Logger::Level::ERROR, "[Router] Exception: {}", ex.what());
+        log().log(Logger::Level::Error, "[Router] Exception: {}", ex.what());
         send_error(bhttp::status::internal_server_error, "Internal server error");
         return;
       }
@@ -242,7 +242,7 @@ namespace vix::session
           catch (const std::exception &ex)
           {
             vix::utils::Logger::getInstance().log(
-                vix::utils::Logger::Level::ERROR,
+                vix::utils::Logger::Level::Error,
                 "[Router][heavy] Exception: {}", ex.what());
 
             res_ptr->result(bhttp::status::internal_server_error);
@@ -271,7 +271,7 @@ namespace vix::session
   {
     if (!socket_ || !socket_->is_open())
     {
-      log().log(Logger::Level::DEBUG, "[Session] Cannot send response (socket closed)");
+      log().log(Logger::Level::Debug, "[Session] Cannot send response (socket closed)");
       return;
     }
 
@@ -284,12 +284,12 @@ namespace vix::session
         {
           if (ec)
           {
-            log().log(Logger::Level::WARN, "[Session] Write error: {}", ec.message());
+            log().log(Logger::Level::Warn, "[Session] Write error: {}", ec.message());
             close_socket_gracefully();
             return;
           }
 
-          log().log(Logger::Level::DEBUG, "[Session] Response sent ({} bytes)", res_ptr->body().size());
+          log().log(Logger::Level::Debug, "[Session] Response sent ({} bytes)", res_ptr->body().size());
 
           if (res_ptr->keep_alive())
           {
@@ -320,7 +320,7 @@ namespace vix::session
     socket_->shutdown(tcp::socket::shutdown_both, ec);
     socket_->close(ec);
 
-    log().log(Logger::Level::DEBUG, "[Session] Socket closed");
+    log().log(Logger::Level::Debug, "[Session] Socket closed");
   }
 
   static inline bool icontains(std::string_view s, std::string_view needle)

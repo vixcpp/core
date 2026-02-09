@@ -106,7 +106,7 @@ namespace vix::server
     }
     catch (const std::exception &e)
     {
-      log().log(Logger::Level::ERROR, "Error initializing HTTPServer: {}", e.what());
+      log().log(Logger::Level::Error, "Error initializing HTTPServer: {}", e.what());
       throw;
     }
   }
@@ -167,9 +167,9 @@ namespace vix::server
             }
             catch (const std::exception &e)
             {
-              log.log(Logger::Level::ERROR, "Error in io_context thread {}: {}", i, e.what());
+              log.log(Logger::Level::Error, "Error in io_context thread {}: {}", i, e.what());
             }
-            log.log(Logger::Level::DEBUG,
+            log.log(Logger::Level::Debug,
                     "[http] io thread {} finished", i);
           });
     }
@@ -182,7 +182,7 @@ namespace vix::server
       int port = config_.getServerPort();
       if ((port != 0 && port < 1024) || port > 65535)
       {
-        log().log(Logger::Level::ERROR, "Server port {} out of range (1024-65535)", port);
+        log().log(Logger::Level::Error, "Server port {} out of range (1024-65535)", port);
         throw std::invalid_argument("Invalid port number");
       }
 
@@ -259,7 +259,7 @@ namespace vix::server
     vix::timers::interval(*executor_, std::chrono::seconds(5), [this]()
                           {
         const auto m = executor_->metrics();
-        Logger::getInstance().log(Logger::Level::DEBUG,
+        Logger::getInstance().log(Logger::Level::Debug,
             "Executor Metrics -> Pending: {}, Active: {}, TimedOut: {}",
             m.pending, m.active, m.timed_out); });
   }

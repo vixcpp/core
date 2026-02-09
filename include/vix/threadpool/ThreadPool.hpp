@@ -110,7 +110,7 @@ namespace vix::threadpool
       const int ret = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
       if (ret != 0)
       {
-        log().log(Logger::Level::WARN,
+        log().log(Logger::Level::Warn,
                   "[ThreadPool][Thread {}] Failed to set thread affinity, error: {}",
                   threadId, ret);
       }
@@ -224,7 +224,7 @@ namespace vix::threadpool
         throw;
       }
 
-      log().log(Logger::Level::DEBUG,
+      log().log(Logger::Level::Debug,
                 "[ThreadPool] started (threads={}, max={}, prio={}, periodic={})",
                 threadCount, maxThreads, threadPriority, maxPeriodicThreads);
     }
@@ -286,7 +286,7 @@ namespace vix::threadpool
                     {
 
                       auto &log = Logger::getInstance();
-                      log.log(Logger::Level::WARN,
+                      log.log(Logger::Level::Warn,
                               "[ThreadPool][Timeout] Thread {} exceeded timeout of {} ms (actual: {} ms)",
                               threadId, timeout.count(), elapsed.count());
                       tasksTimedOut.fetch_add(1, std::memory_order_relaxed);
@@ -376,13 +376,13 @@ namespace vix::threadpool
                   }
                   catch (const std::exception &e)
                   {
-                    log.log(Logger::Level::ERROR,
+                    log.log(Logger::Level::Error,
                             "[ThreadPool][PeriodicException] Exception in periodic task: {}", e.what());
                     throw;
                   }
                   catch (...)
                   {
-                    log.log(Logger::Level::ERROR,
+                    log.log(Logger::Level::Error,
                             "[ThreadPool][PeriodicException] Unknown exception in periodic task");
                     throw;
                   }
@@ -395,13 +395,13 @@ namespace vix::threadpool
                 }
                 catch (const std::exception &e)
                 {
-                  log.log(Logger::Level::WARN,
+                  log.log(Logger::Level::Warn,
                           "[ThreadPool][Periodic] enqueue() failed, stopping scheduler: {}", e.what());
                   break;
                 }
                 catch (...)
                 {
-                  log.log(Logger::Level::WARN,
+                  log.log(Logger::Level::Warn,
                           "[ThreadPool][Periodic] enqueue() failed with unknown error, stopping scheduler");
                   break;
                 }
@@ -417,7 +417,7 @@ namespace vix::threadpool
 
                 if (future.wait_for(std::chrono::milliseconds{0}) != std::future_status::ready)
                 {
-                  log.log(Logger::Level::WARN,
+                  log.log(Logger::Level::Warn,
                           "[ThreadPool][PeriodicTimeout] Thread {} periodic task exceeded interval of {} ms",
                           threadId, interval.count());
                 }
