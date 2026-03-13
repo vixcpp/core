@@ -1,0 +1,32 @@
+{
+  "name": "core",
+  "namespace": "vix",
+  "version": "0.1.0",
+  "type": "header-and-source",
+  "include": "include",
+  "src": "src",
+  "license": "MIT",
+  "description": "Core utilities and components for Vix.cpp: HTTP, server, router, threading, timers, console, printing, session, and application framework.",
+  "keywords": [
+    "cpp",
+    "vix",
+    "core",
+    "http",
+    "server",
+    "router",
+    "threadpool",
+    "timers",
+    "console",
+    "print",
+    "session",
+    "app",
+    "framework"
+  ],
+  "repository": "https://github.com/vixcpp/core",
+  "authors": [
+    {
+      "name": "Gaspard Kirira",
+      "github": "Gaspardkirira"
+    }
+  ]
+}

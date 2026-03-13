@@ -22,6 +22,8 @@
 #include <boost/beast/http.hpp>
 
 #include <vix/console.hpp>
+#include <vix/print.hpp>
+#include <vix/console.hpp>
 #include <vix/app/App.hpp>
 #include <vix/server/HTTPServer.hpp>
 #include <vix/threadpool/ThreadPool.hpp>

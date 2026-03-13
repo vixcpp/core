@@ -142,7 +142,7 @@ namespace vix::vhttp
     /** @brief Apply common headers (Server, Date) to a response. */
     static void common_headers(http::response<http::string_body> &res) noexcept
     {
-      res.set(http::field::server, "Vix/master");
+      res.set(http::field::server, "Vix.cpp");
       res.set(http::field::date, http_date_now());
     }
 
