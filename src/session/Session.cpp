@@ -173,14 +173,9 @@ namespace vix::session
         {
           if (ec)
           {
-            if (ec == bhttp::error::end_of_stream ||
-                ec == boost::asio::error::connection_reset)
-            {
-              log().log(Logger::Level::Debug,
-                        "[Session] Client closed connection: {}",
-                        ec.message());
-            }
-            else if (ec != boost::asio::error::operation_aborted)
+            if (ec != bhttp::error::end_of_stream &&
+                ec != boost::asio::error::connection_reset &&
+                ec != boost::asio::error::operation_aborted)
             {
               log().log(Logger::Level::Error,
                         "[Session] Read error: {}",
@@ -190,7 +185,6 @@ namespace vix::session
             close_socket_gracefully();
             return;
           }
-
           std::optional<bhttp::request<bhttp::string_body>> parsed_req;
 
           try
@@ -421,8 +415,6 @@ namespace vix::session
     boost::system::error_code ec;
     socket_->shutdown(tcp::socket::shutdown_both, ec);
     socket_->close(ec);
-
-    log().log(Logger::Level::Debug, "[Session] Socket closed");
   }
 
   bool Session::waf_check_request(const bhttp::request<bhttp::string_body> &req)
