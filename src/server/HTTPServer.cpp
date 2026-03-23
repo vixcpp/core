@@ -64,7 +64,23 @@ namespace vix::server
       CPU_ZERO(&cpuset);
       CPU_SET(cpu, &cpuset);
 
-      (void)pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+      const int rc =
+          pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+
+      if (rc != 0)
+      {
+        log().log(Logger::Level::Debug,
+                  "[http] failed to pin io thread {} to cpu {}",
+                  thread_index,
+                  cpu);
+      }
+      else
+      {
+        log().log(Logger::Level::Debug,
+                  "[http] pinned io thread {} to cpu {}",
+                  thread_index,
+                  cpu);
+      }
 #endif
     }
   } // namespace
@@ -86,6 +102,9 @@ namespace vix::server
     {
       throw std::invalid_argument("HTTPServer requires a valid runtime executor");
     }
+
+    log().log(Logger::Level::Debug,
+              "[http] HTTPServer ctor: executor ready");
 
     try
     {
@@ -114,6 +133,9 @@ namespace vix::server
             res.set(http::field::connection, "close");
             res.prepare_payload();
           });
+
+      log().log(Logger::Level::Debug,
+                "[http] not-found handler installed");
     }
     catch (const std::exception &e)
     {
@@ -128,7 +150,12 @@ namespace vix::server
   {
     try
     {
-      stop_blocking();
+      if (!stop_requested_.load(std::memory_order_acquire))
+      {
+        log().log(Logger::Level::Debug,
+                  "[http] HTTPServer dtor: stop_blocking()");
+        stop_blocking();
+      }
     }
     catch (...)
     {
@@ -137,6 +164,10 @@ namespace vix::server
 
   void HTTPServer::init_acceptor(unsigned short port)
   {
+    log().log(Logger::Level::Debug,
+              "[http] init_acceptor(port={})",
+              static_cast<unsigned int>(port));
+
     acceptor_ = std::make_unique<tcp::acceptor>(*io_context_);
 
     boost::system::error_code ec;
@@ -145,18 +176,29 @@ namespace vix::server
     acceptor_->open(endpoint.protocol(), ec);
     if (ec)
     {
+      log().log(Logger::Level::Error,
+                "[http] acceptor open failed: {}",
+                ec.message());
       throw std::system_error(ec, "open acceptor");
     }
 
     acceptor_->set_option(net::socket_base::reuse_address(true), ec);
     if (ec)
     {
+      log().log(Logger::Level::Error,
+                "[http] acceptor reuse_address failed: {}",
+                ec.message());
       throw std::system_error(ec, "reuse_address");
     }
 
     acceptor_->bind(endpoint, ec);
     if (ec)
     {
+      log().log(Logger::Level::Error,
+                "[http] acceptor bind failed on port {}: {}",
+                static_cast<unsigned int>(port),
+                ec.message());
+
       if (ec == boost::system::errc::address_in_use)
       {
         throw std::system_error(
@@ -170,6 +212,9 @@ namespace vix::server
     acceptor_->listen(net::socket_base::max_listen_connections, ec);
     if (ec)
     {
+      log().log(Logger::Level::Error,
+                "[http] acceptor listen failed: {}",
+                ec.message());
       throw std::system_error(ec, "listen acceptor");
     }
 
@@ -178,6 +223,17 @@ namespace vix::server
     if (!ep_ec)
     {
       bound_port_.store(static_cast<int>(ep.port()), std::memory_order_relaxed);
+
+      log().log(Logger::Level::Info,
+                "[http] acceptor ready on {}:{}",
+                ep.address().to_string(),
+                ep.port());
+    }
+    else
+    {
+      log().log(Logger::Level::Debug,
+                "[http] local_endpoint read failed: {}",
+                ep_ec.message());
     }
   }
 
@@ -186,6 +242,9 @@ namespace vix::server
     const int forced = config_.getIOThreads();
     if (forced > 0)
     {
+      log().log(Logger::Level::Debug,
+                "[http] using configured io thread count: {}",
+                forced);
       return static_cast<std::size_t>(forced);
     }
 
@@ -193,6 +252,16 @@ namespace vix::server
     if (hc == 0u)
     {
       hc = static_cast<unsigned int>(NUMBER_OF_THREADS);
+
+      log().log(Logger::Level::Debug,
+                "[http] hardware_concurrency returned 0, fallback={}",
+                hc);
+    }
+    else
+    {
+      log().log(Logger::Level::Debug,
+                "[http] hardware_concurrency={}",
+                hc);
     }
 
     return static_cast<std::size_t>(hc);
@@ -202,6 +271,10 @@ namespace vix::server
   {
     const std::size_t num_threads = calculate_io_thread_count();
 
+    log().log(Logger::Level::Info,
+              "[http] starting {} io thread(s)",
+              num_threads);
+
     io_threads_.reserve(num_threads);
 
     for (std::size_t i = 0; i < num_threads; ++i)
@@ -209,10 +282,20 @@ namespace vix::server
       io_threads_.emplace_back(
           [this, i]()
           {
+            log().log(Logger::Level::Debug,
+                      "[http] io thread {} starting",
+                      i);
+
             try
             {
               set_affinity(i);
-              io_context_->run();
+
+              const std::size_t handled = io_context_->run();
+
+              log().log(Logger::Level::Debug,
+                        "[http] io thread {} run() exited, handlers={}",
+                        i,
+                        handled);
             }
             catch (const std::exception &e)
             {
@@ -241,11 +324,21 @@ namespace vix::server
       throw std::runtime_error("runtime executor is null");
     }
 
+    log().log(Logger::Level::Info,
+              "[http] run() called");
+
     executor_->start();
+
+    log().log(Logger::Level::Debug,
+              "[http] runtime executor started");
 
     if (!acceptor_ || !acceptor_->is_open())
     {
       const int port = config_.getServerPort();
+
+      log().log(Logger::Level::Debug,
+                "[http] configured port={}",
+                port);
 
       if ((port != 0 && port < 1024) || port > 65535)
       {
@@ -256,6 +349,11 @@ namespace vix::server
       }
 
       init_acceptor(static_cast<unsigned short>(port));
+    }
+    else
+    {
+      log().log(Logger::Level::Debug,
+                "[http] acceptor already initialized");
     }
 
     start_accept();
@@ -272,10 +370,15 @@ namespace vix::server
   {
     if (stop_requested_.load(std::memory_order_acquire))
     {
+      log().log(Logger::Level::Debug,
+                "[http] start_accept skipped because stop requested");
       return;
     }
 
     auto socket = std::make_shared<tcp::socket>(*io_context_);
+
+    log().log(Logger::Level::Debug,
+              "[http] scheduling async_accept");
 
     acceptor_->async_accept(
         *socket,
@@ -283,11 +386,30 @@ namespace vix::server
         {
           if (stop_requested_.load(std::memory_order_acquire))
           {
+            log().log(Logger::Level::Debug,
+                      "[http] accept callback ignored because stop requested");
             return;
           }
 
           if (!ec)
           {
+            boost::system::error_code remote_ec;
+            const auto remote_ep = socket->remote_endpoint(remote_ec);
+
+            if (!remote_ec)
+            {
+              log().log(Logger::Level::Debug,
+                        "[http] accepted client {}:{}",
+                        remote_ep.address().to_string(),
+                        remote_ep.port());
+            }
+            else
+            {
+              log().log(Logger::Level::Debug,
+                        "[http] accepted client but failed to read remote endpoint: {}",
+                        remote_ec.message());
+            }
+
             handle_client(socket);
           }
           else if (ec != net::error::operation_aborted)
@@ -295,6 +417,11 @@ namespace vix::server
             log().log(Logger::Level::Error,
                       "Accept error: {}",
                       ec.message());
+          }
+          else
+          {
+            log().log(Logger::Level::Debug,
+                      "[http] accept aborted");
           }
 
           if (!stop_requested_.load(std::memory_order_acquire))
@@ -308,6 +435,8 @@ namespace vix::server
   {
     if (!socket_ptr)
     {
+      log().log(Logger::Level::Debug,
+                "[http] handle_client skipped: null socket");
       return;
     }
 
@@ -318,6 +447,9 @@ namespace vix::server
           *router_,
           config_,
           executor_);
+
+      log().log(Logger::Level::Debug,
+                "[http] session created, starting run()");
 
       session->run();
     }
@@ -339,7 +471,23 @@ namespace vix::server
 
     boost::system::error_code ec;
     socket->shutdown(tcp::socket::shutdown_both, ec);
+
+    if (ec)
+    {
+      log().log(Logger::Level::Debug,
+                "[http] socket shutdown error: {}",
+                ec.message());
+    }
+
+    ec.clear();
     socket->close(ec);
+
+    if (ec)
+    {
+      log().log(Logger::Level::Debug,
+                "[http] socket close error: {}",
+                ec.message());
+    }
   }
 
   void HTTPServer::monitor_metrics()
@@ -368,7 +516,15 @@ namespace vix::server
                 m.active,
                 m.timed_out);
 
-            std::this_thread::sleep_for(std::chrono::seconds(5));
+            for (int i = 0; i < 50; ++i)
+            {
+              if (stop_requested_.load(std::memory_order_acquire))
+              {
+                return;
+              }
+
+              std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
           }
         });
   }
@@ -380,8 +536,86 @@ namespace vix::server
 
     if (already_stopping)
     {
+      log().log(Logger::Level::Debug,
+                "[http] stop_async() ignored: already stopping");
       return;
     }
+
+    log().log(Logger::Level::Info,
+              "[http] stop_async() requested");
+
+    boost::system::error_code ec;
+
+    if (acceptor_ && acceptor_->is_open())
+    {
+      acceptor_->cancel(ec);
+      if (ec)
+      {
+        log().log(Logger::Level::Debug,
+                  "[http] acceptor cancel error: {}",
+                  ec.message());
+      }
+
+      ec.clear();
+      acceptor_->close(ec);
+      if (ec)
+      {
+        log().log(Logger::Level::Debug,
+                  "[http] acceptor close error: {}",
+                  ec.message());
+      }
+    }
+  }
+
+  void HTTPServer::join_threads()
+  {
+    log().log(Logger::Level::Debug,
+              "[http] join_threads() begin");
+
+    if (io_context_)
+    {
+      io_context_->stop();
+      log().log(Logger::Level::Debug,
+                "[http] io_context stopped");
+    }
+
+    for (std::size_t i = 0; i < io_threads_.size(); ++i)
+    {
+      auto &t = io_threads_[i];
+      if (t.joinable())
+      {
+        log().log(Logger::Level::Debug,
+                  "[http] joining io thread {}",
+                  i);
+        t.join();
+      }
+    }
+
+    io_threads_.clear();
+
+    if (metrics_thread_.joinable())
+    {
+      log().log(Logger::Level::Debug,
+                "[http] joining metrics thread");
+      metrics_thread_.join();
+    }
+
+    log().log(Logger::Level::Debug,
+              "[http] join_threads() end");
+  }
+
+  void HTTPServer::stop_blocking()
+  {
+    const bool was_already_stopping =
+        stop_requested_.exchange(true, std::memory_order_acq_rel);
+
+    if (was_already_stopping)
+    {
+      return;
+    }
+
+    log().log(Logger::Level::Info,
+              "[http] stop_blocking() begin");
 
     boost::system::error_code ec;
 
@@ -391,10 +625,7 @@ namespace vix::server
       ec.clear();
       acceptor_->close(ec);
     }
-  }
 
-  void HTTPServer::join_threads()
-  {
     if (io_context_)
     {
       io_context_->stop();
@@ -407,26 +638,26 @@ namespace vix::server
         t.join();
       }
     }
-
     io_threads_.clear();
 
     if (metrics_thread_.joinable())
     {
       metrics_thread_.join();
     }
-  }
-
-  void HTTPServer::stop_blocking()
-  {
-    stop_async();
 
     if (executor_)
     {
-      executor_->wait_idle();
       executor_->stop();
     }
 
-    join_threads();
+    const auto uptime_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - startup_t0_)
+            .count();
+
+    log().log(Logger::Level::Info,
+              "[http] stop_blocking() done, uptime_ms={}",
+              uptime_ms);
   }
 
 } // namespace vix::server
