@@ -35,6 +35,16 @@ target_link_libraries(runtime_test PRIVATE
 
 target_compile_features(runtime_test PRIVATE cxx_std_20)
 
+add_executable(runtime_bench
+  runtime/bench_threadpool_vs_runtime.cpp
+)
+
+target_link_libraries(runtime_bench PRIVATE
+  ${VIX_CORE_TEST_TARGET}
+)
+
+target_compile_features(runtime_bench PRIVATE cxx_std_20)
+
 if (BUILD_TESTING)
   add_test(NAME core_smoke_test COMMAND core_smoke_test)
   add_test(NAME runtime_test COMMAND runtime_test)
