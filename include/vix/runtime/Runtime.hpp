@@ -193,8 +193,7 @@ namespace vix::runtime
      */
     [[nodiscard]] bool submit(TaskFn fn, std::uint32_t affinity = 0)
     {
-      Task task(next_task_id(), std::move(fn), affinity);
-      return scheduler_.submit(std::move(task));
+      return submit(Task(next_task_id(), std::move(fn), affinity));
     }
 
     /**

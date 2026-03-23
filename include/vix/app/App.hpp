@@ -1,5 +1,6 @@
 /**
  * @file App.hpp
+ * @brief Main Vix application object used to configure routes, middleware and server lifecycle.
  * @author Gaspard Kirira
  *
  * Copyright 2025, Gaspard Kirira. All rights reserved.
@@ -14,6 +15,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -22,93 +24,16 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-#include <filesystem>
 
 #include <boost/beast/http.hpp>
 
 #include <vix/config/Config.hpp>
-#include <vix/server/HTTPServer.hpp>
+#include <vix/executor/RuntimeExecutor.hpp>
 #include <vix/http/RequestHandler.hpp>
-#include <vix/utils/Logger.hpp>
 #include <vix/router/Router.hpp>
-
-#include <vix/executor/IExecutor.hpp>
-#include <vix/experimental/ThreadPoolExecutor.hpp>
+#include <vix/server/HTTPServer.hpp>
+#include <vix/utils/Logger.hpp>
 #include <vix/utils/ServerPrettyLogs.hpp>
-
-/**
- * @file App.hpp
- * @brief High-level HTTP application entry point.
- *
- * @details
- * `vix::App` is the main object you use to build a Vix HTTP server.
- *
- * It owns and wires together:
- * - a router (routes, middlewares, groups)
- * - an HTTP server (listening, accept loop, request dispatch)
- * - an execution context (executor for running request handlers)
- *
- * The goal is to keep the beginner experience close to Python frameworks:
- * you declare routes, start the server, and focus on your app logic.
- *
- * Minimal example
- * @code
- * #include <vix.hpp>
- * using namespace vix;
- * namespace J = vix::json;
- *
- * int main()
- * {
- *   App app;
- *
- *   app.get("/", [](Request &, Response &res)
- *   {
- *     res.json({"message", "Hello, Vix!"});
- *   });
- *
- *   app.get("/user", [](Request &, Response &res)
- *   {
- *     res.json({"name", "Ada",
- *               "tags", J::array({"c++", "net", "http"}),
- *               "profile", J::obj({"id", 42, "vip", true})});
- *   });
- *
- *   app.run(8080);
- * }
- * @endcode
- *
- * Route handlers
- * A handler can be written in 2 styles:
- *
- * 1) Facade handler (most common, beginner-friendly):
- *    - `(vix::vhttp::Request&, vix::vhttp::ResponseWrapper&)`
- *
- * 2) Raw handler (advanced, closer to HTTP internals):
- *    - `(const vix::vhttp::RawRequest&, vix::vhttp::ResponseWrapper&)`
- *
- * Return values
- * A handler may:
- * - return `void` and write into the response explicitly (`res.send()`, `res.json()`, etc.)
- * - or return a value (string/JSON/etc.) and let Vix auto-send it if nothing was written yet
- *
- * Middlewares
- * Use `use()` / `protect()` / `protect_exact()` to attach middleware:
- * - globally
- * - per prefix
- * - or exactly for one path
- *
- * Groups
- * Use `group("/api", ...)` to prefix routes and attach shared middleware.
- *
- * Concurrency
- * The server executes handlers using an `IExecutor`. The default is suitable
- * for most apps, but advanced users can inject a custom executor.
- *
- * Shutdown
- * `run()` blocks the current thread.
- * `listen()` runs the server in a background thread and returns immediately.
- * Use `close()` and `wait()` to stop and join cleanly.
- */
 
 namespace vix::router
 {
@@ -118,12 +43,13 @@ namespace vix::router
 namespace vix
 {
   namespace http = boost::beast::http;
+
   using Logger = vix::utils::Logger;
 
   /**
-   * @brief Return the global Vix logger instance.
+   * @brief Returns the global Vix logger instance.
    *
-   * This is a short alias to the internal logger used across the runtime.
+   * @return Logger& Global logger singleton.
    */
   inline Logger &log()
   {
@@ -131,45 +57,73 @@ namespace vix
   }
 
   /**
-   * @brief HTTP application wrapper that owns routing, server, and execution context.
+   * @brief Main application entry point for building a Vix HTTP server.
    *
-   * `App` is designed to be the single object a user needs for typical servers:
-   * - register routes (get/post/put/patch/del/head/options)
-   * - attach middleware
-   * - start listening (`run` or `listen`)
-   *
-   * It keeps the public API small, while still exposing advanced controls
-   * (executor injection, static files, module init hook, signal-safe stop).
+   * This class owns the router, runtime executor and HTTP server. It provides
+   * route registration helpers, middleware support, static file mounting and
+   * lifecycle methods such as listen(), run(), wait() and close().
    */
   class App
   {
   public:
-    /** @brief Callback invoked when the app is shutting down. */
+    /**
+     * @brief Callback executed when the application is shutting down.
+     */
     using ShutdownCallback = std::function<void()>;
 
-    /** @brief Callback invoked when the server is ready and listening. */
+    /**
+     * @brief Callback executed when the server starts listening.
+     */
     using ListenCallback = std::function<void()>;
 
-    /** @brief Callback invoked with the bound listening port. */
+    /**
+     * @brief Callback executed when the server starts listening on a given port.
+     */
     using ListenPortCallback = std::function<void(int)>;
 
     /**
-     * @brief Create an app using the default executor.
-     *
-     * The default executor is intended to be a good baseline for most applications.
+     * @brief Middleware continuation callback.
+     */
+    using Next = std::function<void()>;
+
+    /**
+     * @brief Middleware signature used by the application.
+     */
+    using Middleware =
+        std::function<void(vix::vhttp::Request &, vix::vhttp::ResponseWrapper &, Next)>;
+
+    /**
+     * @brief Signature of the injected static files handler.
+     */
+    using StaticHandler =
+        std::function<bool(App &,
+                           const std::filesystem::path &root,
+                           const std::string &mount,
+                           const std::string &index_file,
+                           bool add_cache_control,
+                           const std::string &cache_control,
+                           bool fallthrough)>;
+
+    /**
+     * @brief Signature of the optional module initialization hook.
+     */
+    using ModuleInitFn = void (*)();
+
+    /**
+     * @brief Constructs an application with a default runtime executor.
      */
     App();
 
     /**
-     * @brief Create an app using a custom executor shared by the HTTP server.
+     * @brief Constructs an application with an externally provided runtime executor.
      *
-     * Use this when you want explicit control over concurrency and scheduling.
-     *
-     * @param executor Executor used to run request handlers.
+     * @param executor Shared runtime executor used by the application.
      */
-    explicit App(std::shared_ptr<vix::executor::IExecutor> executor);
+    explicit App(std::shared_ptr<vix::executor::RuntimeExecutor> executor);
 
-    /** @brief Destroy the app and stop the server if still running. */
+    /**
+     * @brief Destroys the application and releases owned resources.
+     */
     ~App();
 
     App(const App &) = delete;
@@ -178,169 +132,259 @@ namespace vix
     App &operator=(App &&) = delete;
 
     /**
-     * @brief Run the HTTP server and block the current thread until it stops.
+     * @brief Starts the server and blocks until shutdown.
      *
-     * @param port Listening port (default: 8080).
+     * @param port Listening port.
      */
     void run(int port = 8080);
 
     /**
-     * @brief Start listening on a port in a background thread.
+     * @brief Starts listening asynchronously.
      *
-     * @param port Listening port (default: 8080).
-     * @param on_listen Optional callback invoked once the server is ready.
+     * @param port Listening port.
+     * @param on_listen Optional callback executed once the server is listening.
      */
     void listen(int port = 8080, ListenCallback on_listen = {});
 
-    /** @brief Block until the server has fully stopped. */
+    /**
+     * @brief Waits for the running server to terminate.
+     */
     void wait();
 
     /**
-     * @brief Request the server to stop and wake any waiting thread.
-     *
-     * This is a graceful stop. Use `wait()` to join the background thread
-     * when `listen()` was used.
+     * @brief Stops the server and triggers shutdown logic.
      */
     void close();
 
     /**
-     * @brief Set a callback executed once during shutdown.
+     * @brief Sets the shutdown callback.
      *
-     * @param cb Callback to run during shutdown.
+     * @param cb Callback invoked during shutdown.
      */
     void set_shutdown_callback(ShutdownCallback cb)
     {
       shutdown_cb_ = std::move(cb);
     }
 
-    /** @brief Register a GET handler for the given path. */
+    /**
+     * @brief Registers a GET route.
+     *
+     * @tparam Handler Route handler type.
+     * @param path Route path.
+     * @param handler Route handler.
+     */
     template <typename Handler>
     void get(const std::string &path, Handler handler)
     {
       add_route(http::verb::get, path, std::move(handler));
     }
 
-    /** @brief Register a POST handler for the given path. */
+    /**
+     * @brief Registers a POST route.
+     *
+     * @tparam Handler Route handler type.
+     * @param path Route path.
+     * @param handler Route handler.
+     */
     template <typename Handler>
     void post(const std::string &path, Handler handler)
     {
       add_route(http::verb::post, path, std::move(handler));
     }
 
-    /** @brief Register a PUT handler for the given path. */
+    /**
+     * @brief Registers a PUT route.
+     *
+     * @tparam Handler Route handler type.
+     * @param path Route path.
+     * @param handler Route handler.
+     */
     template <typename Handler>
     void put(const std::string &path, Handler handler)
     {
       add_route(http::verb::put, path, std::move(handler));
     }
 
-    /** @brief Register a PATCH handler for the given path. */
+    /**
+     * @brief Registers a PATCH route.
+     *
+     * @tparam Handler Route handler type.
+     * @param path Route path.
+     * @param handler Route handler.
+     */
     template <typename Handler>
     void patch(const std::string &path, Handler handler)
     {
       add_route(http::verb::patch, path, std::move(handler));
     }
 
-    /** @brief Register a DELETE handler for the given path. */
+    /**
+     * @brief Registers a DELETE route.
+     *
+     * @tparam Handler Route handler type.
+     * @param path Route path.
+     * @param handler Route handler.
+     */
     template <typename Handler>
     void del(const std::string &path, Handler handler)
     {
       add_route(http::verb::delete_, path, std::move(handler));
     }
 
-    /** @brief Register a HEAD handler for the given path. */
+    /**
+     * @brief Registers a HEAD route.
+     *
+     * @tparam Handler Route handler type.
+     * @param path Route path.
+     * @param handler Route handler.
+     */
     template <typename Handler>
     void head(const std::string &path, Handler handler)
     {
       add_route(http::verb::head, path, std::move(handler));
     }
 
-    /** @brief Register an OPTIONS handler for the given path. */
+    /**
+     * @brief Registers an OPTIONS route.
+     *
+     * @tparam Handler Route handler type.
+     * @param path Route path.
+     * @param handler Route handler.
+     */
     template <typename Handler>
     void options(const std::string &path, Handler handler)
     {
       add_route(http::verb::options, path, std::move(handler));
     }
 
-    /** @brief Register a GET handler marked as heavy work (scheduler can treat it differently). */
+    /**
+     * @brief Registers a heavy GET route.
+     *
+     * Heavy routes are marked with RouteOptions{ .heavy = true } so the runtime
+     * can treat them differently when needed.
+     *
+     * @tparam Handler Route handler type.
+     * @param path Route path.
+     * @param handler Route handler.
+     */
     template <typename Handler>
     void get_heavy(const std::string &path, Handler handler)
     {
       add_route(http::verb::get, path, std::move(handler), vix::router::RouteOptions{.heavy = true});
     }
 
-    /** @brief Register a POST handler marked as heavy work (scheduler can treat it differently). */
+    /**
+     * @brief Registers a heavy POST route.
+     *
+     * @tparam Handler Route handler type.
+     * @param path Route path.
+     * @param handler Route handler.
+     */
     template <typename Handler>
     void post_heavy(const std::string &path, Handler handler)
     {
       add_route(http::verb::post, path, std::move(handler), vix::router::RouteOptions{.heavy = true});
     }
 
-    /** @brief Access the global configuration used by the app. */
-    vix::config::Config &config() noexcept { return config_; }
-
-    /** @brief Get the router instance used to register routes (may be null before init). */
-    std::shared_ptr<vix::router::Router> router() const noexcept { return router_; }
-
-    /** @brief Access the underlying HTTP server instance. */
-    vix::server::HTTPServer &server() noexcept { return server_; }
-
-    /** @brief Access the executor used by the server. */
-    vix::executor::IExecutor &executor() noexcept { return *executor_; }
-
-    /** @brief Return true if the server has started. */
-    bool is_running() const noexcept { return started_.load(std::memory_order_relaxed); }
+    /**
+     * @brief Returns the mutable application configuration.
+     *
+     * @return vix::config::Config& Application configuration.
+     */
+    vix::config::Config &config() noexcept
+    {
+      return config_;
+    }
 
     /**
-     * @brief Request stop in a signal-safe way (intended for SIGINT/SIGTERM handlers).
+     * @brief Returns the shared router.
      *
-     * This method is designed to be safe to call from a signal handler.
-     * It only sets flags and avoids heavy operations.
+     * @return std::shared_ptr<vix::router::Router> Router instance.
+     */
+    std::shared_ptr<vix::router::Router> router() const noexcept
+    {
+      return router_;
+    }
+
+    /**
+     * @brief Returns the underlying HTTP server.
+     *
+     * @return vix::server::HTTPServer& HTTP server instance.
+     */
+    vix::server::HTTPServer &server() noexcept
+    {
+      return server_;
+    }
+
+    /**
+     * @brief Returns the runtime executor used by the application.
+     *
+     * @return vix::executor::RuntimeExecutor& Runtime executor.
+     */
+    vix::executor::RuntimeExecutor &executor() noexcept
+    {
+      return *executor_;
+    }
+
+    /**
+     * @brief Indicates whether the server has started.
+     *
+     * @return true if running, false otherwise.
+     */
+    bool is_running() const noexcept
+    {
+      return started_.load(std::memory_order_relaxed);
+    }
+
+    /**
+     * @brief Requests a stop initiated by a signal handler.
      */
     void request_stop_from_signal() noexcept;
 
     /**
-     * @brief Start listening on a port and receive the final resolved port value.
+     * @brief Starts listening on a given port and notifies through a callback.
      *
-     * Useful when binding to port 0 (ephemeral port).
-     *
-     * @param port Requested port (0 means "choose automatically").
+     * @param port Listening port.
      * @param cb Optional callback receiving the bound port.
      */
     void listen_port(int port, ListenPortCallback cb = {});
 
-    /** @brief Enable or disable development mode for the app. */
-    void setDevMode(bool v) { dev_mode_ = v; }
-
-    /** @brief Return whether development mode is enabled. */
-    bool isDevMode() const { return dev_mode_; }
+    /**
+     * @brief Enables or disables development mode.
+     *
+     * @param v Development mode state.
+     */
+    void setDevMode(bool v)
+    {
+      dev_mode_ = v;
+    }
 
     /**
-     * @brief Signature for the static assets handler used by static_dir().
+     * @brief Returns whether development mode is enabled.
      *
-     * This allows the runtime to plug different static-file implementations
-     * without changing the public API.
+     * @return true if enabled, false otherwise.
      */
-    using StaticHandler =
-        std::function<bool(App &, const std::filesystem::path &root,
-                           const std::string &mount,
-                           const std::string &index_file,
-                           bool add_cache_control,
-                           const std::string &cache_control,
-                           bool fallthrough)>;
+    bool isDevMode() const
+    {
+      return dev_mode_;
+    }
 
-    /** @brief Set the global static assets handler used by all App instances. */
+    /**
+     * @brief Installs a static file handler implementation.
+     *
+     * @param fn Static file handler.
+     */
     static void set_static_handler(StaticHandler fn);
 
     /**
-     * @brief Serve a directory of static files under a mount path.
+     * @brief Mounts a static directory.
      *
-     * @param root Root directory containing static assets.
-     * @param mount URL path prefix (default: "/").
-     * @param index_file Default file for directory requests (default: "index.html").
-     * @param add_cache_control Whether to add a Cache-Control header.
-     * @param cache_control Cache-Control value (default: "public, max-age=3600").
-     * @param fallthrough If true, missing static files continue to next route/middleware.
+     * @param root Filesystem root to expose.
+     * @param mount URL mount point.
+     * @param index_file Default index filename.
+     * @param add_cache_control Whether to add Cache-Control.
+     * @param cache_control Cache-Control header value.
+     * @param fallthrough Whether to continue routing if no file matches.
      */
     void static_dir(std::filesystem::path root,
                     std::string mount = "/",
@@ -349,45 +393,39 @@ namespace vix
                     std::string cache_control = "public, max-age=3600",
                     bool fallthrough = true);
 
-    /** @brief Function pointer type used to initialize optional modules once. */
-    using ModuleInitFn = void (*)();
-
-    /** @brief Set a global module initializer called by the runtime. */
+    /**
+     * @brief Installs a global module initialization hook.
+     *
+     * @param fn Module initialization function.
+     */
     static void set_module_init(ModuleInitFn fn);
 
-    /** @brief Continuation invoked to call the next middleware in the chain. */
-    using Next = std::function<void()>;
-
     /**
-     * @brief Middleware signature used by use(), protect(), and groups.
+     * @brief Route group helper.
      *
-     * A middleware can inspect/modify the request and response, then either:
-     * - call `next()` to continue the chain
-     * - or stop and send a response early
-     */
-    using Middleware = std::function<void(vix::vhttp::Request &, vix::vhttp::ResponseWrapper &, Next)>;
-
-    /**
-     * @brief Route group helper that prefixes paths and shares middleware registration.
-     *
-     * Groups allow writing clean APIs like:
-     * @code
-     * app.group("/api", [](App::Group &g) {
-     *   g.use(auth_mw);
-     *   g.get("/users", users_handler);
-     * });
-     * @endcode
+     * A group prefixes all registered routes and middleware with a common path.
      */
     class Group
     {
     public:
-      /** @brief Create a group with a normalized prefix. */
+      /**
+       * @brief Constructs a group bound to an application and a path prefix.
+       *
+       * @param app Parent application.
+       * @param prefix Group route prefix.
+       */
       Group(App &app, std::string prefix)
           : app_(&app), prefix_(normalize_prefix(std::move(prefix)))
       {
       }
 
-      /** @brief Create a nested group under the current prefix. */
+      /**
+       * @brief Creates a nested route group.
+       *
+       * @tparam Fn Function receiving the child group.
+       * @param sub Sub-prefix.
+       * @param fn Function called with the nested group.
+       */
       template <class Fn>
       void group(std::string sub, Fn fn)
       {
@@ -395,56 +433,103 @@ namespace vix
         fn(g);
       }
 
-      /** @brief Attach a middleware to all routes under this group prefix. */
+      /**
+       * @brief Adds middleware to this group prefix.
+       *
+       * @param mw Middleware function.
+       * @return Group& Current group.
+       */
       Group &use(Middleware mw)
       {
         app_->use(prefix_, std::move(mw));
         return *this;
       }
 
-      /** @brief Attach a middleware to a sub-prefix under this group. */
+      /**
+       * @brief Protects a sub-prefix using middleware.
+       *
+       * @param sub_prefix Sub-prefix to protect.
+       * @param mw Middleware function.
+       * @return Group& Current group.
+       */
       Group &protect(std::string sub_prefix, Middleware mw)
       {
         app_->protect(join(prefix_, std::move(sub_prefix)), std::move(mw));
         return *this;
       }
 
-      /** @brief Attach a middleware that runs only when the request path matches exactly. */
+      /**
+       * @brief Protects one exact path using middleware.
+       *
+       * @param sub_path Exact sub-path.
+       * @param mw Middleware function.
+       * @return Group& Current group.
+       */
       Group &protect_exact(std::string sub_path, Middleware mw)
       {
         app_->protect_exact(join(prefix_, std::move(sub_path)), std::move(mw));
         return *this;
       }
 
-      /** @brief Register a GET handler under this group prefix. */
+      /**
+       * @brief Registers a GET route within the group.
+       *
+       * @tparam Handler Route handler type.
+       * @param path Route path relative to the group.
+       * @param handler Route handler.
+       */
       template <typename Handler>
       void get(const std::string &path, Handler handler)
       {
         app_->get(join(prefix_, path), std::move(handler));
       }
 
-      /** @brief Register a POST handler under this group prefix. */
+      /**
+       * @brief Registers a POST route within the group.
+       *
+       * @tparam Handler Route handler type.
+       * @param path Route path relative to the group.
+       * @param handler Route handler.
+       */
       template <typename Handler>
       void post(const std::string &path, Handler handler)
       {
         app_->post(join(prefix_, path), std::move(handler));
       }
 
-      /** @brief Register a PUT handler under this group prefix. */
+      /**
+       * @brief Registers a PUT route within the group.
+       *
+       * @tparam Handler Route handler type.
+       * @param path Route path relative to the group.
+       * @param handler Route handler.
+       */
       template <typename Handler>
       void put(const std::string &path, Handler handler)
       {
         app_->put(join(prefix_, path), std::move(handler));
       }
 
-      /** @brief Register a PATCH handler under this group prefix. */
+      /**
+       * @brief Registers a PATCH route within the group.
+       *
+       * @tparam Handler Route handler type.
+       * @param path Route path relative to the group.
+       * @param handler Route handler.
+       */
       template <typename Handler>
       void patch(const std::string &path, Handler handler)
       {
         app_->patch(join(prefix_, path), std::move(handler));
       }
 
-      /** @brief Register a DELETE handler under this group prefix. */
+      /**
+       * @brief Registers a DELETE route within the group.
+       *
+       * @tparam Handler Route handler type.
+       * @param path Route path relative to the group.
+       * @param handler Route handler.
+       */
       template <typename Handler>
       void del(const std::string &path, Handler handler)
       {
@@ -452,6 +537,12 @@ namespace vix
       }
 
     private:
+      /**
+       * @brief Normalizes a prefix to a clean absolute route prefix.
+       *
+       * @param p Raw prefix.
+       * @return std::string Normalized prefix.
+       */
       static std::string normalize_prefix(std::string p)
       {
         if (p.empty())
@@ -466,6 +557,13 @@ namespace vix
         return p;
       }
 
+      /**
+       * @brief Joins a base prefix with a sub-path.
+       *
+       * @param base Base prefix.
+       * @param sub Sub-path.
+       * @return std::string Joined path.
+       */
       static std::string join(std::string base, std::string sub)
       {
         base = normalize_prefix(std::move(base));
@@ -490,7 +588,13 @@ namespace vix
       std::string prefix_;
     };
 
-    /** @brief Create a temporary group and call the provided function to register routes. */
+    /**
+     * @brief Creates a temporary group and invokes a function with it.
+     *
+     * @tparam Fn Function receiving the group.
+     * @param prefix Group prefix.
+     * @param fn Function invoked with the group.
+     */
     template <class Fn>
     void group(std::string prefix, Fn fn)
     {
@@ -498,25 +602,49 @@ namespace vix
       fn(g);
     }
 
-    /** @brief Create a group object for incremental route registration. */
+    /**
+     * @brief Returns a reusable group object.
+     *
+     * @param prefix Group prefix.
+     * @return Group Group instance.
+     */
     Group group(std::string prefix)
     {
       return Group(*this, std::move(prefix));
     }
 
-    /** @brief Attach a global middleware that applies to all routes. */
+    /**
+     * @brief Adds a global middleware.
+     *
+     * @param mw Middleware function.
+     */
     void use(Middleware mw);
 
-    /** @brief Attach a middleware that applies to all routes under the given prefix. */
+    /**
+     * @brief Adds a middleware bound to a prefix.
+     *
+     * @param prefix Route prefix.
+     * @param mw Middleware function.
+     */
     void use(std::string prefix, Middleware mw);
 
-    /** @brief Alias for use(prefix, mw) with prefix normalization. */
+    /**
+     * @brief Protects a route prefix with middleware.
+     *
+     * @param prefix Prefix to protect.
+     * @param mw Middleware function.
+     */
     void protect(std::string prefix, Middleware mw)
     {
       use(normalize_prefix(std::move(prefix)), std::move(mw));
     }
 
-    /** @brief Attach a middleware that runs only when the request path equals the given path. */
+    /**
+     * @brief Protects one exact path with middleware.
+     *
+     * @param path Exact path to protect.
+     * @param mw Middleware function.
+     */
     void protect_exact(std::string path, Middleware mw)
     {
       std::string match = normalize_prefix(std::move(path));
@@ -524,16 +652,16 @@ namespace vix
                                              vix::vhttp::ResponseWrapper &res,
                                              Next next) mutable
           {
-        if (req.path() == match)
-          mw(req, res, std::move(next));
-        else
-          next(); });
+            if (req.path() == match)
+              mw(req, res, std::move(next));
+            else
+              next(); });
     }
 
     /**
-     * @brief Return the last computed ServerReadyInfo (if available).
+     * @brief Returns the last captured server ready information.
      *
-     * This is set by listen() once the server has bound successfully.
+     * @return vix::utils::ServerReadyInfo Last ready info.
      */
     vix::utils::ServerReadyInfo server_ready_info() const
     {
@@ -541,29 +669,25 @@ namespace vix
       return last_ready_info_;
     }
 
-    /** @brief Return true if server_ready_info() is available. */
+    /**
+     * @brief Indicates whether ready information has already been captured.
+     *
+     * @return true if available, false otherwise.
+     */
     bool has_server_ready_info() const noexcept
     {
       return has_ready_info_.load(std::memory_order_relaxed);
     }
 
   private:
-    vix::config::Config &config_;
-    std::shared_ptr<vix::router::Router> router_;
-    std::shared_ptr<vix::executor::IExecutor> executor_;
-    vix::server::HTTPServer server_;
-    ShutdownCallback shutdown_cb_{};
-    std::thread server_thread_;
-    std::atomic<bool> started_{false};
-    std::atomic<bool> stop_requested_{false};
-    std::mutex stop_mutex_;
-    std::condition_variable stop_cv_;
-    bool dev_mode_ = {false};
-    std::atomic<bool> wait_called_{false};
-    std::atomic<bool> listen_called_{false};
-    mutable std::mutex ready_info_mutex_;
-    vix::utils::ServerReadyInfo last_ready_info_{};
-    std::atomic<bool> has_ready_info_{false};
+    /**
+     * @brief Internal middleware registration entry.
+     */
+    struct MiddlewareEntry
+    {
+      std::string prefix;
+      Middleware mw;
+    };
 
     using RawRequestT = vix::vhttp::RawRequest;
 
@@ -575,12 +699,33 @@ namespace vix
     static constexpr bool is_raw_handler_v =
         std::is_invocable_v<H &, const RawRequestT &, vix::vhttp::ResponseWrapper &>;
 
+    /**
+     * @brief Registers a route using default route options.
+     *
+     * @tparam Handler Route handler type.
+     * @param method HTTP method.
+     * @param path Route path.
+     * @param handler Route handler.
+     */
     template <typename Handler>
     void add_route(http::verb method, const std::string &path, Handler handler)
     {
       add_route(method, path, std::move(handler), vix::router::RouteOptions{});
     }
 
+    /**
+     * @brief Registers a route with explicit route options.
+     *
+     * Supported handlers are:
+     * - (vix::vhttp::Request&, vix::vhttp::ResponseWrapper&)
+     * - (const vix::vhttp::RawRequest&, vix::vhttp::ResponseWrapper&)
+     *
+     * @tparam Handler Route handler type.
+     * @param method HTTP method.
+     * @param path Route path.
+     * @param handler Route handler.
+     * @param opt Route options.
+     */
     template <typename Handler>
     void add_route(http::verb method,
                    const std::string &path,
@@ -655,16 +800,32 @@ namespace vix
       }
     }
 
-    struct MiddlewareEntry
-    {
-      std::string prefix;
-      Middleware mw;
-    };
-
-    std::vector<MiddlewareEntry> middlewares_;
+    /**
+     * @brief Returns whether a path matches a middleware prefix.
+     *
+     * @param prefix Middleware prefix.
+     * @param path Request path.
+     * @return true if matched, false otherwise.
+     */
     bool match_middleware_prefix_(const std::string &prefix, const std::string &path) const;
+
+    /**
+     * @brief Collects all middleware that apply to a given path.
+     *
+     * @param path Request path.
+     * @return std::vector<Middleware> Ordered middleware chain.
+     */
     std::vector<Middleware> collect_middlewares_for_(const std::string &path) const;
 
+    /**
+     * @brief Executes a middleware chain recursively.
+     *
+     * @param chain Middleware chain.
+     * @param i Current middleware index.
+     * @param req Request wrapper.
+     * @param res Response wrapper.
+     * @param final_handler Final route callback.
+     */
     static inline void run_middleware_chain_(
         const std::vector<Middleware> &chain,
         std::size_t i,
@@ -686,17 +847,31 @@ namespace vix
       chain[i](req, res, std::move(next));
     }
 
+    /**
+     * @brief Normalizes a route prefix or exact path.
+     *
+     * @param p Raw prefix/path.
+     * @return std::string Normalized absolute path.
+     */
     static std::string normalize_prefix(std::string p)
     {
       if (p.empty())
         return "";
+
       if (p.front() != '/')
         p.insert(p.begin(), '/');
+
       while (p.size() > 1 && p.back() == '/')
         p.pop_back();
+
       return p;
     }
 
+    /**
+     * @brief Automatically installs an OPTIONS route for a path when missing.
+     *
+     * @param path Route path.
+     */
     void ensure_options_route_for_path_(const std::string &path)
     {
       if (!router_)
@@ -731,8 +906,34 @@ namespace vix
 
       router_->add_route(http::verb::options, path, request_handler, vix::router::RouteOptions{});
     }
+
+  private:
+    vix::config::Config config_;
+    std::shared_ptr<vix::router::Router> router_;
+    std::shared_ptr<vix::executor::RuntimeExecutor> executor_;
+    vix::server::HTTPServer server_;
+
+    ShutdownCallback shutdown_cb_{};
+
+    std::thread server_thread_;
+    std::atomic<bool> started_{false};
+    std::atomic<bool> stop_requested_{false};
+
+    std::mutex stop_mutex_;
+    std::condition_variable stop_cv_;
+
+    bool dev_mode_{false};
+
+    std::atomic<bool> wait_called_{false};
+    std::atomic<bool> listen_called_{false};
+
+    mutable std::mutex ready_info_mutex_;
+    vix::utils::ServerReadyInfo last_ready_info_{};
+    std::atomic<bool> has_ready_info_{false};
+
+    std::vector<MiddlewareEntry> middlewares_;
   };
 
 } // namespace vix
 
-#endif
+#endif // VIX_HTTP_APP_HPP

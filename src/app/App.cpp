@@ -13,22 +13,23 @@
  */
 #include <vix/app/App.hpp>
 
+#include <boost/beast/http.hpp>
+
+#include <vix/openapi/register_docs.hpp>
 #include <vix/router/Router.hpp>
 #include <vix/utils/Env.hpp>
 #include <vix/utils/Logger.hpp>
-#include <vix/utils/ServerPrettyLogs.hpp>
 #include <vix/utils/ScopeGuard.hpp>
-#include <vix/openapi/register_docs.hpp>
-#include <vix/utils/Env.hpp>
-#include <boost/beast/http.hpp>
+#include <vix/utils/ServerPrettyLogs.hpp>
 
-#include <csignal>
+#include <atomic>
 #include <cctype>
+#include <csignal>
 #include <exception>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
-#include <mutex>
-#include <atomic>
 
 namespace
 {
@@ -88,6 +89,7 @@ namespace
     const std::string raw = vix::utils::env_or("VIX_LOG_LEVEL", std::string{"warn"});
     std::string s;
     s.reserve(raw.size());
+
     for (char c : raw)
     {
       s.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
@@ -105,6 +107,7 @@ namespace
       return Level::Error;
     if (s == "critical")
       return Level::Critical;
+
     return Level::Warn;
   }
 
@@ -113,6 +116,7 @@ namespace
     auto hc = std::thread::hardware_concurrency();
     if (hc == 0)
       hc = 4;
+
     return static_cast<std::size_t>(hc);
   }
 
@@ -153,7 +157,7 @@ namespace vix
     return fn;
   }
 
-  void vix::App::set_module_init(ModuleInitFn fn)
+  void App::set_module_init(ModuleInitFn fn)
   {
     module_init_ref() = fn;
   }
@@ -162,30 +166,24 @@ namespace vix
   {
     std::call_once(g_module_init_once, []
                    {
-    if (auto fn = module_init_ref())
-      fn(); });
+                     if (auto fn = module_init_ref())
+                       fn(); });
   }
 
   App::App()
-      : config_(vix::config::Config::getInstance()),
+      : config_(),
         router_(nullptr),
-        executor_(std::make_shared<vix::experimental::ThreadPoolExecutor>(
-            compute_executor_threads(),
-            compute_executor_threads(),
-            /*defaultPriority*/ 1)),
+        executor_(std::make_shared<vix::executor::RuntimeExecutor>(
+            static_cast<std::uint32_t>(compute_executor_threads()))),
         server_(config_, executor_)
   {
     log().setLevelFromEnv("VIX_LOG_LEVEL");
     log().setFormatFromEnv("VIX_LOG_FORMAT");
 
     if (vix::utils::env_bool("VIX_LOG_ASYNC", true))
-    {
       log().setAsync(true);
-    }
     else
-    {
       log().setAsync(false);
-    }
 
     Logger::Context ctx;
     ctx.module = "App";
@@ -194,14 +192,13 @@ namespace vix
     try
     {
       init_modules_once();
+
       router_ = server_.getRouter();
       if (!router_)
       {
         log().throwError("Failed to get Router from HTTPServer");
       }
 
-      // Auto docs
-      // Disable with: VIX_DOCS=0
       if (vix::utils::env_bool("VIX_DOCS", true))
       {
         vix::openapi::register_openapi_and_docs(*router_, "Vix API", "1.33.0");
@@ -216,8 +213,8 @@ namespace vix
     }
   }
 
-  App::App(std::shared_ptr<vix::executor::IExecutor> executor)
-      : config_(vix::config::Config::getInstance()),
+  App::App(std::shared_ptr<vix::executor::RuntimeExecutor> executor)
+      : config_(),
         router_(nullptr),
         executor_(std::move(executor)),
         server_(config_, executor_)
@@ -231,13 +228,9 @@ namespace vix
     log().setLevel(parse_log_level_from_env());
 
     if (vix::utils::env_bool("VIX_LOG_ASYNC", true))
-    {
       log().setAsync(true);
-    }
     else
-    {
       log().setAsync(false);
-    }
 
     if (vix::utils::env_bool("VIX_INTERNAL_LOGS", false))
     {
@@ -256,12 +249,13 @@ namespace vix
     try
     {
       init_modules_once();
+
       router_ = server_.getRouter();
       if (!router_)
+      {
         log().throwError("Failed to get Router from HTTPServer");
+      }
 
-      // Auto docs
-      // Disable with: VIX_DOCS=0
       if (vix::utils::env_bool("VIX_DOCS", true))
       {
         vix::openapi::register_openapi_and_docs(*router_, "Vix API", "0.0.0");
@@ -299,14 +293,15 @@ namespace vix
   {
     listen(port, [this, cb = std::move(cb)]()
            {
-           const int bound = server_.bound_port();
-           if (cb)
-             cb(bound); });
+             const int bound = server_.bound_port();
+             if (cb)
+               cb(bound); });
   }
 
   void App::listen(int port, ListenCallback on_listen)
   {
     using clock = std::chrono::steady_clock;
+
     listen_called_.store(true, std::memory_order_relaxed);
 
     if (started_.exchange(true, std::memory_order_relaxed))
@@ -330,46 +325,42 @@ namespace vix
                                  { server_.run(); });
 
     int bound = 0;
-    for (int i = 0; i < 200; ++i) // ~200ms max
+    for (int i = 0; i < 200; ++i)
     {
       bound = server_.bound_port();
       if (bound != 0)
         break;
+
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
     const auto t1 = clock::now();
     int ready_ms = static_cast<int>(
         std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
+
     if (ready_ms < 1)
       ready_ms = 1;
 
     vix::utils::ServerReadyInfo info;
     info.app = "vix.cpp";
-    info.version = "v1.31.0";
+    info.version = "v1.47.0";
     info.ready_ms = ready_ms;
     info.mode = dev_mode_ ? "dev" : "run";
 
     if (const char *v = vix::utils::vix_getenv("VIX_MODE"); v && *v)
+    {
       info.mode = vix::utils::RuntimeBanner::mode_from_env();
+    }
 
     info.scheme = "http";
     info.host = "localhost";
-    info.port = (bound != 0) ? bound : config_.getServerPort(); // fallback
+    info.port = (bound != 0) ? bound : config_.getServerPort();
     info.base_path = "/";
     info.show_ws = false;
 
-    if (auto *tp = dynamic_cast<vix::experimental::ThreadPoolExecutor *>(executor_.get()))
-    {
-      info.threads = tp->threads();
-      info.max_threads = tp->max_threads();
-    }
-    else
-    {
-      const auto th = compute_executor_threads();
-      info.threads = th;
-      info.max_threads = th;
-    }
+    const auto th = compute_executor_threads();
+    info.threads = th;
+    info.max_threads = th;
 
     {
       std::lock_guard<std::mutex> lock(ready_info_mutex_);
@@ -386,10 +377,14 @@ namespace vix
   void App::wait()
   {
     wait_called_.store(true, std::memory_order_relaxed);
+
     std::unique_lock<std::mutex> lock(stop_mutex_);
     stop_cv_.wait(
-        lock, [this]()
-        { return stop_requested_.load(std::memory_order_relaxed); });
+        lock,
+        [this]()
+        {
+          return stop_requested_.load(std::memory_order_relaxed);
+        });
   }
 
   void App::close()
@@ -449,9 +444,8 @@ namespace vix
     middlewares_.push_back(MiddlewareEntry{normalize_prefix(std::move(prefix)), std::move(mw)});
   }
 
-  bool App::match_middleware_prefix_(
-      const std::string &prefix,
-      const std::string &path) const
+  bool App::match_middleware_prefix_(const std::string &prefix,
+                                     const std::string &path) const
   {
     if (prefix.empty())
       return true;
@@ -474,12 +468,16 @@ namespace vix
     out.reserve(middlewares_.size());
 
     for (const auto &e : middlewares_)
+    {
       if (e.prefix.empty())
         out.push_back(e.mw);
+    }
 
     for (const auto &e : middlewares_)
+    {
       if (!e.prefix.empty() && match_middleware_prefix_(e.prefix, path))
         out.push_back(e.mw);
+    }
 
     return out;
   }
@@ -495,24 +493,27 @@ namespace vix
     static_handler_ref() = std::move(fn);
   }
 
-  void App::static_dir(
-      std::filesystem::path root,
-      std::string mount,
-      std::string index_file,
-      bool add_cache_control,
-      std::string cache_control,
-      bool fallthrough)
+  void App::static_dir(std::filesystem::path root,
+                       std::string mount,
+                       std::string index_file,
+                       bool add_cache_control,
+                       std::string cache_control,
+                       bool fallthrough)
   {
     auto &h = static_handler_ref();
     if (!h)
     {
-      // middleware module not linked → message explicite
       log().throwError("App::static_dir() requires vix::middleware module (static handler not registered)");
       return;
     }
 
-    const bool ok = h(*this, root, mount, index_file,
-                      add_cache_control, cache_control, fallthrough);
+    const bool ok = h(*this,
+                      root,
+                      mount,
+                      index_file,
+                      add_cache_control,
+                      cache_control,
+                      fallthrough);
 
     if (!ok)
     {

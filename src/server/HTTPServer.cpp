@@ -21,6 +21,7 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <utility>
 
 #include <vix/http/Response.hpp>
@@ -191,7 +192,7 @@ namespace vix::server
     unsigned int hc = std::thread::hardware_concurrency();
     if (hc == 0u)
     {
-      hc = 1u;
+      hc = static_cast<unsigned int>(NUMBER_OF_THREADS);
     }
 
     return static_cast<std::size_t>(hc);
@@ -258,11 +259,11 @@ namespace vix::server
     }
 
     start_accept();
-    monitor_metrics();
     start_io_threads();
+    monitor_metrics();
 
     log().log(Logger::Level::Info,
-              "HTTP server started on port {} with {} io threads",
+              "HTTP server started on port {} using {} network io threads",
               bound_port(),
               io_threads_.size());
   }
@@ -390,15 +391,15 @@ namespace vix::server
       ec.clear();
       acceptor_->close(ec);
     }
-
-    if (io_context_)
-    {
-      io_context_->stop();
-    }
   }
 
   void HTTPServer::join_threads()
   {
+    if (io_context_)
+    {
+      io_context_->stop();
+    }
+
     for (auto &t : io_threads_)
     {
       if (t.joinable())
