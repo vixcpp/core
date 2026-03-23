@@ -133,7 +133,38 @@ namespace vix::executor
     }
 
     /**
-     * @brief Submit a task to the runtime.
+     * @brief Submit a runtime task directly.
+     *
+     * This forwards a fully constructed task to the underlying runtime.
+     *
+     * @param task Runtime task to submit.
+     *
+     * @return true if the task was accepted, false otherwise.
+     */
+    [[nodiscard]] bool submit(vix::runtime::Task task)
+    {
+      return runtime_->submit(std::move(task));
+    }
+
+    /**
+     * @brief Submit a runtime task function directly.
+     *
+     * This overload is useful for code paths that already use the runtime task
+     * contract and want to return TaskResult values such as complete or yield.
+     *
+     * @param fn Runtime task function.
+     * @param affinity Optional worker affinity hint.
+     *
+     * @return true if the task was accepted, false otherwise.
+     */
+    [[nodiscard]] bool submit(vix::runtime::TaskFn fn,
+                              std::uint32_t affinity = 0)
+    {
+      return runtime_->submit(std::move(fn), affinity);
+    }
+
+    /**
+     * @brief Submit a void task to the runtime.
      *
      * @param fn Task function to execute.
      * @param opt Task execution options.

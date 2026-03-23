@@ -260,52 +260,97 @@ namespace vix::session
   void Session::dispatch_request(bhttp::request<bhttp::string_body> req)
   {
     auto self = shared_from_this();
-    auto res_ptr =
-        std::make_shared<bhttp::response<bhttp::string_body>>();
-
     const bool keep_alive = req.keep_alive();
 
-    bool ok = false;
-
-    try
+    if (!executor_)
     {
-      ok = router_.handle_request(req, *res_ptr);
+      auto res_ptr =
+          std::make_shared<bhttp::response<bhttp::string_body>>();
+
+      bool ok = false;
+
+      try
+      {
+        ok = router_.handle_request(req, *res_ptr);
+      }
+      catch (const std::exception &ex)
+      {
+        vix::utils::Logger::getInstance().log(
+            vix::utils::Logger::Level::Error,
+            "[Router][inline] Exception: {}",
+            ex.what());
+
+        vix::vhttp::Response::error_response(
+            *res_ptr,
+            bhttp::status::internal_server_error,
+            "Internal server error");
+      }
+
+      if (!ok && res_ptr->result() == bhttp::status::ok)
+      {
+        res_ptr->result(bhttp::status::bad_request);
+      }
+
+      res_ptr->set(
+          bhttp::field::connection,
+          keep_alive ? "keep-alive" : "close");
+
+      send_response(std::move(*res_ptr));
+      return;
     }
-    catch (const std::exception &ex)
-    {
-      vix::utils::Logger::getInstance().log(
-          vix::utils::Logger::Level::Error,
-          "[Router][inline] Exception: {}",
-          ex.what());
 
-      vix::vhttp::Response::error_response(
-          *res_ptr,
-          bhttp::status::internal_server_error,
-          "Internal server error");
-    }
-
-    if (!ok && res_ptr->result() == bhttp::status::ok)
-    {
-      res_ptr->result(bhttp::status::bad_request);
-    }
-
-    res_ptr->set(
-        bhttp::field::connection,
-        keep_alive ? "keep-alive" : "close");
-
-    self->send_response_strand(std::move(*res_ptr));
-  }
-
-  void Session::send_response_strand(bhttp::response<bhttp::string_body> res)
-  {
-    auto self = shared_from_this();
-
-    boost::asio::dispatch(
-        strand_,
-        [self, r = std::move(res)]() mutable
+    const bool submitted = executor_->submit(
+        [this, self, req = std::move(req), keep_alive]() mutable -> vix::runtime::TaskResult
         {
-          self->send_response(std::move(r));
+          auto res_ptr =
+              std::make_shared<bhttp::response<bhttp::string_body>>();
+
+          bool ok = false;
+
+          try
+          {
+            ok = router_.handle_request(req, *res_ptr);
+          }
+          catch (const std::exception &ex)
+          {
+            vix::utils::Logger::getInstance().log(
+                vix::utils::Logger::Level::Error,
+                "[Router][runtime] Exception: {}",
+                ex.what());
+
+            vix::vhttp::Response::error_response(
+                *res_ptr,
+                bhttp::status::internal_server_error,
+                "Internal server error");
+          }
+
+          if (!ok && res_ptr->result() == bhttp::status::ok)
+          {
+            res_ptr->result(bhttp::status::bad_request);
+          }
+
+          res_ptr->set(
+              bhttp::field::connection,
+              keep_alive ? "keep-alive" : "close");
+
+          boost::asio::post(
+              strand_,
+              [self, res_ptr]() mutable
+              {
+                self->send_response(std::move(*res_ptr));
+              });
+
+          return vix::runtime::TaskResult::complete;
         });
+
+    if (!submitted)
+    {
+      log().log(Logger::Level::Error,
+                "[Session] Failed to submit request to runtime");
+
+      send_error(bhttp::status::service_unavailable,
+                 "Runtime unavailable");
+    }
   }
 
   void Session::send_response(bhttp::response<bhttp::string_body> res)
@@ -353,10 +398,17 @@ namespace vix::session
 
   void Session::send_error(bhttp::status status, const std::string &msg)
   {
-    bhttp::response<bhttp::string_body> res;
-    vix::vhttp::Response::error_response(res, status, msg);
-    res.set(bhttp::field::connection, "close");
-    send_response_strand(std::move(res));
+    auto self = shared_from_this();
+
+    boost::asio::post(
+        strand_,
+        [self, status, msg]()
+        {
+          bhttp::response<bhttp::string_body> res;
+          vix::vhttp::Response::error_response(res, status, msg);
+          res.set(bhttp::field::connection, "close");
+          self->send_response(std::move(res));
+        });
   }
 
   void Session::close_socket_gracefully()
