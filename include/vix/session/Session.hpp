@@ -22,6 +22,7 @@
 #include <chrono>
 #include <memory>
 #include <optional>
+#include <string>
 
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic push
@@ -33,7 +34,7 @@
 #endif
 
 #include <vix/config/Config.hpp>
-#include <vix/executor/IExecutor.hpp>
+#include <vix/executor/RuntimeExecutor.hpp>
 #include <vix/http/Response.hpp>
 #include <vix/router/Router.hpp>
 
@@ -47,49 +48,90 @@ namespace vix::session
   /** @brief Maximum accepted HTTP request body size in bytes (default: 10 MB). */
   constexpr std::size_t MAX_REQUEST_BODY_SIZE = 10 * 1024 * 1024;
 
-  /** @brief One client connection session: reads requests, applies basic checks, routes to handlers, and writes responses. */
+  /**
+   * @brief One client connection session: reads requests, applies basic checks,
+   * routes to handlers, and writes responses.
+   */
   class Session : public std::enable_shared_from_this<Session>
   {
   public:
-    /** @brief Create a session bound to a connected TCP socket and a router used to dispatch requests. */
+    /**
+     * @brief Create a session bound to a connected TCP socket and a router used
+     * to dispatch requests.
+     *
+     * @param socket Connected TCP socket.
+     * @param router Router used to dispatch the HTTP request.
+     * @param config Server configuration.
+     * @param executor Runtime-backed executor used for handler execution.
+     */
     explicit Session(std::shared_ptr<tcp::socket> socket,
                      vix::router::Router &router,
                      const vix::config::Config &config,
-                     std::shared_ptr<vix::executor::IExecutor> executor);
+                     std::shared_ptr<vix::executor::RuntimeExecutor> executor);
 
-    /** @brief Destroy the session (the underlying socket is closed by the owner when needed). */
+    /** @brief Destroy the session. */
     ~Session() = default;
 
-    /** @brief Start the session: initializes timers, reads the request and dispatches it to the router. */
+    /** @brief Start the session lifecycle. */
     void run();
 
   private:
-    /** @brief Start a per-request timeout timer (prevents stalled / slow connections). */
+    /** @brief Start a per-request timeout timer. */
     void start_timer();
 
-    /** @brief Cancel the active timeout timer (called once a request is completed or aborted). */
+    /** @brief Cancel the active timeout timer. */
     void cancel_timer();
 
     /** @brief Begin asynchronous reading/parsing of the next HTTP request. */
     void read_request();
 
-    /** @brief Handle a parsed request result (success or failure) from the async read operation. */
+    /**
+     * @brief Handle the result of an asynchronous HTTP read operation.
+     *
+     * @param ec Completion error code.
+     * @param parsed_req Parsed request if available.
+     */
     void handle_request(const boost::system::error_code &ec,
                         std::optional<bhttp::request<bhttp::string_body>> parsed_req);
 
-    /** @brief Write an HTTP response to the client (may use strand to serialize writes). */
+    /**
+     * @brief Dispatch one parsed request to the runtime and router.
+     *
+     * @param req Parsed HTTP request.
+     */
+    void dispatch_request(bhttp::request<bhttp::string_body> req);
+
+    /**
+     * @brief Write an HTTP response to the client.
+     *
+     * @param res Response to send.
+     */
     void send_response(bhttp::response<bhttp::string_body> res);
 
-    /** @brief Send a standardized error response with a status and short message. */
+    /**
+     * @brief Send a standardized HTTP error response.
+     *
+     * @param status HTTP status code.
+     * @param msg Short error message.
+     */
     void send_error(bhttp::status status, const std::string &msg);
 
-    /** @brief Gracefully shutdown and close the socket (best-effort). */
+    /** @brief Gracefully shutdown and close the socket. */
     void close_socket_gracefully();
 
-    /** @brief Apply basic WAF checks (SQLi/XSS patterns); returns true if request should be accepted. */
+    /**
+     * @brief Apply basic WAF checks to the request.
+     *
+     * @param req Incoming request.
+     * @return true if request is accepted, false otherwise.
+     */
     bool waf_check_request(const bhttp::request<bhttp::string_body> &req);
 
-    /** @brief Send a response through the strand to ensure thread-safe serialized socket writes. */
+    /**
+     * @brief Serialize a response write through the strand.
+     *
+     * @param res Response to send.
+     */
     void send_response_strand(bhttp::response<bhttp::string_body> res);
 
   private:
@@ -102,7 +144,7 @@ namespace vix::session
     static const std::regex XSS_PATTERN;
     static const std::regex SQL_PATTERN;
     const vix::config::Config &config_;
-    std::shared_ptr<vix::executor::IExecutor> executor_;
+    std::shared_ptr<vix::executor::RuntimeExecutor> executor_;
     net::strand<net::any_io_executor> strand_;
   };
 

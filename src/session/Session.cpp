@@ -1,37 +1,85 @@
 /**
  *
- *  @file Session.cpp
- *  @author Gaspard Kirira
+ * @file Session.cpp
+ * @author Gaspard Kirira
  *
- *  Copyright 2025, Gaspard Kirira.  All rights reserved.
- *  https://github.com/vixcpp/vix
- *  Use of this source code is governed by a MIT license
- *  that can be found in the License file.
+ * Copyright 2025, Gaspard Kirira. All rights reserved.
+ * https://github.com/vixcpp/vix
+ * Use of this source code is governed by a MIT license
+ * that can be found in the License file.
  *
- *  Vix.cpp
+ * Vix.cpp
  *
  */
 #include <vix/session/Session.hpp>
-#include <vix/utils/Logger.hpp>
+
 #include <cctype>
+#include <string>
+#include <string_view>
+#include <utility>
+
+#include <vix/utils/Logger.hpp>
 
 namespace vix::session
 {
   using Logger = vix::utils::Logger;
 
-  inline Logger &log()
+  namespace
   {
-    return Logger::getInstance();
-  }
+    inline Logger &log()
+    {
+      return Logger::getInstance();
+    }
 
-  const std::regex Session::XSS_PATTERN(R"(<script.*?>.*?</script>)", std::regex::icase);
-  const std::regex Session::SQL_PATTERN(R"((\bUNION\b|\bSELECT\b|\bINSERT\b|\bDELETE\b|\bUPDATE\b|\bDROP\b))", std::regex::icase);
+    inline bool icontains(std::string_view s, std::string_view needle)
+    {
+      if (needle.empty())
+      {
+        return true;
+      }
 
-  Session::Session(
-      std::shared_ptr<tcp::socket> socket,
-      vix::router::Router &router,
-      const vix::config::Config &config,
-      std::shared_ptr<vix::executor::IExecutor> executor)
+      if (needle.size() > s.size())
+      {
+        return false;
+      }
+
+      for (std::size_t i = 0; i + needle.size() <= s.size(); ++i)
+      {
+        std::size_t j = 0;
+        for (; j < needle.size(); ++j)
+        {
+          const unsigned char a = static_cast<unsigned char>(s[i + j]);
+          const unsigned char b = static_cast<unsigned char>(needle[j]);
+
+          if (static_cast<char>(std::tolower(a)) !=
+              static_cast<char>(std::tolower(b)))
+          {
+            break;
+          }
+        }
+
+        if (j == needle.size())
+        {
+          return true;
+        }
+      }
+
+      return false;
+    }
+  } // namespace
+
+  const std::regex Session::XSS_PATTERN(
+      R"(<script.*?>.*?</script>)",
+      std::regex::icase);
+
+  const std::regex Session::SQL_PATTERN(
+      R"((\bUNION\b|\bSELECT\b|\bINSERT\b|\bDELETE\b|\bUPDATE\b|\bDROP\b))",
+      std::regex::icase);
+
+  Session::Session(std::shared_ptr<tcp::socket> socket,
+                   vix::router::Router &router,
+                   const vix::config::Config &config,
+                   std::shared_ptr<vix::executor::RuntimeExecutor> executor)
       : socket_(std::move(socket)),
         router_(router),
         buffer_(),
@@ -44,16 +92,13 @@ namespace vix::session
   {
     boost::system::error_code ec;
     socket_->set_option(tcp::no_delay(true), ec);
-    if (ec)
-      log().log(Logger::Level::Warn, "[Session] Failed to disable Nagle: {}", ec.message());
-  }
 
-  void Session::send_response_strand(bhttp::response<bhttp::string_body> res)
-  {
-    auto self = shared_from_this();
-    boost::asio::dispatch(
-        strand_, [self, r = std::move(res)]() mutable
-        { self->send_response(std::move(r)); });
+    if (ec)
+    {
+      log().log(Logger::Level::Warn,
+                "[Session] Failed to disable Nagle: {}",
+                ec.message());
+    }
   }
 
   void Session::run()
@@ -65,7 +110,10 @@ namespace vix::session
   void Session::start_timer()
   {
     timer_ = std::make_shared<net::steady_timer>(socket_->get_executor());
-    const auto timeout = std::chrono::seconds(config_.getSessionTimeoutSec());
+
+    const auto timeout =
+        std::chrono::seconds(config_.getSessionTimeoutSec());
+
     timer_->expires_after(timeout);
 
     std::weak_ptr<net::steady_timer> weak_timer = timer_;
@@ -76,7 +124,9 @@ namespace vix::session
         {
           auto t = weak_timer.lock();
           if (!t)
+          {
             return;
+          }
 
           if (!ec)
           {
@@ -101,19 +151,24 @@ namespace vix::session
   {
     if (!socket_ || !socket_->is_open())
     {
-      log().log(Logger::Level::Debug, "[Session] Socket closed before read_request()");
+      log().log(Logger::Level::Debug,
+                "[Session] Socket closed before read_request()");
       return;
     }
 
     buffer_.consume(buffer_.size());
+
     parser_ = std::make_unique<bhttp::request_parser<bhttp::string_body>>();
     parser_->body_limit(MAX_REQUEST_BODY_SIZE);
 
     start_timer();
 
     auto self = shared_from_this();
+
     bhttp::async_read(
-        *socket_, buffer_, *parser_,
+        *socket_,
+        buffer_,
+        *parser_,
         [this, self](boost::system::error_code ec, std::size_t)
         {
           cancel_timer();
@@ -124,32 +179,36 @@ namespace vix::session
                 ec == boost::asio::error::connection_reset)
             {
               log().log(Logger::Level::Debug,
-                        "[Session] Client closed connection: {}", ec.message());
+                        "[Session] Client closed connection: {}",
+                        ec.message());
             }
             else if (ec != boost::asio::error::operation_aborted)
             {
               log().log(Logger::Level::Error,
-                        "[Session] Read error: {}", ec.message());
+                        "[Session] Read error: {}",
+                        ec.message());
             }
 
             close_socket_gracefully();
             return;
           }
 
-          std::optional<bhttp::request<bhttp::string_body>> parsed;
+          std::optional<bhttp::request<bhttp::string_body>> parsed_req;
+
           try
           {
-            parsed = parser_->release();
+            parsed_req = parser_->release();
           }
           catch (const std::exception &ex)
           {
             log().log(Logger::Level::Error,
-                      "[Session] Parser release failed: {}", ex.what());
+                      "[Session] Parser release failed: {}",
+                      ex.what());
             close_socket_gracefully();
             return;
           }
 
-          handle_request({}, std::move(parsed));
+          handle_request({}, std::move(parsed_req));
         });
   }
 
@@ -159,7 +218,9 @@ namespace vix::session
   {
     if (ec)
     {
-      log().log(Logger::Level::Error, "[Session] Error handling request: {}", ec.message());
+      log().log(Logger::Level::Error,
+                "[Session] Error handling request: {}",
+                ec.message());
       close_socket_gracefully();
       return;
     }
@@ -181,20 +242,25 @@ namespace vix::session
     }
 
 #if defined(BOOST_BEAST_VERSION) && BOOST_BEAST_VERSION >= 315
-    constexpr auto too_large_status = http::status::payload_too_large;
+    constexpr auto too_large_status = bhttp::status::payload_too_large;
 #else
     constexpr auto too_large_status = static_cast<bhttp::status>(413);
 #endif
 
     if (req_.body().size() > MAX_REQUEST_BODY_SIZE)
     {
-      log().log(Logger::Level::Warn, "[Session] Body too large ({} bytes)", req_.body().size());
+      log().log(Logger::Level::Warn,
+                "[Session] Body too large ({} bytes)",
+                req_.body().size());
       send_error(too_large_status, "Request too large");
       return;
     }
 
-    auto self = shared_from_this();
-    auto req = std::move(req_);
+    dispatch_request(std::move(req_));
+  }
+
+  void Session::dispatch_request(bhttp::request<bhttp::string_body> req)
+  {
     const bool heavy = router_.is_heavy(req);
 
     if (!heavy)
@@ -208,15 +274,21 @@ namespace vix::session
       }
       catch (const std::exception &ex)
       {
-        log().log(Logger::Level::Error, "[Router] Exception: {}", ex.what());
-        send_error(bhttp::status::internal_server_error, "Internal server error");
+        log().log(Logger::Level::Error,
+                  "[Router] Exception: {}",
+                  ex.what());
+        send_error(bhttp::status::internal_server_error,
+                   "Internal server error");
         return;
       }
 
       if (!ok && res.result() == bhttp::status::ok)
+      {
         res.result(bhttp::status::bad_request);
+      }
 
-      res.set(bhttp::field::connection, req.keep_alive() ? "keep-alive" : "close");
+      res.set(bhttp::field::connection,
+              req.keep_alive() ? "keep-alive" : "close");
 
       send_response_strand(std::move(res));
       return;
@@ -224,72 +296,98 @@ namespace vix::session
 
     if (!executor_)
     {
-      send_error(bhttp::status::service_unavailable, "Executor not configured");
+      send_error(bhttp::status::service_unavailable,
+                 "Runtime executor not configured");
       return;
     }
 
-    auto res_ptr = std::make_shared<bhttp::response<bhttp::string_body>>();
+    auto self = shared_from_this();
+    auto res_ptr =
+        std::make_shared<bhttp::response<bhttp::string_body>>();
 
-    const bool accepted = executor_->post(
-        [self, req = std::move(req), res_ptr]() mutable
-        {
-          bool ok = false;
+    const bool accepted =
+        executor_->post(
+            [self, req = std::move(req), res_ptr]() mutable
+            {
+              bool ok = false;
 
-          try
-          {
-            ok = self->router_.handle_request(req, *res_ptr);
-          }
-          catch (const std::exception &ex)
-          {
-            vix::utils::Logger::getInstance().log(
-                vix::utils::Logger::Level::Error,
-                "[Router][heavy] Exception: {}", ex.what());
+              try
+              {
+                ok = self->router_.handle_request(req, *res_ptr);
+              }
+              catch (const std::exception &ex)
+              {
+                vix::utils::Logger::getInstance().log(
+                    vix::utils::Logger::Level::Error,
+                    "[Router][runtime] Exception: {}",
+                    ex.what());
 
-            res_ptr->result(bhttp::status::internal_server_error);
-            vix::vhttp::Response::error_response(
-                *res_ptr,
-                bhttp::status::internal_server_error,
-                "Internal server error");
-          }
+                vix::vhttp::Response::error_response(
+                    *res_ptr,
+                    bhttp::status::internal_server_error,
+                    "Internal server error");
+              }
 
-          if (!ok && res_ptr->result() == bhttp::status::ok)
-            res_ptr->result(bhttp::status::bad_request);
+              if (!ok && res_ptr->result() == bhttp::status::ok)
+              {
+                res_ptr->result(bhttp::status::bad_request);
+              }
 
-          res_ptr->set(bhttp::field::connection, req.keep_alive() ? "keep-alive" : "close");
+              res_ptr->set(
+                  bhttp::field::connection,
+                  req.keep_alive() ? "keep-alive" : "close");
 
-          self->send_response_strand(std::move(*res_ptr));
-        });
+              self->send_response_strand(std::move(*res_ptr));
+            });
 
     if (!accepted)
     {
       send_error(bhttp::status::service_unavailable, "Server busy");
-      return;
     }
+  }
+
+  void Session::send_response_strand(bhttp::response<bhttp::string_body> res)
+  {
+    auto self = shared_from_this();
+
+    boost::asio::dispatch(
+        strand_,
+        [self, r = std::move(res)]() mutable
+        {
+          self->send_response(std::move(r));
+        });
   }
 
   void Session::send_response(bhttp::response<bhttp::string_body> res)
   {
     if (!socket_ || !socket_->is_open())
     {
-      log().log(Logger::Level::Debug, "[Session] Cannot send response (socket closed)");
+      log().log(Logger::Level::Debug,
+                "[Session] Cannot send response (socket closed)");
       return;
     }
 
     auto self = shared_from_this();
-    auto res_ptr = std::make_shared<bhttp::response<bhttp::string_body>>(std::move(res));
+    auto res_ptr =
+        std::make_shared<bhttp::response<bhttp::string_body>>(std::move(res));
 
     bhttp::async_write(
-        *socket_, *res_ptr,
+        *socket_,
+        *res_ptr,
         [this, self, res_ptr](boost::system::error_code ec, std::size_t)
         {
           if (ec)
           {
-            log().log(Logger::Level::Warn, "[Session] Write error: {}", ec.message());
+            log().log(Logger::Level::Warn,
+                      "[Session] Write error: {}",
+                      ec.message());
             close_socket_gracefully();
             return;
           }
 
-          log().log(Logger::Level::Debug, "[Session] Response sent ({} bytes)", res_ptr->body().size());
+          log().log(Logger::Level::Debug,
+                    "[Session] Response sent ({} bytes)",
+                    res_ptr->body().size());
 
           if (res_ptr->keep_alive())
           {
@@ -314,7 +412,9 @@ namespace vix::session
   void Session::close_socket_gracefully()
   {
     if (!socket_ || !socket_->is_open())
+    {
       return;
+    }
 
     boost::system::error_code ec;
     socket_->shutdown(tcp::socket::shutdown_both, ec);
@@ -323,52 +423,40 @@ namespace vix::session
     log().log(Logger::Level::Debug, "[Session] Socket closed");
   }
 
-  static inline bool icontains(std::string_view s, std::string_view needle)
-  {
-    if (needle.empty())
-      return true;
-    if (needle.size() > s.size())
-      return false;
-
-    for (size_t i = 0; i + needle.size() <= s.size(); ++i)
-    {
-      size_t j = 0;
-      for (; j < needle.size(); ++j)
-      {
-        unsigned char a = (unsigned char)s[i + j];
-        unsigned char b = (unsigned char)needle[j];
-        if ((char)std::tolower(a) != (char)std::tolower(b))
-          break;
-      }
-      if (j == needle.size())
-        return true;
-    }
-    return false;
-  }
-
   bool Session::waf_check_request(const bhttp::request<bhttp::string_body> &req)
   {
 #ifdef VIX_BENCH_MODE
     (void)req;
     return true;
 #else
-    const std::string &mode = config_.getWafMode(); // "off"|"basic"|"strict"
-    if (mode == "off")
-      return true;
+    const std::string &mode = config_.getWafMode();
 
-    const std::size_t maxTargetLen = (std::size_t)config_.getWafMaxTargetLen();
-    const std::size_t maxBodyBytes = (std::size_t)config_.getWafMaxBodyBytes();
+    if (mode == "off")
+    {
+      return true;
+    }
+
+    const std::size_t maxTargetLen =
+        static_cast<std::size_t>(config_.getWafMaxTargetLen());
+
+    const std::size_t maxBodyBytes =
+        static_cast<std::size_t>(config_.getWafMaxBodyBytes());
 
     if (req.target().size() > maxTargetLen)
+    {
       return false;
+    }
 
     for (char c : req.target())
     {
       if (c == '\0' || c == '\r' || c == '\n')
+      {
         return false;
+      }
     }
 
     std::string_view target{req.target().data(), req.target().size()};
+
     const bool suspicious_url =
         target.find('<') != std::string_view::npos ||
         icontains(target, "script") ||
@@ -382,7 +470,9 @@ namespace vix::session
       {
         const std::string t(target);
         if (std::regex_search(t, XSS_PATTERN))
+        {
           return false;
+        }
       }
       catch (...)
       {
@@ -391,35 +481,55 @@ namespace vix::session
     }
 
     const auto m = req.method();
+
     const bool mutating =
-        (m == bhttp::verb::post || m == bhttp::verb::put ||
-         m == bhttp::verb::patch || m == bhttp::verb::delete_);
+        (m == bhttp::verb::post ||
+         m == bhttp::verb::put ||
+         m == bhttp::verb::patch ||
+         m == bhttp::verb::delete_);
 
     if (!mutating)
+    {
       return true;
+    }
 
     const std::string &body = req.body();
+
     if (body.empty())
+    {
       return true;
+    }
 
     if (body.size() > maxBodyBytes)
+    {
       return false;
+    }
 
     const bool cheap_trigger =
         body.find('<') != std::string::npos ||
-        icontains(body, "union") || icontains(body, "select") ||
-        icontains(body, "drop") || icontains(body, "insert") ||
-        icontains(body, "delete") || icontains(body, "update");
+        icontains(body, "union") ||
+        icontains(body, "select") ||
+        icontains(body, "drop") ||
+        icontains(body, "insert") ||
+        icontains(body, "delete") ||
+        icontains(body, "update");
 
     if (mode == "basic" && !cheap_trigger)
+    {
       return true;
+    }
 
     try
     {
       if (std::regex_search(body, SQL_PATTERN))
+      {
         return false;
+      }
+
       if (std::regex_search(body, XSS_PATTERN))
+      {
         return false;
+      }
     }
     catch (...)
     {
@@ -430,4 +540,4 @@ namespace vix::session
 #endif
   }
 
-} // namespace vix
+} // namespace vix::session

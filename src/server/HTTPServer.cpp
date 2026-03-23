@@ -1,35 +1,32 @@
 /**
  *
- *  @file HTTPServer.cpp
- *  @author Gaspard Kirira
+ * @file HTTPServer.cpp
+ * @author Gaspard Kirira
  *
- *  Copyright 2025, Gaspard Kirira.  All rights reserved.
- *  https://github.com/vixcpp/vix
- *  Use of this source code is governed by a MIT license
- *  that can be found in the License file.
+ * Copyright 2025, Gaspard Kirira. All rights reserved.
+ * https://github.com/vixcpp/vix
+ * Use of this source code is governed by a MIT license
+ * that can be found in the License file.
  *
- *  Vix.cpp
+ * Vix.cpp
  *
  */
 #include <vix/server/HTTPServer.hpp>
 
-#include <boost/regex.hpp>
-#include <string>
-#include <unordered_map>
-#include <iostream>
-#include <functional>
-#include <system_error>
 #include <boost/system/error_code.hpp>
-#include <cstring>
-#include <chrono>
 
-#include <vix/session/Session.hpp>
+#include <chrono>
+#include <cstdint>
+#include <functional>
+#include <stdexcept>
+#include <string>
+#include <system_error>
+#include <utility>
+
 #include <vix/http/Response.hpp>
-#include <vix/threadpool/ThreadPool.hpp>
 #include <vix/json/build.hpp>
+#include <vix/session/Session.hpp>
 #include <vix/utils/Logger.hpp>
-#include <vix/timers/interval.hpp>
-#include <vix/executor/Metrics.hpp>
 #include <vix/utils/ServerPrettyLogs.hpp>
 
 #if defined(__linux__)
@@ -41,41 +38,54 @@ namespace vix::server
 {
   using Logger = vix::utils::Logger;
 
-  inline Logger &log()
+  namespace
   {
-    return Logger::getInstance();
-  }
+    inline Logger &log()
+    {
+      return Logger::getInstance();
+    }
 
-  void set_affinity(std::size_t thread_index)
-  {
-#ifndef __linux__
-    (void)thread_index;
+    void set_affinity(std::size_t thread_index)
+    {
+#if !defined(__linux__)
+      (void)thread_index;
 #else
-    unsigned int hc = std::thread::hardware_concurrency();
-    if (hc == 0u)
-      hc = 1u;
+      unsigned int hc = std::thread::hardware_concurrency();
+      if (hc == 0u)
+      {
+        hc = 1u;
+      }
 
-    const unsigned int cpu =
-        static_cast<unsigned int>(thread_index % static_cast<std::size_t>(hc));
+      const unsigned int cpu =
+          static_cast<unsigned int>(thread_index % static_cast<std::size_t>(hc));
 
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-    CPU_SET(cpu, &cpuset);
+      cpu_set_t cpuset;
+      CPU_ZERO(&cpuset);
+      CPU_SET(cpu, &cpuset);
 
-    (void)pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+      (void)pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
 #endif
-  }
+    }
+  } // namespace
 
-  HTTPServer::HTTPServer(vix::config::Config &config, std::shared_ptr<vix::executor::IExecutor> exec)
+  HTTPServer::HTTPServer(vix::config::Config &config,
+                         std::shared_ptr<vix::executor::RuntimeExecutor> exec)
       : config_(config),
         io_context_(std::make_shared<net::io_context>()),
         acceptor_(nullptr),
         router_(std::make_shared<vix::router::Router>()),
         executor_(std::move(exec)),
         io_threads_(),
+        metrics_thread_(),
         stop_requested_(false),
-        startup_t0_(std::chrono::steady_clock::now())
+        startup_t0_(std::chrono::steady_clock::now()),
+        bound_port_(0)
   {
+    if (!executor_)
+    {
+      throw std::invalid_argument("HTTPServer requires a valid runtime executor");
+    }
+
     try
     {
       router_->setNotFoundHandler(
@@ -106,27 +116,42 @@ namespace vix::server
     }
     catch (const std::exception &e)
     {
-      log().log(Logger::Level::Error, "Error initializing HTTPServer: {}", e.what());
+      log().log(Logger::Level::Error,
+                "Error initializing HTTPServer: {}",
+                e.what());
       throw;
     }
   }
 
-  HTTPServer::~HTTPServer() = default;
+  HTTPServer::~HTTPServer()
+  {
+    try
+    {
+      stop_blocking();
+    }
+    catch (...)
+    {
+    }
+  }
 
   void HTTPServer::init_acceptor(unsigned short port)
   {
     acceptor_ = std::make_unique<tcp::acceptor>(*io_context_);
-    boost::system::error_code ec;
 
-    tcp::endpoint endpoint(tcp::v4(), port);
+    boost::system::error_code ec;
+    const tcp::endpoint endpoint(tcp::v4(), port);
 
     acceptor_->open(endpoint.protocol(), ec);
     if (ec)
+    {
       throw std::system_error(ec, "open acceptor");
+    }
 
-    acceptor_->set_option(boost::asio::socket_base::reuse_address(true), ec);
+    acceptor_->set_option(net::socket_base::reuse_address(true), ec);
     if (ec)
+    {
       throw std::system_error(ec, "reuse_address");
+    }
 
     acceptor_->bind(endpoint, ec);
     if (ec)
@@ -137,28 +162,51 @@ namespace vix::server
             ec,
             "bind acceptor: address already in use. Another process is listening on this port.");
       }
+
       throw std::system_error(ec, "bind acceptor");
     }
 
-    acceptor_->listen(boost::asio::socket_base::max_listen_connections, ec);
+    acceptor_->listen(net::socket_base::max_listen_connections, ec);
     if (ec)
+    {
       throw std::system_error(ec, "listen acceptor");
+    }
 
-    boost::system::error_code ec2;
-    const auto ep = acceptor_->local_endpoint(ec2);
-    if (!ec2)
+    boost::system::error_code ep_ec;
+    const auto ep = acceptor_->local_endpoint(ep_ec);
+    if (!ep_ec)
+    {
       bound_port_.store(static_cast<int>(ep.port()), std::memory_order_relaxed);
+    }
+  }
+
+  std::size_t HTTPServer::calculate_io_thread_count()
+  {
+    const int forced = config_.getIOThreads();
+    if (forced > 0)
+    {
+      return static_cast<std::size_t>(forced);
+    }
+
+    unsigned int hc = std::thread::hardware_concurrency();
+    if (hc == 0u)
+    {
+      hc = 1u;
+    }
+
+    return static_cast<std::size_t>(hc);
   }
 
   void HTTPServer::start_io_threads()
   {
-    auto &log = Logger::getInstance();
     const std::size_t num_threads = calculate_io_thread_count();
+
+    io_threads_.reserve(num_threads);
 
     for (std::size_t i = 0; i < num_threads; ++i)
     {
       io_threads_.emplace_back(
-          [this, i, &log]()
+          [this, i]()
           {
             try
             {
@@ -167,22 +215,42 @@ namespace vix::server
             }
             catch (const std::exception &e)
             {
-              log.log(Logger::Level::Error, "Error in io_context thread {}: {}", i, e.what());
+              log().log(Logger::Level::Error,
+                        "Error in io_context thread {}: {}",
+                        i,
+                        e.what());
             }
-            log.log(Logger::Level::Debug,
-                    "[http] io thread {} finished", i);
+
+            log().log(Logger::Level::Debug,
+                      "[http] io thread {} finished",
+                      i);
           });
     }
   }
 
   void HTTPServer::run()
   {
+    if (stop_requested_.load(std::memory_order_acquire))
+    {
+      throw std::runtime_error("cannot run server after stop was requested");
+    }
+
+    if (!executor_)
+    {
+      throw std::runtime_error("runtime executor is null");
+    }
+
+    executor_->start();
+
     if (!acceptor_ || !acceptor_->is_open())
     {
-      int port = config_.getServerPort();
+      const int port = config_.getServerPort();
+
       if ((port != 0 && port < 1024) || port > 65535)
       {
-        log().log(Logger::Level::Error, "Server port {} out of range (1024-65535)", port);
+        log().log(Logger::Level::Error,
+                  "Server port {} out of range (1024-65535)",
+                  port);
         throw std::invalid_argument("Invalid port number");
       }
 
@@ -192,76 +260,172 @@ namespace vix::server
     start_accept();
     monitor_metrics();
     start_io_threads();
-  }
 
-  std::size_t HTTPServer::calculate_io_thread_count()
-  {
-    int forced = config_.getIOThreads();
-    if (forced > 0)
-      return static_cast<std::size_t>(forced);
-
-    unsigned int hc = std::thread::hardware_concurrency();
-    if (hc == 0)
-      hc = 1;
-    return static_cast<std::size_t>(hc);
+    log().log(Logger::Level::Info,
+              "HTTP server started on port {} with {} io threads",
+              bound_port(),
+              io_threads_.size());
   }
 
   void HTTPServer::start_accept()
   {
+    if (stop_requested_.load(std::memory_order_acquire))
+    {
+      return;
+    }
+
     auto socket = std::make_shared<tcp::socket>(*io_context_);
-    acceptor_->async_accept(*socket, [this, socket](boost::system::error_code ec)
-                            {
-        if (!ec && !stop_requested_)
+
+    acceptor_->async_accept(
+        *socket,
+        [this, socket](boost::system::error_code ec)
         {
+          if (stop_requested_.load(std::memory_order_acquire))
+          {
+            return;
+          }
+
+          if (!ec)
+          {
             handle_client(socket);
-        }
-        if (!stop_requested_)
-            start_accept(); });
+          }
+          else if (ec != net::error::operation_aborted)
+          {
+            log().log(Logger::Level::Error,
+                      "Accept error: {}",
+                      ec.message());
+          }
+
+          if (!stop_requested_.load(std::memory_order_acquire))
+          {
+            start_accept();
+          }
+        });
   }
 
   void HTTPServer::handle_client(std::shared_ptr<tcp::socket> socket_ptr)
   {
-    auto session = std::make_shared<vix::session::Session>(
-        socket_ptr, *router_, config_, executor_);
-    session->run();
+    if (!socket_ptr)
+    {
+      return;
+    }
+
+    try
+    {
+      auto session = std::make_shared<vix::session::Session>(
+          socket_ptr,
+          *router_,
+          config_,
+          executor_);
+
+      session->run();
+    }
+    catch (const std::exception &e)
+    {
+      log().log(Logger::Level::Error,
+                "Failed to create session: {}",
+                e.what());
+      close_socket(std::move(socket_ptr));
+    }
   }
 
   void HTTPServer::close_socket(std::shared_ptr<tcp::socket> socket)
   {
+    if (!socket)
+    {
+      return;
+    }
+
     boost::system::error_code ec;
     socket->shutdown(tcp::socket::shutdown_both, ec);
     socket->close(ec);
   }
 
-  void HTTPServer::stop_async()
+  void HTTPServer::monitor_metrics()
   {
-    stop_requested_ = true;
-    if (acceptor_ && acceptor_->is_open())
-      acceptor_->close();
-    io_context_->stop();
+    if (!executor_)
+    {
+      return;
+    }
+
+    if (metrics_thread_.joinable())
+    {
+      return;
+    }
+
+    metrics_thread_ = std::thread(
+        [this]()
+        {
+          while (!stop_requested_.load(std::memory_order_acquire))
+          {
+            const auto m = executor_->metrics();
+
+            Logger::getInstance().log(
+                Logger::Level::Debug,
+                "Runtime Metrics -> Pending: {}, Active: {}, TimedOut: {}",
+                m.pending,
+                m.active,
+                m.timed_out);
+
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+          }
+        });
   }
 
-  void HTTPServer::stop_blocking()
+  void HTTPServer::stop_async()
   {
-    executor_->wait_idle();
-    join_threads();
+    const bool already_stopping =
+        stop_requested_.exchange(true, std::memory_order_acq_rel);
+
+    if (already_stopping)
+    {
+      return;
+    }
+
+    boost::system::error_code ec;
+
+    if (acceptor_ && acceptor_->is_open())
+    {
+      acceptor_->cancel(ec);
+      ec.clear();
+      acceptor_->close(ec);
+    }
+
+    if (io_context_)
+    {
+      io_context_->stop();
+    }
   }
 
   void HTTPServer::join_threads()
   {
     for (auto &t : io_threads_)
+    {
       if (t.joinable())
+      {
         t.join();
+      }
+    }
+
+    io_threads_.clear();
+
+    if (metrics_thread_.joinable())
+    {
+      metrics_thread_.join();
+    }
   }
 
-  void HTTPServer::monitor_metrics()
+  void HTTPServer::stop_blocking()
   {
-    vix::timers::interval(*executor_, std::chrono::seconds(5), [this]()
-                          {
-        const auto m = executor_->metrics();
-        Logger::getInstance().log(Logger::Level::Debug,
-            "Executor Metrics -> Pending: {}, Active: {}, TimedOut: {}",
-            m.pending, m.active, m.timed_out); });
+    stop_async();
+
+    if (executor_)
+    {
+      executor_->wait_idle();
+      executor_->stop();
+    }
+
+    join_threads();
   }
 
-} // namespace vix
+} // namespace vix::server
