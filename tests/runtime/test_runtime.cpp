@@ -12,10 +12,11 @@
  *
  */
 
-#include <gtest/gtest.h>
-
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
+#include <functional>
+#include <iostream>
 #include <thread>
 
 #include <vix/runtime/Runtime.hpp>
@@ -40,90 +41,160 @@ namespace
 
     return predicate();
   }
-} // namespace
 
-TEST(VixRuntimeTest, ExecutesSubmittedTasks)
-{
-  using namespace vix::runtime;
-
-  Runtime runtime(RuntimeConfig{2, BudgetConfig{8}});
-  runtime.start();
-
-  std::atomic<int> completed{0};
-
-  constexpr int taskCount = 32;
-
-  for (int i = 0; i < taskCount; ++i)
+  int fail(const char *message)
   {
-    const bool ok = runtime.submit([&completed]() -> TaskResult
-                                   {
-                                     completed.fetch_add(1, std::memory_order_relaxed);
-                                     return TaskResult::complete; });
-
-    ASSERT_TRUE(ok);
+    std::cerr << "[runtime_test] FAIL: " << message << '\n';
+    return EXIT_FAILURE;
   }
 
-  const bool done = wait_until(
-      [&completed]()
+  int test_executes_submitted_tasks()
+  {
+    using namespace vix::runtime;
+
+    Runtime runtime(RuntimeConfig{2, BudgetConfig{8}});
+    runtime.start();
+
+    std::atomic<int> completed{0};
+    constexpr int taskCount = 32;
+
+    for (int i = 0; i < taskCount; ++i)
+    {
+      const bool ok = runtime.submit([&completed]() -> TaskResult
+                                     {
+                                       completed.fetch_add(1, std::memory_order_relaxed);
+                                       return TaskResult::complete; });
+
+      if (!ok)
       {
-        return completed.load(std::memory_order_relaxed) == taskCount;
-      });
+        runtime.stop();
+        return fail("submit() failed in test_executes_submitted_tasks");
+      }
+    }
 
-  runtime.stop();
+    const bool done = wait_until(
+        [&completed]()
+        {
+          return completed.load(std::memory_order_relaxed) == taskCount;
+        });
 
-  ASSERT_TRUE(done);
-  EXPECT_EQ(completed.load(std::memory_order_relaxed), taskCount);
-}
+    runtime.stop();
 
-TEST(VixRuntimeTest, ReschedulesYieldingTaskUntilCompletion)
-{
-  using namespace vix::runtime;
+    if (!done)
+    {
+      return fail("tasks did not complete before timeout");
+    }
 
-  Runtime runtime(RuntimeConfig{2, BudgetConfig{4}});
-  runtime.start();
+    if (completed.load(std::memory_order_relaxed) != taskCount)
+    {
+      return fail("completed task count mismatch");
+    }
 
-  std::atomic<int> stepCount{0};
-  std::atomic<int> doneCount{0};
+    return EXIT_SUCCESS;
+  }
 
-  const bool ok = runtime.submit([&stepCount, &doneCount]() mutable -> TaskResult
-                                 {
-                                   const int step =
-                                       stepCount.fetch_add(1, std::memory_order_relaxed) + 1;
+  int test_reschedules_yielding_task_until_completion()
+  {
+    using namespace vix::runtime;
 
-                                   if (step < 5)
+    Runtime runtime(RuntimeConfig{2, BudgetConfig{4}});
+    runtime.start();
+
+    std::atomic<int> stepCount{0};
+    std::atomic<int> doneCount{0};
+
+    const bool ok = runtime.submit([&stepCount, &doneCount]() mutable -> TaskResult
                                    {
-                                     return TaskResult::yield;
-                                   }
+                                     const int step =
+                                         stepCount.fetch_add(1, std::memory_order_relaxed) + 1;
 
-                                   doneCount.fetch_add(1, std::memory_order_relaxed);
-                                   return TaskResult::complete; });
+                                     if (step < 5)
+                                     {
+                                       return TaskResult::yield;
+                                     }
 
-  ASSERT_TRUE(ok);
+                                     doneCount.fetch_add(1, std::memory_order_relaxed);
+                                     return TaskResult::complete; });
 
-  const bool done = wait_until(
-      [&doneCount]()
-      {
-        return doneCount.load(std::memory_order_relaxed) == 1;
-      });
+    if (!ok)
+    {
+      runtime.stop();
+      return fail("submit() failed in yielding task test");
+    }
 
-  runtime.stop();
+    const bool done = wait_until(
+        [&doneCount]()
+        {
+          return doneCount.load(std::memory_order_relaxed) == 1;
+        });
 
-  ASSERT_TRUE(done);
-  EXPECT_EQ(stepCount.load(std::memory_order_relaxed), 5);
-  EXPECT_EQ(doneCount.load(std::memory_order_relaxed), 1);
-}
+    runtime.stop();
 
-TEST(VixRuntimeTest, GeneratesUniqueTaskIds)
+    if (!done)
+    {
+      return fail("yielding task did not complete before timeout");
+    }
+
+    if (stepCount.load(std::memory_order_relaxed) != 5)
+    {
+      return fail("yielding task step count mismatch");
+    }
+
+    if (doneCount.load(std::memory_order_relaxed) != 1)
+    {
+      return fail("yielding task completion count mismatch");
+    }
+
+    return EXIT_SUCCESS;
+  }
+
+  int test_generates_unique_task_ids()
+  {
+    using namespace vix::runtime;
+
+    Runtime runtime(RuntimeConfig{1, BudgetConfig{4}});
+
+    const TaskId a = runtime.next_task_id();
+    const TaskId b = runtime.next_task_id();
+    const TaskId c = runtime.next_task_id();
+
+    if (a == 0u)
+    {
+      return fail("first task id must not be zero");
+    }
+
+    if (b != a + 1)
+    {
+      return fail("second task id is not sequential");
+    }
+
+    if (c != b + 1)
+    {
+      return fail("third task id is not sequential");
+    }
+
+    return EXIT_SUCCESS;
+  }
+
+} // namespace
+
+int main()
 {
-  using namespace vix::runtime;
+  if (const int rc = test_executes_submitted_tasks(); rc != EXIT_SUCCESS)
+  {
+    return rc;
+  }
 
-  Runtime runtime(RuntimeConfig{1, BudgetConfig{4}});
+  if (const int rc = test_reschedules_yielding_task_until_completion(); rc != EXIT_SUCCESS)
+  {
+    return rc;
+  }
 
-  const TaskId a = runtime.next_task_id();
-  const TaskId b = runtime.next_task_id();
-  const TaskId c = runtime.next_task_id();
+  if (const int rc = test_generates_unique_task_ids(); rc != EXIT_SUCCESS)
+  {
+    return rc;
+  }
 
-  EXPECT_NE(a, 0u);
-  EXPECT_EQ(b, a + 1);
-  EXPECT_EQ(c, b + 1);
+  std::cout << "[runtime_test] PASS\n";
+  return EXIT_SUCCESS;
 }
