@@ -87,79 +87,68 @@ namespace vix::session
         buffer_(),
         req_(),
         parser_(nullptr),
-        timer_(nullptr),
+        timer_(std::make_shared<net::steady_timer>(socket_->get_executor())),
         config_(config),
         executor_(std::move(executor)),
         strand_(socket_->get_executor())
   {
     boost::system::error_code ec;
     socket_->set_option(tcp::no_delay(true), ec);
-
-    if (ec)
-    {
-      log().log(Logger::Level::Warn,
-                "[Session] Failed to disable Nagle: {}",
-                ec.message());
-    }
   }
 
   void Session::run()
   {
-    log().log(Logger::Level::Debug, "[Session] Starting new session");
     read_request();
   }
 
   void Session::start_timer()
   {
-    timer_ = std::make_shared<net::steady_timer>(socket_->get_executor());
+    if (!timer_)
+    {
+      return;
+    }
 
     const auto timeout =
         std::chrono::seconds(config_.getSessionTimeoutSec());
 
     timer_->expires_after(timeout);
 
-    std::weak_ptr<net::steady_timer> weak_timer = timer_;
     auto self = shared_from_this();
 
     timer_->async_wait(
-        [this, self, weak_timer, timeout](const boost::system::error_code &ec)
-        {
-          auto t = weak_timer.lock();
-          if (!t)
-          {
-            return;
-          }
-
-          if (!ec)
-          {
-            log().log(Logger::Level::Warn,
-                      "[Session] Timeout ({}s), closing socket",
-                      timeout.count());
-            close_socket_gracefully();
-          }
-        });
+        net::bind_executor(
+            strand_,
+            [this, self](const boost::system::error_code &ec)
+            {
+              if (!ec)
+              {
+                close_socket_gracefully();
+              }
+            }));
   }
 
   void Session::cancel_timer()
   {
-    if (timer_)
+    if (!timer_)
     {
-      const std::size_t n = timer_->cancel();
-      (void)n;
+      return;
     }
+
+    boost::system::error_code ec;
+    timer_->cancel(ec);
   }
 
   void Session::read_request()
   {
     if (!socket_ || !socket_->is_open())
     {
-      log().log(Logger::Level::Debug,
-                "[Session] Socket closed before read_request()");
       return;
     }
 
-    buffer_.consume(buffer_.size());
+    cancel_timer();
+    start_timer();
 
+    req_ = {};
     parser_ = std::make_unique<bhttp::request_parser<bhttp::string_body>>();
     parser_->body_limit(MAX_REQUEST_BODY_SIZE);
 
@@ -169,39 +158,44 @@ namespace vix::session
         *socket_,
         buffer_,
         *parser_,
-        [this, self](boost::system::error_code ec, std::size_t)
-        {
-          if (ec)
-          {
-            if (ec != bhttp::error::end_of_stream &&
-                ec != boost::asio::error::connection_reset &&
-                ec != boost::asio::error::operation_aborted)
+        net::bind_executor(
+            strand_,
+            [this, self](boost::system::error_code ec, std::size_t)
             {
-              log().log(Logger::Level::Error,
-                        "[Session] Read error: {}",
-                        ec.message());
-            }
+              cancel_timer();
 
-            close_socket_gracefully();
-            return;
-          }
-          std::optional<bhttp::request<bhttp::string_body>> parsed_req;
+              if (ec)
+              {
+                if (ec != bhttp::error::end_of_stream &&
+                    ec != boost::asio::error::connection_reset &&
+                    ec != boost::asio::error::operation_aborted)
+                {
+                  log().log(Logger::Level::Error,
+                            "[session] read error: {}",
+                            ec.message());
+                }
 
-          try
-          {
-            parsed_req = parser_->release();
-          }
-          catch (const std::exception &ex)
-          {
-            log().log(Logger::Level::Error,
-                      "[Session] Parser release failed: {}",
-                      ex.what());
-            close_socket_gracefully();
-            return;
-          }
+                close_socket_gracefully();
+                return;
+              }
 
-          handle_request({}, std::move(parsed_req));
-        });
+              std::optional<bhttp::request<bhttp::string_body>> parsed_req;
+
+              try
+              {
+                parsed_req = parser_->release();
+              }
+              catch (const std::exception &ex)
+              {
+                log().log(Logger::Level::Error,
+                          "[session] parser release failed: {}",
+                          ex.what());
+                close_socket_gracefully();
+                return;
+              }
+
+              handle_request({}, std::move(parsed_req));
+            }));
   }
 
   void Session::handle_request(
@@ -211,7 +205,7 @@ namespace vix::session
     if (ec)
     {
       log().log(Logger::Level::Error,
-                "[Session] Error handling request: {}",
+                "[session] request handling error: {}",
                 ec.message());
       close_socket_gracefully();
       return;
@@ -219,7 +213,6 @@ namespace vix::session
 
     if (!parsed_req)
     {
-      log().log(Logger::Level::Warn, "[Session] No request parsed");
       close_socket_gracefully();
       return;
     }
@@ -228,7 +221,6 @@ namespace vix::session
 
     if (!config_.isBenchMode() && !waf_check_request(req_))
     {
-      log().log(Logger::Level::Warn, "[WAF] Request blocked by rules");
       send_error(bhttp::status::bad_request, "Request blocked (security)");
       return;
     }
@@ -241,9 +233,6 @@ namespace vix::session
 
     if (req_.body().size() > MAX_REQUEST_BODY_SIZE)
     {
-      log().log(Logger::Level::Warn,
-                "[Session] Body too large ({} bytes)",
-                req_.body().size());
       send_error(too_large_status, "Request too large");
       return;
     }
@@ -269,10 +258,9 @@ namespace vix::session
       }
       catch (const std::exception &ex)
       {
-        vix::utils::Logger::getInstance().log(
-            vix::utils::Logger::Level::Error,
-            "[Router][inline] Exception: {}",
-            ex.what());
+        log().log(Logger::Level::Error,
+                  "[router] inline exception: {}",
+                  ex.what());
 
         vix::vhttp::Response::error_response(
             *res_ptr,
@@ -285,10 +273,7 @@ namespace vix::session
         res_ptr->result(bhttp::status::bad_request);
       }
 
-      res_ptr->set(
-          bhttp::field::connection,
-          keep_alive ? "keep-alive" : "close");
-
+      res_ptr->keep_alive(keep_alive);
       send_response(std::move(*res_ptr));
       return;
     }
@@ -307,10 +292,9 @@ namespace vix::session
           }
           catch (const std::exception &ex)
           {
-            vix::utils::Logger::getInstance().log(
-                vix::utils::Logger::Level::Error,
-                "[Router][runtime] Exception: {}",
-                ex.what());
+            log().log(Logger::Level::Error,
+                      "[router] runtime exception: {}",
+                      ex.what());
 
             vix::vhttp::Response::error_response(
                 *res_ptr,
@@ -323,9 +307,7 @@ namespace vix::session
             res_ptr->result(bhttp::status::bad_request);
           }
 
-          res_ptr->set(
-              bhttp::field::connection,
-              keep_alive ? "keep-alive" : "close");
+          res_ptr->keep_alive(keep_alive);
 
           boost::asio::post(
               strand_,
@@ -339,9 +321,6 @@ namespace vix::session
 
     if (!submitted)
     {
-      log().log(Logger::Level::Error,
-                "[Session] Failed to submit request to runtime");
-
       send_error(bhttp::status::service_unavailable,
                  "Runtime unavailable");
     }
@@ -351,10 +330,11 @@ namespace vix::session
   {
     if (!socket_ || !socket_->is_open())
     {
-      log().log(Logger::Level::Debug,
-                "[Session] Cannot send response (socket closed)");
       return;
     }
+
+    cancel_timer();
+    start_timer();
 
     auto self = shared_from_this();
     auto res_ptr =
@@ -363,31 +343,37 @@ namespace vix::session
     bhttp::async_write(
         *socket_,
         *res_ptr,
-        [this, self, res_ptr](boost::system::error_code ec, std::size_t)
-        {
-          if (ec)
-          {
-            log().log(Logger::Level::Warn,
-                      "[Session] Write error: {}",
-                      ec.message());
-            close_socket_gracefully();
-            return;
-          }
+        net::bind_executor(
+            strand_,
+            [this, self, res_ptr](boost::system::error_code ec, std::size_t)
+            {
+              cancel_timer();
 
-          log().log(Logger::Level::Debug,
-                    "[Session] Response sent ({} bytes)",
-                    res_ptr->body().size());
+              if (ec)
+              {
+                if (ec != boost::asio::error::operation_aborted &&
+                    ec != boost::asio::error::connection_reset &&
+                    ec != boost::asio::error::broken_pipe)
+                {
+                  log().log(Logger::Level::Error,
+                            "[session] write error: {}",
+                            ec.message());
+                }
 
-          if (res_ptr->keep_alive())
-          {
-            parser_.reset();
-            read_request();
-          }
-          else
-          {
-            close_socket_gracefully();
-          }
-        });
+                close_socket_gracefully();
+                return;
+              }
+
+              if (res_ptr->keep_alive())
+              {
+                parser_.reset();
+                read_request();
+              }
+              else
+              {
+                close_socket_gracefully();
+              }
+            }));
   }
 
   void Session::send_error(bhttp::status status, const std::string &msg)
@@ -400,21 +386,28 @@ namespace vix::session
         {
           bhttp::response<bhttp::string_body> res;
           vix::vhttp::Response::error_response(res, status, msg);
-          res.set(bhttp::field::connection, "close");
+          res.keep_alive(false);
           self->send_response(std::move(res));
         });
   }
 
   void Session::close_socket_gracefully()
   {
-    if (!socket_ || !socket_->is_open())
+    cancel_timer();
+
+    if (!socket_)
     {
       return;
     }
 
     boost::system::error_code ec;
-    socket_->shutdown(tcp::socket::shutdown_both, ec);
-    socket_->close(ec);
+
+    if (socket_->is_open())
+    {
+      socket_->shutdown(tcp::socket::shutdown_both, ec);
+      ec.clear();
+      socket_->close(ec);
+    }
   }
 
   bool Session::waf_check_request(const bhttp::request<bhttp::string_body> &req)

@@ -1,245 +1,232 @@
 /**
  *
- *  @file Config.cpp
- *  @author Gaspard Kirira
+ * @file Config.cpp
+ * @author Gaspard Kirira
  *
- *  Copyright 2025, Gaspard Kirira.  All rights reserved.
- *  https://github.com/vixcpp/vix
- *  Use of this source code is governed by a MIT license
- *  that can be found in the License file.
+ * Copyright 2025, Gaspard Kirira. All rights reserved.
+ * https://github.com/vixcpp/vix
+ * Use of this source code is governed by a MIT license that can be found in the License file.
  *
- *  Vix.cpp
+ * Vix.cpp
  *
  */
+
 #include <vix/config/Config.hpp>
-#include <vix/utils/Logger.hpp>
-#include <vix/utils/Env.hpp>
 
-#if VIX_CORE_WITH_MYSQL
-#include <mysql_driver.h>
-#include <mysql_connection.h>
-#include <cppconn/driver.h>
-#include <cppconn/exception.h>
-#endif
-
-#include <fstream>
 #include <cstdlib>
-#include <vector>
-#include <sstream>
+#include <fstream>
+#include <stdexcept>
+#include <utility>
 
 namespace vix::config
 {
-  namespace fs = std::filesystem;
-  using json = nlohmann::json;
-  using Logger = vix::utils::Logger;
-
-  inline Logger &log()
+  namespace
   {
-    return Logger::getInstance();
-  }
+    nlohmann::json make_default_config()
+    {
+      return {
+          {"server",
+           {
+               {"port", Config::getInstance().getServerPort()},
+           }}};
+    }
+  } // namespace
 
-  Config::Config(const fs::path &configPath)
+  Config::Config(const std::filesystem::path &configPath)
       : configPath_(configPath),
-        db_host(DEFAULT_DB_HOST), db_user(DEFAULT_DB_USER), db_pass(DEFAULT_DB_PASS),
-        db_name(DEFAULT_DB_NAME), db_port(DEFAULT_DB_PORT),
-        server_port(DEFAULT_SERVER_PORT), request_timeout(DEFAULT_REQUEST_TIMEOUT),
-        rawConfig_(nlohmann::json::object()), io_threads_(DEFAULT_IO_THREADS), log_async_(DEFAULT_LOG_ASYNC), log_queue_max_(DEFAULT_LOG_QUEUE_MAX), log_drop_on_overflow_(DEFAULT_LOG_DROP_ON_OVERFLOW), waf_mode_(DEFAULT_WAF_MODE), waf_max_target_len_(DEFAULT_WAF_MAX_TARGET_LEN), waf_max_body_bytes_(DEFAULT_WAF_MAX_BODY_BYTES), session_timeout_sec_(DEFAULT_SESSION_TIMEOUT_SEC)
+        db_host(DEFAULT_DB_HOST),
+        db_user(DEFAULT_DB_USER),
+        db_pass(DEFAULT_DB_PASS),
+        db_name(DEFAULT_DB_NAME),
+        db_port(DEFAULT_DB_PORT),
+        server_port(DEFAULT_SERVER_PORT),
+        request_timeout(DEFAULT_REQUEST_TIMEOUT),
+        rawConfig_(nlohmann::json::object()),
+        io_threads_(DEFAULT_IO_THREADS),
+        log_async_(DEFAULT_LOG_ASYNC),
+        log_queue_max_(DEFAULT_LOG_QUEUE_MAX),
+        log_drop_on_overflow_(DEFAULT_LOG_DROP_ON_OVERFLOW),
+        waf_mode_(DEFAULT_WAF_MODE),
+        waf_max_target_len_(DEFAULT_WAF_MAX_TARGET_LEN),
+        waf_max_body_bytes_(DEFAULT_WAF_MAX_BODY_BYTES),
+        session_timeout_sec_(DEFAULT_SESSION_TIMEOUT_SEC),
+        bench_mode_(DEFAULT_BENCH_MODE)
   {
-    std::vector<fs::path> candidate_paths;
-
-    if (!configPath.empty())
+    if (configPath_.empty())
     {
-      if (configPath.is_absolute())
-      {
-        candidate_paths.push_back(configPath);
-      }
-      else
-      {
-        candidate_paths.push_back(fs::current_path() / "config/config.json");
-
-        auto parent = fs::current_path().parent_path();
-        if (!parent.empty())
-          candidate_paths.push_back(parent / "config/config.json");
-
-        candidate_paths.push_back(
-            fs::path(__FILE__).parent_path().parent_path().parent_path().parent_path().parent_path() /
-            "config/config.json");
-      }
-    }
-    else
-    {
-      candidate_paths.push_back(
-          fs::path(__FILE__).parent_path() // .../modules/core/src/config
-              .parent_path()               // .../modules/core/src
-              .parent_path()               // .../modules/core
-              .parent_path()               // .../modules
-              .parent_path() /             // .../
-          "config/config.json");
-    }
-
-    bool found = false;
-    for (const auto &p : candidate_paths)
-    {
-      if (fs::exists(p))
-      {
-        configPath_ = p;
-        found = true;
-        break;
-      }
-    }
-
-    if (!found)
-    {
-      log().log(Logger::Level::Debug, "No config file found. Using default settings.");
-      return;
+      configPath_ = "config.json";
     }
 
     loadConfig();
   }
 
-  Config &Config::getInstance(const fs::path &configPath)
+  Config &Config::getInstance(const std::filesystem::path &configPath)
   {
-    static Config instance("");
-
-    if (!configPath.empty())
-    {
-      fs::path p = configPath;
-      if (!p.is_absolute())
-        p = fs::current_path() / p;
-
-      std::error_code ec;
-      p = fs::weakly_canonical(p, ec);
-      if (ec)
-        p = fs::current_path() / configPath;
-
-      instance.configPath_ = p;
-      instance.loadConfig();
-    }
-
+    static Config instance(configPath);
     return instance;
   }
 
   void Config::loadConfig()
   {
-    if (configPath_.empty() || !fs::exists(configPath_))
+    rawConfig_ = nlohmann::json::object();
+
+    if (!configPath_.empty() && std::filesystem::exists(configPath_))
     {
-      log().log(Logger::Level::Debug, "No config file found. Using default settings.");
-      return;
+      std::ifstream file(configPath_);
+      if (!file.is_open())
+      {
+        throw std::runtime_error("Failed to open config file: " + configPath_.string());
+      }
+
+      try
+      {
+        file >> rawConfig_;
+      }
+      catch (const std::exception &e)
+      {
+        throw std::runtime_error(
+            "Failed to parse config file '" + configPath_.string() + "': " + e.what());
+      }
     }
 
-    std::ifstream file(configPath_, std::ios::in | std::ios::binary);
-    if (!file.is_open())
-      log().throwError(fmt::format("Unable to open configuration file: {}", configPath_.string()));
+    db_host = getString("database.default.host", DEFAULT_DB_HOST);
+    db_user = getString("database.default.user", DEFAULT_DB_USER);
+    db_name = getString("database.default.name", DEFAULT_DB_NAME);
+    db_port = getInt("database.default.port", DEFAULT_DB_PORT);
 
-    json cfg;
-    try
     {
-      file >> cfg;
-    }
-    catch (const json::parse_error &e)
-    {
-      log().throwError(fmt::format("JSON parsing error in config file: {}", e.what()));
-    }
+      const std::string password_from_config =
+          getString("database.default.password", DEFAULT_DB_PASS);
 
-    rawConfig_ = cfg;
-
-    session_timeout_sec_ = getInt("server.session_timeout_sec", DEFAULT_SESSION_TIMEOUT_SEC);
-
-    if (cfg.contains("database") && cfg["database"].contains("default"))
-    {
-      const auto &db = cfg["database"]["default"];
-      db_host = db.value("host", DEFAULT_DB_HOST);
-      db_user = db.value("user", DEFAULT_DB_USER);
-      db_pass = db.value("password", DEFAULT_DB_PASS);
-      db_name = db.value("name", DEFAULT_DB_NAME);
-      db_port = db.value("port", DEFAULT_DB_PORT);
+      if (!password_from_config.empty())
+      {
+        db_pass = password_from_config;
+      }
+      else
+      {
+        db_pass = getDbPasswordFromEnv();
+      }
     }
 
-    if (cfg.contains("server"))
-    {
-      const auto &server = cfg["server"];
-      server_port = server.value("port", DEFAULT_SERVER_PORT);
-      request_timeout = server.value("request_timeout", DEFAULT_REQUEST_TIMEOUT);
-      io_threads_ = server.value("io_threads", DEFAULT_IO_THREADS);
-    }
-    else
-    {
-      io_threads_ = getInt("server.io_threads", DEFAULT_IO_THREADS);
-    }
+    server_port = getInt("server.port", DEFAULT_SERVER_PORT);
+    request_timeout = getInt("server.request_timeout", DEFAULT_REQUEST_TIMEOUT);
+    io_threads_ = getInt("server.io_threads", DEFAULT_IO_THREADS);
+    session_timeout_sec_ =
+        getInt("server.session_timeout_sec", DEFAULT_SESSION_TIMEOUT_SEC);
+    bench_mode_ = getBool("server.bench_mode", DEFAULT_BENCH_MODE);
 
     log_async_ = getBool("logging.async", DEFAULT_LOG_ASYNC);
     log_queue_max_ = getInt("logging.queue_max", DEFAULT_LOG_QUEUE_MAX);
-    log_drop_on_overflow_ = getBool("logging.drop_on_overflow", DEFAULT_LOG_DROP_ON_OVERFLOW);
+    log_drop_on_overflow_ =
+        getBool("logging.drop_on_overflow", DEFAULT_LOG_DROP_ON_OVERFLOW);
+
     waf_mode_ = getString("waf.mode", DEFAULT_WAF_MODE);
-    waf_max_target_len_ = getInt("waf.max_target_len", DEFAULT_WAF_MAX_TARGET_LEN);
-    waf_max_body_bytes_ = getInt("waf.max_body_bytes", DEFAULT_WAF_MAX_BODY_BYTES);
-  }
-
-  const nlohmann::json *Config::findNode(const std::string &dottedKey) const noexcept
-  {
-    if (rawConfig_.is_null())
-      return nullptr;
-
-    const json *node = &rawConfig_;
-    std::stringstream ss(dottedKey);
-    std::string token;
-
-    while (std::getline(ss, token, '.'))
-    {
-      if (!node->is_object())
-        return nullptr;
-
-      auto it = node->find(token);
-      if (it == node->end())
-        return nullptr;
-
-      node = &(*it);
-    }
-    return node;
-  }
-
-  std::string Config::getDbPasswordFromEnv()
-  {
-    if (const char *password = vix::utils::vix_getenv("DB_PASSWORD"))
-    {
-      log().log(Logger::Level::Debug, "Using DB_PASSWORD from environment.");
-      return password;
-    }
-    log().log(Logger::Level::Debug, "No DB_PASSWORD found in environment; using config/default password.");
-    return db_pass;
+    waf_max_target_len_ =
+        getInt("waf.max_target_len", DEFAULT_WAF_MAX_TARGET_LEN);
+    waf_max_body_bytes_ =
+        getInt("waf.max_body_bytes", DEFAULT_WAF_MAX_BODY_BYTES);
   }
 
 #if VIX_CORE_WITH_MYSQL
   std::shared_ptr<sql::Connection> Config::getDbConnection()
   {
-    sql::Driver *driver = sql::mysql::get_driver_instance();
-
-    const std::string host = "tcp://" + db_host + ":" + std::to_string(db_port);
-    const std::string user = db_user;
-    const std::string pass = getDbPasswordFromEnv();
-
-    std::shared_ptr<sql::Connection> con(driver->connect(host, user, pass));
-    if (!db_name.empty())
-      con->setSchema(db_name);
-
-    log().log(Logger::Level::Debug, "Database connection established (host={}, db={}).", host, db_name);
-    return con;
+    return {};
   }
-#endif // VIX_CORE_WITH_MYSQL
+#endif
 
-  const std::string &Config::getDbHost() const noexcept { return db_host; }
-  const std::string &Config::getDbUser() const noexcept { return db_user; }
-  const std::string &Config::getDbName() const noexcept { return db_name; }
-  int Config::getDbPort() const noexcept { return db_port; }
-  int Config::getServerPort() const noexcept { return server_port; }
-  int Config::getRequestTimeout() const noexcept { return request_timeout; }
+  std::string Config::getDbPasswordFromEnv()
+  {
+    if (const char *value = std::getenv("VIX_DB_PASSWORD"); value && *value != '\0')
+    {
+      return std::string(value);
+    }
+
+    if (const char *value = std::getenv("DB_PASSWORD"); value && *value != '\0')
+    {
+      return std::string(value);
+    }
+
+    if (const char *value = std::getenv("MYSQL_PASSWORD"); value && *value != '\0')
+    {
+      return std::string(value);
+    }
+
+    return DEFAULT_DB_PASS;
+  }
+
+  const std::string &Config::getDbHost() const noexcept
+  {
+    return db_host;
+  }
+
+  const std::string &Config::getDbUser() const noexcept
+  {
+    return db_user;
+  }
+
+  const std::string &Config::getDbName() const noexcept
+  {
+    return db_name;
+  }
+
+  int Config::getDbPort() const noexcept
+  {
+    return db_port;
+  }
+
+  int Config::getServerPort() const noexcept
+  {
+    return server_port;
+  }
+
+  int Config::getRequestTimeout() const noexcept
+  {
+    return request_timeout;
+  }
 
   void Config::setServerPort(int port)
   {
-    if ((port != 0 && port < 1024) || port > 65535)
-      log().throwError("Server port out of range (0 or 1024-65535).");
-
     server_port = port;
+  }
+
+  const nlohmann::json *Config::findNode(const std::string &dottedKey) const noexcept
+  {
+    if (dottedKey.empty())
+    {
+      return nullptr;
+    }
+
+    const nlohmann::json *node = &rawConfig_;
+    std::size_t start = 0;
+
+    while (start < dottedKey.size())
+    {
+      const std::size_t dot = dottedKey.find('.', start);
+      const std::string key =
+          dottedKey.substr(start, dot == std::string::npos ? std::string::npos : dot - start);
+
+      if (!node->is_object())
+      {
+        return nullptr;
+      }
+
+      auto it = node->find(key);
+      if (it == node->end())
+      {
+        return nullptr;
+      }
+
+      node = &(*it);
+
+      if (dot == std::string::npos)
+      {
+        break;
+      }
+
+      start = dot + 1;
+    }
+
+    return node;
   }
 
   bool Config::has(const std::string &dottedKey) const noexcept
@@ -249,49 +236,43 @@ namespace vix::config
 
   int Config::getInt(const std::string &dottedKey, int defaultValue) const noexcept
   {
-    const auto *node = findNode(dottedKey);
+    const nlohmann::json *node = findNode(dottedKey);
     if (!node)
+    {
       return defaultValue;
+    }
 
-    try
+    if (node->is_number_integer())
     {
-      if (node->is_number_integer())
-        return node->get<int>();
-      if (node->is_number_float())
-        return static_cast<int>(node->get<double>());
-      if (node->is_string())
-        return std::stoi(node->get<std::string>());
+      return node->get<int>();
     }
-    catch (...)
+
+    if (node->is_number_unsigned())
     {
+      return static_cast<int>(node->get<unsigned int>());
     }
+
+    if (node->is_number_float())
+    {
+      return static_cast<int>(node->get<double>());
+    }
+
     return defaultValue;
   }
 
   bool Config::getBool(const std::string &dottedKey, bool defaultValue) const noexcept
   {
-    const auto *node = findNode(dottedKey);
+    const nlohmann::json *node = findNode(dottedKey);
     if (!node)
+    {
       return defaultValue;
+    }
 
-    try
+    if (node->is_boolean())
     {
-      if (node->is_boolean())
-        return node->get<bool>();
-      if (node->is_number_integer())
-        return node->get<int>() != 0;
-      if (node->is_string())
-      {
-        auto s = node->get<std::string>();
-        if (s == "true" || s == "1" || s == "on" || s == "yes")
-          return true;
-        if (s == "false" || s == "0" || s == "off" || s == "no")
-          return false;
-      }
+      return node->get<bool>();
     }
-    catch (...)
-    {
-    }
+
     return defaultValue;
   }
 
@@ -299,39 +280,67 @@ namespace vix::config
       const std::string &dottedKey,
       const std::string &defaultValue) const noexcept
   {
-    const auto *node = findNode(dottedKey);
+    const nlohmann::json *node = findNode(dottedKey);
     if (!node)
+    {
       return defaultValue;
+    }
 
-    try
+    if (node->is_string())
     {
-      if (node->is_string())
-        return node->get<std::string>();
-      return node->dump();
+      return node->get<std::string>();
     }
-    catch (...)
-    {
-      return defaultValue;
-    }
+
+    return defaultValue;
   }
 
-  int Config::getIOThreads() const noexcept { return io_threads_; }
+  int Config::getIOThreads() const noexcept
+  {
+    return io_threads_;
+  }
 
   bool Config::isBenchMode() const noexcept
   {
 #ifdef VIX_BENCH_MODE
     return true;
 #else
-    return false;
+    return bench_mode_;
 #endif
   }
 
-  bool Config::getLogAsync() const noexcept { return log_async_; }
-  int Config::getLogQueueMax() const noexcept { return log_queue_max_; }
-  bool Config::getLogDropOnOverflow() const noexcept { return log_drop_on_overflow_; }
-  const std::string &Config::getWafMode() const noexcept { return waf_mode_; }
-  int Config::getWafMaxTargetLen() const noexcept { return waf_max_target_len_; }
-  int Config::getWafMaxBodyBytes() const noexcept { return waf_max_body_bytes_; }
-  int Config::getSessionTimeoutSec() const noexcept { return session_timeout_sec_; }
+  bool Config::getLogAsync() const noexcept
+  {
+    return log_async_;
+  }
 
-}
+  int Config::getLogQueueMax() const noexcept
+  {
+    return log_queue_max_;
+  }
+
+  bool Config::getLogDropOnOverflow() const noexcept
+  {
+    return log_drop_on_overflow_;
+  }
+
+  const std::string &Config::getWafMode() const noexcept
+  {
+    return waf_mode_;
+  }
+
+  int Config::getWafMaxTargetLen() const noexcept
+  {
+    return waf_max_target_len_;
+  }
+
+  int Config::getWafMaxBodyBytes() const noexcept
+  {
+    return waf_max_body_bytes_;
+  }
+
+  int Config::getSessionTimeoutSec() const noexcept
+  {
+    return session_timeout_sec_;
+  }
+
+} // namespace vix::config

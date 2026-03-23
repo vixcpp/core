@@ -154,6 +154,9 @@ namespace vix::config
 
     static constexpr int DEFAULT_SESSION_TIMEOUT_SEC = 20;
     int session_timeout_sec_;
+
+    static constexpr bool DEFAULT_BENCH_MODE = false;
+    bool bench_mode_;
   };
 
 } // namespace vix::config
