@@ -13,17 +13,21 @@
  */
 #include <vix/server/HTTPServer.hpp>
 
-#include <boost/system/error_code.hpp>
-
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <system_error>
 #include <thread>
 #include <utility>
 
+#include <nlohmann/json.hpp>
+
+#include <vix/async/core/spawn.hpp>
+#include <vix/async/net/tcp.hpp>
 #include <vix/http/Response.hpp>
 #include <vix/json/build.hpp>
 #include <vix/session/Session.hpp>
@@ -38,6 +42,7 @@
 namespace vix::server
 {
   using Logger = vix::utils::Logger;
+  using vix::async::core::spawn_detached;
 
   namespace
   {
@@ -72,8 +77,8 @@ namespace vix::server
   HTTPServer::HTTPServer(vix::config::Config &config,
                          std::shared_ptr<vix::executor::RuntimeExecutor> exec)
       : config_(config),
-        io_context_(std::make_shared<net::io_context>()),
-        acceptor_(nullptr),
+        io_context_(std::make_shared<vix::async::core::io_context>()),
+        listener_(nullptr),
         router_(std::make_shared<vix::router::Router>()),
         executor_(std::move(exec)),
         io_threads_(),
@@ -90,29 +95,22 @@ namespace vix::server
     try
     {
       router_->setNotFoundHandler(
-          [](const http::request<http::string_body> &req,
-             http::response<http::string_body> &res)
+          [](const vix::vhttp::Request &req,
+             vix::vhttp::Response &res) -> vix::async::core::task<void>
           {
-            res.result(http::status::not_found);
+            res.set_status(vix::vhttp::NOT_FOUND);
 
-            if (req.method() == http::verb::head)
-            {
-              res.set(http::field::content_type, "application/json");
-              res.set(http::field::connection, "close");
-              res.body().clear();
-              res.prepare_payload();
-              return;
-            }
-
-            vix::json::Json j{
+            nlohmann::json j{
                 {"error", "Route not found"},
                 {"hint", "Check path, method, or API version"},
-                {"method", std::string(req.method_string())},
-                {"path", std::string(req.target())}};
+                {"method", req.method()},
+                {"path", req.target()}};
 
-            vix::vhttp::Response::json_response(res, j, res.result());
-            res.set(http::field::connection, "close");
-            res.prepare_payload();
+            vix::vhttp::Response::json_response(res, j, vix::vhttp::NOT_FOUND);
+            res.set_header("Connection", "close");
+            res.set_should_close(true);
+
+            co_return;
           });
     }
     catch (const std::exception &e)
@@ -135,63 +133,40 @@ namespace vix::server
     }
   }
 
-  void HTTPServer::init_acceptor(unsigned short port)
+  vix::async::net::tcp_endpoint HTTPServer::make_bind_endpoint() const
   {
-    acceptor_ = std::make_unique<tcp::acceptor>(*io_context_);
+    vix::async::net::tcp_endpoint ep{};
+    ep.host = "0.0.0.0";
+    ep.port = static_cast<std::uint16_t>(config_.getServerPort());
+    return ep;
+  }
 
-    boost::system::error_code ec;
-    const tcp::endpoint endpoint(tcp::v4(), port);
-
-    acceptor_->open(endpoint.protocol(), ec);
-    if (ec)
+  void HTTPServer::init_listener(unsigned short port)
+  {
+    listener_ = vix::async::net::make_tcp_listener(*io_context_);
+    if (!listener_)
     {
-      log().log(Logger::Level::Error,
-                "[http] acceptor open failed: {}",
-                ec.message());
-      throw std::system_error(ec, "open acceptor");
+      throw std::runtime_error("failed to create native Vix TCP listener");
     }
 
-    acceptor_->set_option(net::socket_base::reuse_address(true), ec);
-    if (ec)
+    try
     {
-      log().log(Logger::Level::Error,
-                "[http] acceptor reuse_address failed: {}",
-                ec.message());
-      throw std::system_error(ec, "reuse_address");
-    }
+      vix::async::net::tcp_endpoint ep{};
+      ep.host = "0.0.0.0";
+      ep.port = port;
 
-    acceptor_->bind(endpoint, ec);
-    if (ec)
+      auto t = listener_->async_listen(ep);
+      std::move(t).start(io_context_->get_scheduler());
+
+      bound_port_.store(static_cast<int>(port), std::memory_order_relaxed);
+    }
+    catch (const std::exception &e)
     {
       log().log(Logger::Level::Error,
-                "[http] acceptor bind failed on port {}: {}",
+                "[http] listener init failed on port {}: {}",
                 static_cast<unsigned int>(port),
-                ec.message());
-
-      if (ec == boost::system::errc::address_in_use)
-      {
-        throw std::system_error(
-            ec,
-            "bind acceptor: address already in use. Another process is listening on this port.");
-      }
-
-      throw std::system_error(ec, "bind acceptor");
-    }
-
-    acceptor_->listen(net::socket_base::max_listen_connections, ec);
-    if (ec)
-    {
-      log().log(Logger::Level::Error,
-                "[http] acceptor listen failed: {}",
-                ec.message());
-      throw std::system_error(ec, "listen acceptor");
-    }
-
-    boost::system::error_code ep_ec;
-    const auto ep = acceptor_->local_endpoint(ep_ec);
-    if (!ep_ec)
-    {
-      bound_port_.store(static_cast<int>(ep.port()), std::memory_order_relaxed);
+                e.what());
+      throw;
     }
   }
 
@@ -252,7 +227,7 @@ namespace vix::server
 
     executor_->start();
 
-    if (!acceptor_ || !acceptor_->is_open())
+    if (!listener_)
     {
       const int port = config_.getServerPort();
 
@@ -264,7 +239,7 @@ namespace vix::server
         throw std::invalid_argument("Invalid port number");
       }
 
-      init_acceptor(static_cast<unsigned short>(port));
+      init_listener(static_cast<unsigned short>(port));
     }
 
     start_accept();
@@ -279,76 +254,92 @@ namespace vix::server
       return;
     }
 
-    auto socket = std::make_shared<tcp::socket>(*io_context_);
-
-    acceptor_->async_accept(
-        *socket,
-        [this, socket](boost::system::error_code ec)
-        {
-          if (ec)
-          {
-            if (ec != net::error::operation_aborted &&
-                !stop_requested_.load(std::memory_order_acquire))
-            {
-              log().log(Logger::Level::Error,
-                        "Accept error: {}",
-                        ec.message());
-            }
-            return;
-          }
-
-          if (stop_requested_.load(std::memory_order_acquire))
-          {
-            close_socket(socket);
-            return;
-          }
-
-          handle_client(socket);
-
-          if (!stop_requested_.load(std::memory_order_acquire))
-          {
-            start_accept();
-          }
-        });
+    spawn_detached(*io_context_, accept_loop());
   }
 
-  void HTTPServer::handle_client(std::shared_ptr<tcp::socket> socket_ptr)
+  vix::async::core::task<void> HTTPServer::accept_loop()
   {
-    if (!socket_ptr)
+    while (!stop_requested_.load(std::memory_order_acquire))
+    {
+      try
+      {
+        auto stream = co_await listener_->async_accept();
+
+        if (!stream)
+        {
+          continue;
+        }
+
+        if (stop_requested_.load(std::memory_order_acquire))
+        {
+          close_stream(std::move(stream));
+          co_return;
+        }
+
+        spawn_detached(*io_context_, handle_client(std::move(stream)));
+      }
+      catch (const std::exception &e)
+      {
+        if (!stop_requested_.load(std::memory_order_acquire))
+        {
+          log().log(Logger::Level::Error,
+                    "Accept error: {}",
+                    e.what());
+        }
+
+        if (stop_requested_.load(std::memory_order_acquire))
+        {
+          break;
+        }
+      }
+    }
+
+    co_return;
+  }
+
+  vix::async::core::task<void> HTTPServer::handle_client(std::unique_ptr<tcp_stream> stream)
+  {
+    if (!stream)
+    {
+      co_return;
+    }
+
+    try
+    {
+      auto session = std::make_shared<vix::session::Session>(
+          std::move(stream),
+          *router_,
+          config_,
+          executor_);
+
+      co_await session->run();
+    }
+    catch (const std::exception &e)
+    {
+      log().log(Logger::Level::Error,
+                "Failed to create or run session: {}",
+                e.what());
+
+      close_stream(std::move(stream));
+    }
+
+    co_return;
+  }
+
+  void HTTPServer::close_stream(std::unique_ptr<tcp_stream> stream)
+  {
+    if (!stream)
     {
       return;
     }
 
     try
     {
-      auto session = std::make_shared<vix::session::Session>(
-          socket_ptr,
-          *router_,
-          config_,
-          executor_);
-
-      session->run();
+      stream->close();
     }
-    catch (const std::exception &e)
+    catch (...)
     {
-      log().log(Logger::Level::Error,
-                "Failed to create session: {}",
-                e.what());
-      close_socket(std::move(socket_ptr));
     }
-  }
-
-  void HTTPServer::close_socket(std::shared_ptr<tcp::socket> socket)
-  {
-    if (!socket)
-    {
-      return;
-    }
-
-    boost::system::error_code ec;
-    socket->shutdown(tcp::socket::shutdown_both, ec);
-    ec.clear();
-    socket->close(ec);
   }
 
   void HTTPServer::monitor_metrics()
@@ -391,13 +382,15 @@ namespace vix::server
       return;
     }
 
-    boost::system::error_code ec;
-
-    if (acceptor_ && acceptor_->is_open())
+    try
     {
-      acceptor_->cancel(ec);
-      ec.clear();
-      acceptor_->close(ec);
+      if (listener_)
+      {
+        listener_->close();
+      }
+    }
+    catch (...)
+    {
     }
 
     if (io_context_)
@@ -434,13 +427,15 @@ namespace vix::server
     const bool was_already_stopping =
         stop_requested_.exchange(true, std::memory_order_acq_rel);
 
-    boost::system::error_code ec;
-
-    if (acceptor_ && acceptor_->is_open())
+    try
     {
-      acceptor_->cancel(ec);
-      ec.clear();
-      acceptor_->close(ec);
+      if (listener_)
+      {
+        listener_->close();
+      }
+    }
+    catch (...)
+    {
     }
 
     join_threads();
@@ -456,6 +451,8 @@ namespace vix::server
           std::chrono::duration_cast<std::chrono::milliseconds>(
               std::chrono::steady_clock::now() - startup_t0_)
               .count();
+
+      (void)uptime_ms;
     }
   }
 

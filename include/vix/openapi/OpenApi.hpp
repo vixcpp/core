@@ -13,12 +13,13 @@
 #ifndef VIX_OPENAPI_HPP
 #define VIX_OPENAPI_HPP
 
+#include <algorithm>
+#include <cctype>
 #include <string>
 #include <string_view>
 #include <unordered_set>
 #include <vector>
 
-#include <boost/beast/http.hpp>
 #include <nlohmann/json.hpp>
 
 #include <vix/openapi/Registry.hpp>
@@ -27,28 +28,35 @@
 
 namespace vix::openapi
 {
-  namespace http = boost::beast::http;
-
-  /** @brief Convert an HTTP verb to an OpenAPI operation key (get, post...). Returns empty if unsupported. */
-  inline std::string method_to_openapi(http::verb v)
+  /** @brief Convert an HTTP method string to an OpenAPI operation key (get, post...). Returns empty if unsupported. */
+  inline std::string method_to_openapi(std::string_view method)
   {
-    switch (v)
+    std::string m;
+    m.reserve(method.size());
+
+    for (char c : method)
     {
-    case http::verb::get:
-      return "get";
-    case http::verb::post:
-      return "post";
-    case http::verb::put:
-      return "put";
-    case http::verb::delete_:
-      return "delete";
-    case http::verb::patch:
-      return "patch";
-    case http::verb::head:
-      return "head";
-    default:
-      return {};
+      m.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
     }
+
+    if (m == "get")
+      return "get";
+    if (m == "post")
+      return "post";
+    if (m == "put")
+      return "put";
+    if (m == "delete")
+      return "delete";
+    if (m == "patch")
+      return "patch";
+    if (m == "head")
+      return "head";
+    if (m == "options")
+      return "options";
+    if (m == "trace")
+      return "trace";
+
+    return {};
   }
 
   /** @brief Default OpenAPI responses when none are provided. */
@@ -109,7 +117,7 @@ namespace vix::openapi
     // Avoid duplicates if the same (method, path) appears in router + Registry.
     std::unordered_set<std::string> seen;
 
-    auto add_doc_to_paths = [&](http::verb method,
+    auto add_doc_to_paths = [&](std::string_view method,
                                 const std::string &path,
                                 const vix::router::RouteDoc &rdoc)
     {

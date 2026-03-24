@@ -12,72 +12,98 @@
 #ifndef VIX_REQUEST_HPP
 #define VIX_REQUEST_HPP
 
-#include <cassert>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
-#include <boost/beast/http.hpp>
 #include <nlohmann/json.hpp>
 
 #include <vix/http/RequestState.hpp>
-#include <vix/http/Response.hpp>
-#include <vix/http/Status.hpp>
-#include <vix/json/Simple.hpp>
-#include <vix/utils/Logger.hpp>
 #include <vix/utils/String.hpp>
 
 namespace vix::vhttp
 {
-  namespace http = boost::beast::http;
-
-  /** @brief HTTP request facade that exposes method, path, params, query, headers, JSON body, and per-request state. */
+  /**
+   * @brief Lightweight native HTTP request object for Vix.
+   *
+   * This request type is independent of Boost.Beast and is designed to be
+   * produced directly by the Vix async HTTP parser / session layer.
+   */
   class Request
   {
   public:
-    /** @brief Underlying Boost.Beast request type used by Vix. */
-    using RawRequest = http::request<http::string_body>;
-
     /** @brief Map of route parameters extracted from path templates. */
     using ParamMap = std::unordered_map<std::string, std::string>;
 
     /** @brief Map of query string parameters parsed from the request target. */
     using QueryMap = std::unordered_map<std::string, std::string>;
 
+    /** @brief Map of HTTP headers. */
+    using HeaderMap = std::unordered_map<std::string, std::string>;
+
     /** @brief Shared pointer type for request-scoped state storage. */
     using StatePtr = std::shared_ptr<vix::vhttp::RequestState>;
 
-    /** @brief Create a Request view over a raw request, route params, and an optional state container. */
-    Request(const RawRequest &raw, ParamMap params, StatePtr state)
-        : raw_(&raw),
-          method_(raw.method_string().data(), raw.method_string().size()),
-          path_(),
-          query_raw_(),
+    /**
+     * @brief Construct an empty request with a default state container.
+     */
+    Request()
+        : params_(std::make_shared<const ParamMap>()),
+          query_cache_(nullptr),
+          json_cache_(nullptr),
+          state_(std::make_shared<vix::vhttp::RequestState>())
+    {
+    }
+
+    /**
+     * @brief Construct a fully initialized request.
+     *
+     * @param method HTTP method, usually uppercase (GET, POST, ...).
+     * @param target Full request target, e.g. "/users?id=1".
+     * @param headers Request headers.
+     * @param body Request body.
+     * @param params Route parameters.
+     * @param state Optional request state container.
+     */
+    Request(
+        std::string method,
+        std::string target,
+        HeaderMap headers = {},
+        std::string body = {},
+        ParamMap params = {},
+        StatePtr state = std::make_shared<vix::vhttp::RequestState>())
+        : method_(std::move(method)),
+          target_(std::move(target)),
+          body_(std::move(body)),
+          headers_(std::move(headers)),
           params_(std::make_shared<const ParamMap>(std::move(params))),
           query_cache_(nullptr),
           json_cache_(nullptr),
           state_(std::move(state))
     {
-      std::string_view target(raw.target().data(), raw.target().size());
-      const auto qpos = target.find('?');
-
-      if (qpos == std::string_view::npos)
-      {
-        path_.assign(target.begin(), target.end());
-      }
-      else
-      {
-        path_.assign(target.begin(), target.begin() + static_cast<std::ptrdiff_t>(qpos));
-        query_raw_.assign(target.begin() + static_cast<std::ptrdiff_t>(qpos + 1), target.end());
-      }
+      split_target();
     }
 
-    /** @brief Create a Request with a default RequestState container. */
-    Request(const RawRequest &raw, ParamMap params)
-        : Request(raw, std::move(params), std::make_shared<vix::vhttp::RequestState>())
+    /**
+     * @brief Construct a request without explicitly providing a state container.
+     */
+    Request(
+        std::string method,
+        std::string target,
+        HeaderMap headers,
+        std::string body,
+        ParamMap params)
+        : Request(
+              std::move(method),
+              std::move(target),
+              std::move(headers),
+              std::move(body),
+              std::move(params),
+              std::make_shared<vix::vhttp::RequestState>())
     {
     }
 
@@ -87,26 +113,42 @@ namespace vix::vhttp
     Request &operator=(Request &&) noexcept = default;
     ~Request() = default;
 
-    /** @brief Return the HTTP method as an uppercase string (e.g. "GET"). */
+    /** @brief Return the HTTP method as a string. */
     const std::string &method() const noexcept { return method_; }
 
-    /** @brief Return the request path (without the query string). */
+    /** @brief Set the HTTP method. */
+    void set_method(std::string method) { method_ = std::move(method); }
+
+    /** @brief Return the request path without query string. */
     const std::string &path() const noexcept { return path_; }
 
-    /** @brief Return the full target string (path + query) as provided by the client. */
-    std::string target() const
+    /** @brief Return the raw query string without '?'. */
+    const std::string &query_string() const noexcept { return query_raw_; }
+
+    /** @brief Return the full request target. */
+    const std::string &target() const noexcept { return target_; }
+
+    /**
+     * @brief Set the full request target and recompute path/query caches.
+     */
+    void set_target(std::string target)
     {
-      return std::string(raw_->target().data(), raw_->target().size());
+      target_ = std::move(target);
+      split_target();
+      query_cache_.reset();
     }
 
-    /** @brief Return the underlying raw Boost.Beast request. */
-    const RawRequest &raw() const noexcept { return *raw_; }
-
-    /** @brief Return the route parameters map (empty if none). */
+    /** @brief Return the route parameters map. */
     const ParamMap &params() const noexcept
     {
       static const ParamMap empty{};
       return params_ ? *params_ : empty;
+    }
+
+    /** @brief Replace the route parameters map. */
+    void set_params(ParamMap params)
+    {
+      params_ = std::make_shared<const ParamMap>(std::move(params));
     }
 
     /** @brief Return true if a route parameter exists. */
@@ -116,7 +158,7 @@ namespace vix::vhttp
       return p.find(std::string(key)) != p.end();
     }
 
-    /** @brief Return a route parameter value or a fallback string if missing. */
+    /** @brief Return a route parameter value or fallback if missing. */
     std::string param(std::string_view key, std::string_view fallback = {}) const
     {
       const auto &p = params();
@@ -124,14 +166,14 @@ namespace vix::vhttp
       return it == p.end() ? std::string(fallback) : it->second;
     }
 
-    /** @brief Return the parsed query map (computed lazily on first use). */
+    /** @brief Return the parsed query map, computed lazily. */
     const QueryMap &query()
     {
       ensure_query_cache();
       return *query_cache_;
     }
 
-    /** @brief Return the parsed query map (computed lazily on first use). */
+    /** @brief Return the parsed query map, computed lazily. */
     const QueryMap &query() const
     {
       ensure_query_cache();
@@ -145,7 +187,7 @@ namespace vix::vhttp
       return query_cache_->find(std::string(key)) != query_cache_->end();
     }
 
-    /** @brief Return a query parameter value or a fallback string if missing. */
+    /** @brief Return a query parameter value or fallback if missing. */
     std::string query_value(std::string_view key, std::string_view fallback = {}) const
     {
       ensure_query_cache();
@@ -153,40 +195,68 @@ namespace vix::vhttp
       return it == query_cache_->end() ? std::string(fallback) : it->second;
     }
 
-    /** @brief Return the raw request body string. */
-    const std::string &body() const noexcept
+    /** @brief Return the request body. */
+    const std::string &body() const noexcept { return body_; }
+
+    /** @brief Replace the request body and reset cached JSON. */
+    void set_body(std::string body)
     {
-      return raw_->body();
+      body_ = std::move(body);
+      json_cache_.reset();
     }
 
-    /** @brief Parse and return the request body as JSON (computed lazily on first use). */
+    /** @brief Return all headers. */
+    const HeaderMap &headers() const noexcept { return headers_; }
+
+    /** @brief Replace all headers. */
+    void set_headers(HeaderMap headers)
+    {
+      headers_ = std::move(headers);
+    }
+
+    /**
+     * @brief Return a header value or an empty string if missing.
+     *
+     * Header lookup is case-sensitive here. The parser/session layer should
+     * normalize header names consistently if case-insensitive behavior is desired.
+     */
+    std::string header(std::string_view name) const
+    {
+      auto it = headers_.find(std::string(name));
+      return it == headers_.end() ? std::string{} : it->second;
+    }
+
+    /** @brief Return true if a header exists. */
+    bool has_header(std::string_view name) const
+    {
+      return headers_.find(std::string(name)) != headers_.end();
+    }
+
+    /** @brief Set or replace one header. */
+    void set_header(std::string name, std::string value)
+    {
+      headers_[std::move(name)] = std::move(value);
+    }
+
+    /** @brief Remove a header if present. */
+    void remove_header(std::string_view name)
+    {
+      headers_.erase(std::string(name));
+    }
+
+    /** @brief Parse and return the body as JSON, computed lazily. */
     const nlohmann::json &json() const
     {
       ensure_json_cache();
       return *json_cache_;
     }
 
-    /** @brief Parse the request body as JSON and convert it to type T using nlohmann::json conversions. */
+    /** @brief Parse the body as JSON and convert it to type T. */
     template <typename T>
     T json_as() const
     {
       ensure_json_cache();
       return json_cache_->get<T>();
-    }
-
-    /** @brief Return a request header value or an empty string if missing. */
-    std::string header(std::string_view name) const
-    {
-      boost::beast::string_view key{name.data(), name.size()};
-      auto it = raw_->find(key);
-      return it == raw_->end() ? std::string{} : std::string(it->value());
-    }
-
-    /** @brief Return true if a request header exists. */
-    bool has_header(std::string_view name) const
-    {
-      boost::beast::string_view key{name.data(), name.size()};
-      return raw_->find(key) != raw_->end();
     }
 
     /** @brief Return true if a RequestState container is attached. */
@@ -202,7 +272,7 @@ namespace vix::vhttp
       return state_ && state_->has<T>();
     }
 
-    /** @brief Get a mutable reference to state value of type T (throws if state is missing). */
+    /** @brief Get a mutable reference to state value of type T. */
     template <class T>
     T &state()
     {
@@ -211,7 +281,7 @@ namespace vix::vhttp
       return state_->get<T>();
     }
 
-    /** @brief Get a const reference to state value of type T (throws if state is missing). */
+    /** @brief Get a const reference to state value of type T. */
     template <class T>
     const T &state() const
     {
@@ -220,14 +290,14 @@ namespace vix::vhttp
       return state_->get<T>();
     }
 
-    /** @brief Try to get a mutable pointer to state value of type T or nullptr if missing. */
+    /** @brief Try to get a mutable pointer to state value of type T. */
     template <class T>
     T *try_state() noexcept
     {
       return state_ ? state_->try_get<T>() : nullptr;
     }
 
-    /** @brief Try to get a const pointer to state value of type T or nullptr if missing. */
+    /** @brief Try to get a const pointer to state value of type T. */
     template <class T>
     const T *try_state() const noexcept
     {
@@ -252,13 +322,35 @@ namespace vix::vhttp
       state_->set<T>(std::move(value));
     }
 
-    /** @brief Return the shared state container pointer (mutable). */
+    /** @brief Return the shared state container pointer. */
     StatePtr state_ptr() noexcept { return state_; }
 
-    /** @brief Return the shared state container pointer (const). */
-    std::shared_ptr<const vix::vhttp::RequestState> state_ptr() const noexcept { return state_; }
+    /** @brief Return the shared state container pointer as const. */
+    std::shared_ptr<const vix::vhttp::RequestState> state_ptr() const noexcept
+    {
+      return state_;
+    }
 
   private:
+    void split_target()
+    {
+      path_.clear();
+      query_raw_.clear();
+
+      const std::string_view target_view{target_};
+      const auto qpos = target_view.find('?');
+
+      if (qpos == std::string_view::npos)
+      {
+        path_ = target_;
+      }
+      else
+      {
+        path_.assign(target_view.substr(0, qpos));
+        query_raw_.assign(target_view.substr(qpos + 1));
+      }
+    }
+
     void ensure_query_cache() const
     {
       if (query_cache_)
@@ -270,7 +362,8 @@ namespace vix::vhttp
       }
       else
       {
-        query_cache_ = std::make_shared<const QueryMap>(vix::utils::parse_query_string(query_raw_));
+        query_cache_ = std::make_shared<const QueryMap>(
+            vix::utils::parse_query_string(query_raw_));
       }
     }
 
@@ -279,23 +372,24 @@ namespace vix::vhttp
       if (json_cache_)
         return;
 
-      if (raw_->body().empty())
+      if (body_.empty())
       {
         json_cache_ = std::make_shared<const nlohmann::json>(nlohmann::json{});
       }
       else
       {
         json_cache_ = std::make_shared<const nlohmann::json>(
-            nlohmann::json::parse(raw_->body(), nullptr, true, true));
+            nlohmann::json::parse(body_, nullptr, true, true));
       }
     }
 
   private:
-    const RawRequest *raw_{nullptr};
-
     std::string method_;
+    std::string target_;
     std::string path_;
     std::string query_raw_;
+    std::string body_;
+    HeaderMap headers_;
     std::shared_ptr<const ParamMap> params_;
     mutable std::shared_ptr<const QueryMap> query_cache_;
     mutable std::shared_ptr<const nlohmann::json> json_cache_;

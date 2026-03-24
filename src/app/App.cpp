@@ -13,8 +13,6 @@
  */
 #include <vix/app/App.hpp>
 
-#include <boost/beast/http.hpp>
-
 #include <vix/openapi/register_docs.hpp>
 #include <vix/router/Router.hpp>
 #include <vix/utils/Env.hpp>
@@ -25,11 +23,14 @@
 #include <atomic>
 #include <cctype>
 #include <csignal>
+#include <cstdint>
 #include <exception>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
+#include <chrono>
+#include <utility>
 
 namespace
 {
@@ -68,8 +69,11 @@ namespace
           next();
 
           const auto t1 = clock::now();
-          const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
-          const unsigned int status = res.res.result_int();
+          const auto ms =
+              std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+          const int status = vix::vhttp::is_valid_status(res.res.status())
+                                 ? res.res.status()
+                                 : vix::vhttp::OK;
 
           log().logf(
               vix::utils::Logger::Level::Debug,
@@ -122,8 +126,6 @@ namespace
 
   void register_bench_route(vix::router::Router &router)
   {
-    namespace http = boost::beast::http;
-
     auto handler = [](vix::vhttp::Request &req, vix::vhttp::ResponseWrapper &res)
     {
       (void)req;
@@ -132,7 +134,7 @@ namespace
 
     using HandlerT = vix::vhttp::RequestHandler<decltype(handler)>;
     auto h = std::make_shared<HandlerT>("/bench", handler);
-    router.add_route(http::verb::get, "/bench", h);
+    router.add_route("GET", "/bench", h);
   }
 
   static std::atomic<vix::App *> g_app_ptr{nullptr};
@@ -441,7 +443,8 @@ namespace vix
 
   void App::use(std::string prefix, Middleware mw)
   {
-    middlewares_.push_back(MiddlewareEntry{normalize_prefix(std::move(prefix)), std::move(mw)});
+    middlewares_.push_back(
+        MiddlewareEntry{normalize_prefix(std::move(prefix)), std::move(mw)});
   }
 
   bool App::match_middleware_prefix_(const std::string &prefix,

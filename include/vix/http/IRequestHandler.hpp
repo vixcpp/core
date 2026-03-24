@@ -12,25 +12,47 @@
 #ifndef VIX_I_REQUEST_HANDLER_HPP
 #define VIX_I_REQUEST_HANDLER_HPP
 
-#include <boost/beast/http.hpp>
+#include <vix/async/core/task.hpp>
 
 namespace vix::vhttp
 {
-  namespace http = boost::beast::http;
+  class Request;
+  class Response;
 
-  /** @brief Interface for handling an HTTP request and writing an HTTP string response. */
+  /**
+   * @brief Interface for handling an HTTP request using the Vix async runtime.
+   *
+   * This interface is transport-agnostic and does not depend on Boost.Beast.
+   * Implementations receive a Vix-native Request and fill a Vix-native Response.
+   *
+   * The handler is asynchronous and returns a Vix task, allowing the HTTP core
+   * to await user logic without blocking the runtime.
+   */
   class IRequestHandler
   {
   public:
-    /** @brief Handle an incoming request and fill the provided response object. */
-    virtual void handle_request(
-        const http::request<http::string_body> &req,
-        http::response<http::string_body> &res) = 0;
+    /**
+     * @brief Handle an incoming request and populate the provided response.
+     *
+     * Implementations should inspect the request, write the response, and
+     * `co_return` when complete.
+     *
+     * @param req Incoming Vix HTTP request.
+     * @param res Outgoing Vix HTTP response to populate.
+     * @return vix::async::core::task<void> asynchronous completion signal.
+     */
+    virtual vix::async::core::task<void> handle_request(
+        const Request &req,
+        Response &res) = 0;
 
-    /** @brief Construct a request handler. */
+    /**
+     * @brief Construct a request handler.
+     */
     IRequestHandler() noexcept = default;
 
-    /** @brief Destroy the request handler. */
+    /**
+     * @brief Destroy the request handler.
+     */
     virtual ~IRequestHandler() noexcept = default;
 
     IRequestHandler(const IRequestHandler &) = delete;

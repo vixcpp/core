@@ -14,23 +14,20 @@
 #define VIX_OPENAPI_REGISTRY_HPP
 
 #include <mutex>
-#include <vector>
+#include <string>
 #include <utility>
-
-#include <boost/beast/http.hpp>
+#include <vector>
 
 #include <vix/router/RouteDoc.hpp>
 
 namespace vix::openapi
 {
-  namespace http = boost::beast::http;
-
   /**
    * @brief Route documentation entry registered outside the core HTTP router.
    */
   struct ExtraRouteDoc
   {
-    http::verb method{};
+    std::string method{};
     std::string path{};
     vix::router::RouteDoc doc{};
   };
@@ -42,11 +39,14 @@ namespace vix::openapi
   {
   public:
     /** @brief Register an extra documented route. */
-    static void add(http::verb method, std::string path, vix::router::RouteDoc doc)
+    static void add(std::string method, std::string path, vix::router::RouteDoc doc)
     {
       auto &self = instance();
       std::lock_guard<std::mutex> lk(self.mu_);
-      self.extras_.push_back(ExtraRouteDoc{method, std::move(path), std::move(doc)});
+      self.extras_.push_back(ExtraRouteDoc{
+          std::move(method),
+          std::move(path),
+          std::move(doc)});
     }
 
     /** @brief Return a snapshot of all registered extra route docs. */
@@ -55,6 +55,14 @@ namespace vix::openapi
       auto &self = instance();
       std::lock_guard<std::mutex> lk(self.mu_);
       return self.extras_;
+    }
+
+    /** @brief Clear all registered extra route docs. */
+    static void clear()
+    {
+      auto &self = instance();
+      std::lock_guard<std::mutex> lk(self.mu_);
+      self.extras_.clear();
     }
 
   private:

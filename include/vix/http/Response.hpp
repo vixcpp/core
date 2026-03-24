@@ -13,15 +13,16 @@
 #define VIX_RESPONSE_HPP
 
 #include <chrono>
+#include <cstdint>
 #include <ctime>
 #include <iomanip>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 
-#include <boost/beast/http.hpp>
 #include <nlohmann/json.hpp>
 
 #include <vix/http/Status.hpp>
@@ -35,8 +36,6 @@
 
 namespace vix::vhttp
 {
-  namespace http = boost::beast::http;
-
 #if __cpp_concepts
   template <class T>
   concept HasDump = requires(const T &x) { x.dump(); };
@@ -71,198 +70,311 @@ namespace vix::vhttp
   };
 #endif
 
-  /** @brief Convert a JSON-like value into a string using either vix::json or a .dump() API. */
-  template <class J>
-  inline std::string to_json_string(const J &j)
-  {
-#if __cpp_concepts
-    static_assert(SupportedJson<J>,
-                  "Response::to_json_string(): J must be nlohmann::json, vix::json::Json, or expose .dump()");
-#else
-    static_assert(is_supported_json<J>::value,
-                  "Response::to_json_string(): J must be nlohmann::json, vix::json::Json, or expose .dump()");
-#endif
-
-#if VIX_CORE_HAS_VIX_JSON
-    if constexpr (std::is_same_v<std::decay_t<J>, vix::json::Json>)
-    {
-      return vix::json::dumps(j);
-    }
-    else
-#endif
-    {
-      if constexpr (
-#if __cpp_concepts
-          HasDump<J>
-#else
-          has_dump<J>::value
-#endif
-      )
-      {
-        return j.dump();
-      }
-      else
-      {
-        return j.dump();
-      }
-    }
-  }
-
-  /** @brief Return the current time formatted as an HTTP date (RFC 7231) in GMT. */
-  inline std::string http_date_now() noexcept
-  {
-    using clock = std::chrono::system_clock;
-    const auto now = clock::now();
-    const std::time_t t = clock::to_time_t(now);
-
-    std::tm tm{};
-#if defined(_WIN32)
-    ::gmtime_s(&tm, &t);
-#elif defined(__unix__) || defined(__APPLE__)
-    ::gmtime_r(&t, &tm);
-#else
-    tm = *std::gmtime(&t);
-#endif
-
-    std::ostringstream oss;
-    oss << std::put_time(&tm, "%a, %d %b %Y %H:%M:%S GMT");
-    return oss.str();
-  }
-
-  template <int Code>
-  struct status_code_in_range
-  {
-    static constexpr bool value = (Code >= 100) && (Code <= 599);
-  };
-
-  /** @brief Static helpers for building Boost.Beast HTTP responses (JSON, text, errors, redirects). */
+  /**
+   * @brief Minimal native HTTP response object for Vix.
+   *
+   * This type is independent of Boost.Beast and is intended to be serialized
+   * directly by the Vix async HTTP session layer.
+   */
   class Response
   {
   public:
-    /** @brief Apply common headers (Server, Date) to a response. */
-    static void common_headers(http::response<http::string_body> &res) noexcept
+    using HeaderMap = std::unordered_map<std::string, std::string>;
+
+    Response() = default;
+
+    explicit Response(int status)
+        : status_(status)
     {
-      res.set(http::field::server, "Vix.cpp");
-      res.set(http::field::date, http_date_now());
+    }
+
+    Response(int status, std::string body)
+        : status_(status),
+          body_(std::move(body))
+    {
+    }
+
+    Response(const Response &) = default;
+    Response &operator=(const Response &) = default;
+    Response(Response &&) noexcept = default;
+    Response &operator=(Response &&) noexcept = default;
+    ~Response() = default;
+
+    /** @brief Return the numeric HTTP status code. */
+    int status() const noexcept
+    {
+      return status_;
+    }
+
+    /** @brief Set the numeric HTTP status code. */
+    void set_status(int status) noexcept
+    {
+      status_ = status;
+    }
+
+    /** @brief Return the response body. */
+    const std::string &body() const noexcept
+    {
+      return body_;
+    }
+
+    /** @brief Return a mutable response body. */
+    std::string &body() noexcept
+    {
+      return body_;
+    }
+
+    /** @brief Replace the response body. */
+    void set_body(std::string body)
+    {
+      body_ = std::move(body);
+    }
+
+    /** @brief Return all response headers. */
+    const HeaderMap &headers() const noexcept
+    {
+      return headers_;
+    }
+
+    /** @brief Return mutable response headers. */
+    HeaderMap &headers() noexcept
+    {
+      return headers_;
+    }
+
+    /** @brief Replace all response headers. */
+    void set_headers(HeaderMap headers)
+    {
+      headers_ = std::move(headers);
+    }
+
+    /** @brief Return true if the response already contains a header. */
+    bool has_header(std::string_view name) const
+    {
+      return headers_.find(std::string(name)) != headers_.end();
+    }
+
+    /** @brief Return a header value or an empty string if missing. */
+    std::string header(std::string_view name) const
+    {
+      auto it = headers_.find(std::string(name));
+      return it == headers_.end() ? std::string{} : it->second;
+    }
+
+    /** @brief Set or replace one header. */
+    void set_header(std::string name, std::string value)
+    {
+      headers_[std::move(name)] = std::move(value);
+    }
+
+    /** @brief Remove a header if present. */
+    void remove_header(std::string_view name)
+    {
+      headers_.erase(std::string(name));
+    }
+
+    /** @brief Remove all headers. */
+    void clear_headers() noexcept
+    {
+      headers_.clear();
+    }
+
+    /** @brief Return whether the response should close the connection. */
+    bool should_close() const noexcept
+    {
+      return close_;
+    }
+
+    /** @brief Set whether the connection should be closed after sending. */
+    void set_should_close(bool close) noexcept
+    {
+      close_ = close;
+    }
+
+    /** @brief Return the HTTP reason phrase if explicitly set. */
+    const std::string &reason() const noexcept
+    {
+      return reason_;
+    }
+
+    /** @brief Set a custom HTTP reason phrase. */
+    void set_reason(std::string reason)
+    {
+      reason_ = std::move(reason);
+    }
+
+    /** @brief Clear any custom reason phrase. */
+    void clear_reason() noexcept
+    {
+      reason_.clear();
+    }
+
+    /** @brief Return the HTTP version string. */
+    const std::string &version() const noexcept
+    {
+      return version_;
+    }
+
+    /** @brief Set the HTTP version string, e.g. "HTTP/1.1". */
+    void set_version(std::string version)
+    {
+      version_ = std::move(version);
+    }
+
+    /** @brief Return the serialized response as raw HTTP text. */
+    std::string to_http_string() const
+    {
+      Response copy = *this;
+      copy.apply_default_headers();
+
+      std::ostringstream oss;
+      oss << copy.version_ << ' ' << copy.status_ << ' ' << copy.status_text() << "\r\n";
+
+      for (const auto &[name, value] : copy.headers_)
+      {
+        oss << name << ": " << value << "\r\n";
+      }
+
+      oss << "\r\n";
+      oss << copy.body_;
+      return oss.str();
+    }
+
+    /** @brief Convert a JSON-like value into a string using either vix::json or a .dump() API. */
+    template <class J>
+    static std::string to_json_string(const J &j)
+    {
+#if __cpp_concepts
+      static_assert(SupportedJson<J>,
+                    "Response::to_json_string(): J must be nlohmann::json, vix::json::Json, or expose .dump()");
+#else
+      static_assert(is_supported_json<J>::value,
+                    "Response::to_json_string(): J must be nlohmann::json, vix::json::Json, or expose .dump()");
+#endif
+
+#if VIX_CORE_HAS_VIX_JSON
+      if constexpr (std::is_same_v<std::decay_t<J>, vix::json::Json>)
+      {
+        return vix::json::dumps(j);
+      }
+      else
+#endif
+      {
+        return j.dump();
+      }
+    }
+
+    /** @brief Return the current time formatted as an HTTP date (RFC 7231) in GMT. */
+    static std::string http_date_now() noexcept
+    {
+      using clock = std::chrono::system_clock;
+      const auto now = clock::now();
+      const std::time_t t = clock::to_time_t(now);
+
+      std::tm tm{};
+#if defined(_WIN32)
+      ::gmtime_s(&tm, &t);
+#elif defined(__unix__) || defined(__APPLE__)
+      ::gmtime_r(&t, &tm);
+#else
+      tm = *std::gmtime(&t);
+#endif
+
+      std::ostringstream oss;
+      oss << std::put_time(&tm, "%a, %d %b %Y %H:%M:%S GMT");
+      return oss.str();
+    }
+
+    /** @brief Apply common headers (Server, Date) if absent. */
+    static void common_headers(Response &res) noexcept
+    {
+      if (!res.has_header("Server"))
+      {
+        res.set_header("Server", "Vix.cpp");
+      }
+
+      if (!res.has_header("Date"))
+      {
+        res.set_header("Date", http_date_now());
+      }
+    }
+
+    /** @brief Return true if the response already contains the given header. */
+    static bool has_header(const Response &res, std::string_view name) noexcept
+    {
+      return res.has_header(name);
     }
 
     /** @brief Create a JSON response with {"message": "..."} and the given status. */
     static void create_response(
-        http::response<http::string_body> &res,
-        http::status status,
-        std::string_view message,
-        std::string_view content_type = "application/json")
-    {
-      res.result(status);
-
-      if (res.find(http::field::content_type) == res.end())
-      {
-        res.set(http::field::content_type, std::string(content_type));
-      }
-
-      res.body() = nlohmann::json{{"message", message}}.dump();
-      common_headers(res);
-      res.prepare_payload();
-    }
-
-    /** @brief Create a JSON response with {"message": "..."} and a numeric status code. */
-    static void create_response(
-        http::response<http::string_body> &res,
+        Response &res,
         int status,
         std::string_view message,
-        std::string_view content_type = "application/json")
+        std::string_view content_type = "application/json; charset=utf-8")
     {
-      create_response(res, to_status(status), message, content_type);
-    }
+      res.set_status(status);
 
-    /** @brief Create a JSON response with {"message": "..."} and a compile-time status code. */
-    template <int Code>
-    static void create_response(
-        http::response<http::string_body> &res,
-        std::string_view message,
-        std::string_view content_type = "application/json")
-    {
-      static_assert(status_code_in_range<Code>::value, "HTTP status code must be between 100 and 599");
-      create_response(res, static_cast<http::status>(Code), message, content_type);
-    }
+      if (!res.has_header("Content-Type"))
+      {
+        res.set_header("Content-Type", std::string(content_type));
+      }
 
-    /** @brief Return true if the response already contains the given header. */
-    static bool has_header(const http::response<http::string_body> &res, http::field f) noexcept
-    {
-      return res.find(f) != res.end();
+      res.set_body(nlohmann::json{{"message", message}}.dump());
+      res.apply_default_headers();
     }
 
     /** @brief Send an error response with a JSON {"message": "..."} body. */
     static void error_response(
-        http::response<http::string_body> &res,
-        http::status status,
+        Response &res,
+        int status,
         std::string_view message)
     {
       create_response(res, status, message);
     }
 
-    /** @brief Send an error response with a numeric status code. */
-    static void error_response(
-        http::response<http::string_body> &res,
-        int status,
-        std::string_view message)
-    {
-      create_response(res, to_status(status), message);
-    }
-
-    /** @brief Send an error response with a compile-time status code. */
-    template <int Code>
-    static void error_response(
-        http::response<http::string_body> &res,
-        std::string_view message)
-    {
-      static_assert(status_code_in_range<Code>::value, "HTTP status code must be between 100 and 599");
-      create_response(res, static_cast<http::status>(Code), message);
-    }
-
     /** @brief Send a 200 OK JSON {"message": "..."} response. */
     static void success_response(
-        http::response<http::string_body> &res,
+        Response &res,
         std::string_view message)
     {
-      create_response(res, http::status::ok, message);
+      create_response(res, 200, message);
     }
 
     /** @brief Send a 204 No Content response with a JSON {"message": "..."} body. */
     static void no_content_response(
-        http::response<http::string_body> &res,
+        Response &res,
         std::string_view message = "No Content")
     {
-      res.result(http::status::no_content);
+      res.set_status(204);
 
-      if (res.find(http::field::content_type) == res.end())
+      if (!res.has_header("Content-Type"))
       {
-        res.set(http::field::content_type, "application/json; charset=utf-8");
+        res.set_header("Content-Type", "application/json; charset=utf-8");
       }
 
-      res.body() = nlohmann::json{{"message", message}}.dump();
-      common_headers(res);
-      res.prepare_payload();
+      res.set_body(nlohmann::json{{"message", message}}.dump());
+      res.apply_default_headers();
     }
 
     /** @brief Send a 302 Found redirect response with a JSON body and Location header. */
     static void redirect_response(
-        http::response<http::string_body> &res,
+        Response &res,
         std::string_view location)
     {
-      res.result(http::status::found);
-      res.set(http::field::location, std::string(location));
+      res.set_status(302);
+      res.set_header("Location", std::string(location));
 
-      if (res.find(http::field::content_type) == res.end())
+      if (!res.has_header("Content-Type"))
       {
-        res.set(http::field::content_type, "application/json; charset=utf-8");
+        res.set_header("Content-Type", "application/json; charset=utf-8");
       }
 
-      res.body() = nlohmann::json{
-          {"message", std::string("Redirecting to ") + std::string(location)}}
-                       .dump();
-      common_headers(res);
-      res.prepare_payload();
+      res.set_body(
+          nlohmann::json{
+              {"message", std::string("Redirecting to ") + std::string(location)}}
+              .dump());
+
+      res.apply_default_headers();
     }
 
     /** @brief Send a JSON response with the given status. */
@@ -271,83 +383,159 @@ namespace vix::vhttp
       requires SupportedJson<J>
 #endif
     static void json_response(
-        http::response<http::string_body> &res,
+        Response &res,
         const J &data,
-        http::status status = http::status::ok)
+        int status = 200)
     {
-      res.result(status);
+      res.set_status(status);
 
-      if (res.find(http::field::content_type) == res.end())
+      if (!res.has_header("Content-Type"))
       {
-        res.set(http::field::content_type, "application/json; charset=utf-8");
+        res.set_header("Content-Type", "application/json; charset=utf-8");
       }
 
-      res.body() = to_json_string(data);
-      common_headers(res);
-      res.prepare_payload();
-    }
-
-    /** @brief Send a JSON response using a numeric status code. */
-    template <class J>
-#if __cpp_concepts
-      requires SupportedJson<J>
-#endif
-    static void json_response(http::response<http::string_body> &res,
-                              const J &data,
-                              int status)
-    {
-      json_response(res, data, to_status(status));
-    }
-
-    /** @brief Send a JSON response using a compile-time status code. */
-    template <int Code, class J>
-#if __cpp_concepts
-      requires SupportedJson<J>
-#endif
-    static void json_response(
-        http::response<http::string_body> &res,
-        const J &data)
-    {
-      static_assert(status_code_in_range<Code>::value, "HTTP status code must be between 100 and 599");
-      json_response(res, data, static_cast<http::status>(Code));
+      res.set_body(to_json_string(data));
+      res.apply_default_headers();
     }
 
     /** @brief Send a plain text response with the given status. */
     static void text_response(
-        http::response<http::string_body> &res,
+        Response &res,
         std::string_view data,
-        http::status status = http::status::ok)
+        int status = 200)
     {
-      res.result(status);
+      res.set_status(status);
 
-      if (res.find(http::field::content_type) == res.end())
+      if (!res.has_header("Content-Type"))
       {
-        res.set(http::field::content_type, "text/plain; charset=utf-8");
+        res.set_header("Content-Type", "text/plain; charset=utf-8");
       }
 
-      res.body() = std::string(data);
-      common_headers(res);
-      res.prepare_payload();
+      res.set_body(std::string(data));
+      res.apply_default_headers();
     }
 
-    /** @brief Send a plain text response using a numeric status code. */
-    static void text_response(
-        http::response<http::string_body> &res,
-        std::string_view data,
-        int status)
+  private:
+    void apply_default_headers()
     {
-      text_response(res, data, to_status(status));
+      common_headers(*this);
+
+      if (!has_header("Content-Length"))
+      {
+        set_header("Content-Length", std::to_string(body_.size()));
+      }
+
+      if (!has_header("Connection"))
+      {
+        set_header("Connection", close_ ? "close" : "keep-alive");
+      }
     }
 
-    /** @brief Send a plain text response using a compile-time status code. */
-    template <int Code>
-    static void text_response(
-        http::response<http::string_body> &res,
-        std::string_view data)
+    std::string status_text() const
     {
-      static_assert(status_code_in_range<Code>::value, "HTTP status code must be between 100 and 599");
-      text_response(res, data, static_cast<http::status>(Code));
+      if (!reason_.empty())
+      {
+        return reason_;
+      }
+
+      switch (status_)
+      {
+      case 100:
+        return "Continue";
+      case 101:
+        return "Switching Protocols";
+      case 102:
+        return "Processing";
+      case 103:
+        return "Early Hints";
+      case 200:
+        return "OK";
+      case 201:
+        return "Created";
+      case 202:
+        return "Accepted";
+      case 203:
+        return "Non-Authoritative Information";
+      case 204:
+        return "No Content";
+      case 205:
+        return "Reset Content";
+      case 206:
+        return "Partial Content";
+      case 300:
+        return "Multiple Choices";
+      case 301:
+        return "Moved Permanently";
+      case 302:
+        return "Found";
+      case 303:
+        return "See Other";
+      case 304:
+        return "Not Modified";
+      case 307:
+        return "Temporary Redirect";
+      case 308:
+        return "Permanent Redirect";
+      case 400:
+        return "Bad Request";
+      case 401:
+        return "Unauthorized";
+      case 403:
+        return "Forbidden";
+      case 404:
+        return "Not Found";
+      case 405:
+        return "Method Not Allowed";
+      case 406:
+        return "Not Acceptable";
+      case 408:
+        return "Request Timeout";
+      case 409:
+        return "Conflict";
+      case 410:
+        return "Gone";
+      case 411:
+        return "Length Required";
+      case 412:
+        return "Precondition Failed";
+      case 413:
+        return "Payload Too Large";
+      case 414:
+        return "URI Too Long";
+      case 415:
+        return "Unsupported Media Type";
+      case 422:
+        return "Unprocessable Entity";
+      case 425:
+        return "Too Early";
+      case 426:
+        return "Upgrade Required";
+      case 429:
+        return "Too Many Requests";
+      case 500:
+        return "Internal Server Error";
+      case 501:
+        return "Not Implemented";
+      case 502:
+        return "Bad Gateway";
+      case 503:
+        return "Service Unavailable";
+      case 504:
+        return "Gateway Timeout";
+      case 505:
+        return "HTTP Version Not Supported";
+      default:
+        return "Unknown";
+      }
     }
+
+  private:
+    int status_{200};
+    std::string version_{"HTTP/1.1"};
+    std::string reason_{};
+    std::string body_{};
+    HeaderMap headers_{};
+    bool close_{false};
   };
 
 } // namespace vix::vhttp

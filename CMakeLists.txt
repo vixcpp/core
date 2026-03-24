@@ -1,3 +1,4 @@
+# ====================================================================
 #  @file CMakeLists.cpp
 #  @author Gaspard Kirira
 #
@@ -20,12 +21,13 @@
 #
 # Public Dependencies:
 #   - vix::utils
+#   - vix::async
 #   - vix::json  (resolved dynamically among common aliases)
 #
 # Additional Dependencies in STATIC mode:
-#   - Boost::filesystem, Boost::system
 #   - OpenSSL::SSL, OpenSSL::Crypto (optional via VIX_CORE_WITH_OPENSSL)
-#   - MySQL client (optional via VIX_CORE_WITH_MYSQL; detected as mysqlcppconn8 or mysqlcppconn)
+#   - MySQL client (optional via VIX_CORE_WITH_MYSQL; detected as
+#     mysqlcppconn8 or mysqlcppconn)
 #
 # Options:
 #   - VIX_CORE_WITH_OPENSSL : Enable TLS (default ON)
@@ -42,7 +44,9 @@
 # Notes:
 #   - This file is designed to be included from a superproject (preferred).
 #   - Avoids per-module export-sets; relies on the umbrella’s `VixTargets`.
-#   - The JSON backend target is selected dynamically (vix::json / vix::json / vix_json).
+#   - The JSON backend target is selected dynamically (vix::json / vix_json).
+#   - Boost is no longer required here; async/networking is provided by
+#     vix::async.
 # ====================================================================
 
 cmake_minimum_required(VERSION 3.20)
@@ -57,38 +61,71 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(VIX_CORE_WITH_OPENSSL "Enable HTTPS/TLS support using OpenSSL" ON)
 option(VIX_CORE_WITH_MYSQL   "Enable MySQL client linkage" OFF)
-option(VIX_BENCH_MODE "Enable ultra-minimal /bench route for benchmarking" OFF)
+option(VIX_CORE_FETCH_UTILS  "Auto-resolve vix::utils if missing" ON)
+option(VIX_CORE_FETCH_ASYNC  "Auto-resolve vix::async if missing" ON)
+option(VIX_BENCH_MODE        "Enable ultra-minimal /bench route for benchmarking" OFF)
 
 # Sources discovery
 # If any .cpp exists under src/, we switch to STATIC build mode.
 file(GLOB_RECURSE CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
-# Utils dependency
-option(VIX_CORE_FETCH_UTILS "Auto-fetch vix::utils if missing" ON)
-
-if (NOT TARGET vix::utils)
+# --------------------------------------------------------------------
+# utils dependency
+# --------------------------------------------------------------------
+if (NOT TARGET vix::utils AND NOT TARGET vix_utils)
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../utils/CMakeLists.txt")
     message(STATUS "[core] Adding utils from umbrella: ../utils")
     add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../utils" "utils")
   elseif (VIX_CORE_FETCH_UTILS)
-    include(FetchContent)
-    message(STATUS "[core] Fetching vix::utils via FetchContent")
-    FetchContent_Declare(vix_utils
-      GIT_REPOSITORY https://github.com/vixcpp/utils.git
-      GIT_TAG       dev
-    )
-    FetchContent_MakeAvailable(vix_utils)
-  else()
-    message(FATAL_ERROR "vix::utils not found. Enable VIX_CORE_FETCH_UTILS=ON or provide the target before core.")
+    find_package(vix_utils CONFIG QUIET)
+    find_package(utils CONFIG QUIET)
   endif()
 endif()
 
-set(VIX_UTILS_TARGET vix::utils)
-if (NOT TARGET ${VIX_UTILS_TARGET} AND TARGET vix::utils)
+set(VIX_UTILS_TARGET "")
+if (TARGET vix::utils)
   set(VIX_UTILS_TARGET vix::utils)
+elseif (TARGET vix_utils)
+  set(VIX_UTILS_TARGET vix_utils)
 endif()
 
+if (NOT VIX_UTILS_TARGET)
+  message(FATAL_ERROR
+    "vix::utils not found.\n"
+    "Provide ../utils in the umbrella build, or install/export the utils package."
+  )
+endif()
+
+# --------------------------------------------------------------------
+# async dependency
+# --------------------------------------------------------------------
+if (NOT TARGET vix::async AND NOT TARGET vix_async)
+  if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../async/CMakeLists.txt")
+    message(STATUS "[core] Adding async from umbrella: ../async")
+    add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../async" "async")
+  elseif (VIX_CORE_FETCH_ASYNC)
+    find_package(vix_async CONFIG QUIET)
+    find_package(async CONFIG QUIET)
+  endif()
+endif()
+
+set(VIX_ASYNC_TARGET "")
+if (TARGET vix::async)
+  set(VIX_ASYNC_TARGET vix::async)
+elseif (TARGET vix_async)
+  set(VIX_ASYNC_TARGET vix_async)
+endif()
+
+if (NOT VIX_ASYNC_TARGET)
+  message(FATAL_ERROR
+    "vix::async not found.\n"
+    "Provide ../async in the umbrella build, or install/export the async package."
+  )
+endif()
+
+# --------------------------------------------------------------------
 # JSON linkage policy
+# --------------------------------------------------------------------
 set(VIX_CORE_WITH_JSON "AUTO" CACHE STRING "Link JSON backend (AUTO|ON|OFF)")
 set_property(CACHE VIX_CORE_WITH_JSON PROPERTY STRINGS AUTO ON OFF)
 
@@ -99,7 +136,11 @@ function(vix_core_try_link_json onto link_scope)
     return()
   endif()
 
-  set(_json_candidates vix::json vix_json)
+  set(_json_candidates
+    vix::json
+    vix_json
+  )
+
   set(_json_found "")
   foreach(t IN LISTS _json_candidates)
     if (TARGET ${t})
@@ -113,7 +154,9 @@ function(vix_core_try_link_json onto link_scope)
     target_link_libraries(${onto} ${link_scope} ${_json_found})
   else()
     if (VIX_CORE_WITH_JSON STREQUAL "ON")
-      message(FATAL_ERROR "JSON required but not found (expected: vix::json, vix::json, or vix_json).")
+      message(FATAL_ERROR
+        "JSON required but not found (expected: vix::json or vix_json)."
+      )
     else()
       message(STATUS "[core] No JSON backend detected; building without JSON.")
       target_compile_definitions(${onto} ${link_scope} VIX_CORE_NO_JSON=1)
@@ -121,91 +164,26 @@ function(vix_core_try_link_json onto link_scope)
   endif()
 endfunction()
 
-# Boost (required because public headers include Boost.Beast)
-set(VIX_CORE_WITH_BOOST "ON" CACHE STRING "Use Boost (ON|OFF)")
-set_property(CACHE VIX_CORE_WITH_BOOST PROPERTY STRINGS ON OFF)
-
-if (VIX_CORE_WITH_BOOST STREQUAL "ON")
-  # Prefer CONFIG packages when available (Homebrew), then fallback.
-  set(Boost_NO_WARN_NEW_VERSIONS ON)
-
-  find_package(Boost CONFIG QUIET)
-
-  if (Boost_FOUND)
-    message(STATUS "[core] Boost found (CONFIG)")
-    # Homebrew may not provide Boost::system as a CMake package component.
-    # We will link system via the library file later if needed.
-  else()
-    message(STATUS "[core] Boost not found via CONFIG, using FindBoost")
-    find_package(Boost REQUIRED COMPONENTS system)
-  endif()
-
-  # ⚠️ macOS: detect mixed Homebrew Boost installs
-  if (APPLE)
-    if (EXISTS "/usr/local/include/boost" AND EXISTS "/opt/homebrew/include/boost")
-      message(WARNING
-        "[core] Both /usr/local and /opt/homebrew Boost detected. "
-        "Prefer one to avoid mixed includes.")
-    endif()
-  endif()
-
-  # Normalize headers target across toolchains
-  if (TARGET Boost::headers AND NOT TARGET Boost::boost)
-    add_library(Boost::boost ALIAS Boost::headers)
-  endif()
-
-  # Collect Boost include dirs (works for both CONFIG and FindBoost)
-  set(_vix_boost_includes "")
-
-  # FindBoost path
-  if (Boost_INCLUDE_DIRS)
-    list(APPEND _vix_boost_includes ${Boost_INCLUDE_DIRS})
-  endif()
-
-  # CONFIG target path
-  if (TARGET Boost::boost)
-    get_target_property(_boost_target_includes Boost::boost INTERFACE_INCLUDE_DIRECTORIES)
-    if (_boost_target_includes)
-      list(APPEND _vix_boost_includes ${_boost_target_includes})
-    endif()
-  endif()
-
-  list(REMOVE_DUPLICATES _vix_boost_includes)
-
-  function(vix_core_link_boost_system onto link_scope)
-    if (TARGET Boost::system)
-      target_link_libraries(${onto} ${link_scope} Boost::system)
-      return()
-    endif()
-
-    # Some Boost installs (especially on macOS/Homebrew) do not ship libboost_system.
-    # In that case Boost.System is header-only and must not be forced at link time.
-    find_library(_VIX_BOOST_SYSTEM_LIB
-      NAMES boost_system
-      PATHS
-        /opt/homebrew/lib
-        /usr/local/lib
-      PATH_SUFFIXES lib
-    )
-
-    if (_VIX_BOOST_SYSTEM_LIB)
-      target_link_libraries(${onto} ${link_scope} ${_VIX_BOOST_SYSTEM_LIB})
-    else()
-      message(STATUS "[core] Boost.System library not found; assuming header-only (no link needed).")
-    endif()
-  endfunction()
-
-else()
-  message(FATAL_ERROR "[core] Boost is required because core public headers include Boost.Beast. Set VIX_CORE_WITH_BOOST=ON.")
-endif()
-
 # ============================== STATIC ===============================
 if (CORE_SOURCES)
   message(STATUS "[core] Building STATIC library with detected sources.")
 
   add_library(vix_core STATIC ${CORE_SOURCES})
   add_library(vix::core ALIAS vix_core)
+
   target_compile_features(vix_core PUBLIC cxx_std_20)
+
+  target_include_directories(vix_core
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+  )
+
+  target_link_libraries(vix_core
+    PUBLIC
+      ${VIX_UTILS_TARGET}
+      ${VIX_ASYNC_TARGET}
+  )
 
   # OpenSSL (optional)
   if (VIX_CORE_WITH_OPENSSL)
@@ -225,34 +203,13 @@ if (CORE_SOURCES)
   if (TARGET vix_warnings)
     message(STATUS "[core] vix_warnings detected (from umbrella)")
     target_link_libraries(vix_core PUBLIC vix_warnings)
+
     if (VIX_ENABLE_SANITIZERS AND TARGET vix_sanitizers)
       target_link_libraries(vix_core INTERFACE vix_sanitizers)
     endif()
-
   else()
     message(STATUS "[core] vix_warnings not found (building core standalone)")
   endif()
-
-  target_include_directories(vix_core
-    PUBLIC
-      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-  )
-
-  target_link_libraries(vix_core
-    PUBLIC
-      ${VIX_UTILS_TARGET}
-  )
-
-  target_link_libraries(vix_core PUBLIC Boost::boost)
-
-  # Treat Boost headers as SYSTEM (avoid third-party warnings)
-  if (_vix_boost_includes)
-    target_include_directories(vix_core SYSTEM PUBLIC ${_vix_boost_includes})
-  endif()
-
-
-  vix_core_link_boost_system(vix_core PUBLIC)
 
   vix_core_try_link_json(vix_core PUBLIC)
 
@@ -267,7 +224,9 @@ if (CORE_SOURCES)
         target_link_libraries(vix_core PRIVATE ${MYSQLCPP_CONN_LIB})
         target_compile_definitions(vix_core PUBLIC VIX_CORE_WITH_MYSQL=1)
       else()
-        message(FATAL_ERROR "MySQL requested but neither mysqlcppconn8 nor mysqlcppconn found.")
+        message(FATAL_ERROR
+          "MySQL requested but neither mysqlcppconn8 nor mysqlcppconn found."
+        )
       endif()
     endif()
   else()
@@ -293,8 +252,9 @@ if (CORE_SOURCES)
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   )
+
   install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-          FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h")
+    FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h")
 
 # ============================ HEADER-ONLY ============================
 else()
@@ -302,6 +262,7 @@ else()
 
   add_library(vix_core INTERFACE)
   add_library(vix::core ALIAS vix_core)
+
   target_compile_features(vix_core INTERFACE cxx_std_20)
 
   target_include_directories(vix_core INTERFACE
@@ -311,16 +272,8 @@ else()
 
   target_link_libraries(vix_core INTERFACE
     ${VIX_UTILS_TARGET}
+    ${VIX_ASYNC_TARGET}
   )
-
-  target_link_libraries(vix_core INTERFACE Boost::boost)
-
-  # Treat Boost headers as SYSTEM to avoid third-party warnings breaking -Werror/-Wsign-conversion.
-  if (_vix_boost_includes)
-    target_include_directories(vix_core SYSTEM INTERFACE ${_vix_boost_includes})
-  endif()
-
-  vix_core_link_boost_system(vix_core INTERFACE)
 
   if (VIX_ENABLE_SANITIZERS AND TARGET vix_sanitizers)
     target_link_libraries(vix_core INTERFACE vix_sanitizers)
@@ -328,17 +281,23 @@ else()
 
   vix_core_try_link_json(vix_core INTERFACE)
 
-  target_compile_definitions(vix_core INTERFACE VIX_CORE_WITH_MYSQL=0)
+  target_compile_definitions(vix_core INTERFACE
+    VIX_CORE_WITH_MYSQL=0
+    VIX_CORE_HAS_OPENSSL=0
+  )
 
   install(TARGETS vix_core
     EXPORT VixTargets
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   )
+
   install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-          FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h")
+    FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h")
 endif()
 
-# ----------------------------- Tests ---------------------------------
+# --------------------------------------------------------------------
+# Tests
+# --------------------------------------------------------------------
 option(VIX_CORE_BUILD_TESTS "Build core module tests" OFF)
 
 if (VIX_CORE_BUILD_TESTS)
@@ -347,7 +306,9 @@ if (VIX_CORE_BUILD_TESTS)
   add_subdirectory(tests)
 endif()
 
-# ----------------------------- Summary -------------------------------
+# --------------------------------------------------------------------
+# Summary
+# --------------------------------------------------------------------
 message(STATUS "------------------------------------------------------")
 message(STATUS "vix::core configured (${PROJECT_VERSION})")
 if (CORE_SOURCES)
@@ -359,7 +320,8 @@ message(STATUS "OpenSSL enabled: ${VIX_CORE_WITH_OPENSSL}")
 message(STATUS "MySQL linkage:   ${VIX_CORE_WITH_MYSQL}")
 message(STATUS "JSON policy:     ${VIX_CORE_WITH_JSON}")
 message(STATUS "Utils target:    ${VIX_UTILS_TARGET}")
-message(STATUS "Include dir: ${CMAKE_CURRENT_SOURCE_DIR}/include (for <vix/...>)")
-message(STATUS "Sanitizers (inherited): ${VIX_ENABLE_SANITIZERS}")
-message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "Async target:    ${VIX_ASYNC_TARGET}")
+message(STATUS "Include dir:     ${CMAKE_CURRENT_SOURCE_DIR}/include (for <vix/...>)")
+message(STATUS "Sanitizers:      ${VIX_ENABLE_SANITIZERS}")
+message(STATUS "Build type:      ${CMAKE_BUILD_TYPE}")
 message(STATUS "------------------------------------------------------")

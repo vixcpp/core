@@ -25,12 +25,12 @@
 #include <utility>
 #include <vector>
 
-#include <boost/beast/http.hpp>
-
 #include <vix/config/Config.hpp>
 #include <vix/executor/RuntimeExecutor.hpp>
 #include <vix/http/RequestHandler.hpp>
+#include <vix/http/ResponseWrapper.hpp>
 #include <vix/router/Router.hpp>
+#include <vix/router/RouteOptions.hpp>
 #include <vix/server/HTTPServer.hpp>
 #include <vix/utils/Logger.hpp>
 #include <vix/utils/ServerPrettyLogs.hpp>
@@ -42,8 +42,6 @@ namespace vix::router
 
 namespace vix
 {
-  namespace http = boost::beast::http;
-
   using Logger = vix::utils::Logger;
 
   /**
@@ -176,7 +174,7 @@ namespace vix
     template <typename Handler>
     void get(const std::string &path, Handler handler)
     {
-      add_route(http::verb::get, path, std::move(handler));
+      add_route("GET", path, std::move(handler));
     }
 
     /**
@@ -189,7 +187,7 @@ namespace vix
     template <typename Handler>
     void post(const std::string &path, Handler handler)
     {
-      add_route(http::verb::post, path, std::move(handler));
+      add_route("POST", path, std::move(handler));
     }
 
     /**
@@ -202,7 +200,7 @@ namespace vix
     template <typename Handler>
     void put(const std::string &path, Handler handler)
     {
-      add_route(http::verb::put, path, std::move(handler));
+      add_route("PUT", path, std::move(handler));
     }
 
     /**
@@ -215,7 +213,7 @@ namespace vix
     template <typename Handler>
     void patch(const std::string &path, Handler handler)
     {
-      add_route(http::verb::patch, path, std::move(handler));
+      add_route("PATCH", path, std::move(handler));
     }
 
     /**
@@ -228,7 +226,7 @@ namespace vix
     template <typename Handler>
     void del(const std::string &path, Handler handler)
     {
-      add_route(http::verb::delete_, path, std::move(handler));
+      add_route("DELETE", path, std::move(handler));
     }
 
     /**
@@ -241,7 +239,7 @@ namespace vix
     template <typename Handler>
     void head(const std::string &path, Handler handler)
     {
-      add_route(http::verb::head, path, std::move(handler));
+      add_route("HEAD", path, std::move(handler));
     }
 
     /**
@@ -254,7 +252,7 @@ namespace vix
     template <typename Handler>
     void options(const std::string &path, Handler handler)
     {
-      add_route(http::verb::options, path, std::move(handler));
+      add_route("OPTIONS", path, std::move(handler));
     }
 
     /**
@@ -270,7 +268,7 @@ namespace vix
     template <typename Handler>
     void get_heavy(const std::string &path, Handler handler)
     {
-      add_route(http::verb::get, path, std::move(handler), vix::router::RouteOptions{.heavy = true});
+      add_route("GET", path, std::move(handler), vix::router::RouteOptions{.heavy = true});
     }
 
     /**
@@ -283,7 +281,7 @@ namespace vix
     template <typename Handler>
     void post_heavy(const std::string &path, Handler handler)
     {
-      add_route(http::verb::post, path, std::move(handler), vix::router::RouteOptions{.heavy = true});
+      add_route("POST", path, std::move(handler), vix::router::RouteOptions{.heavy = true});
     }
 
     /**
@@ -689,15 +687,9 @@ namespace vix
       Middleware mw;
     };
 
-    using RawRequestT = vix::vhttp::RawRequest;
-
     template <class H>
     static constexpr bool is_facade_handler_v =
         std::is_invocable_v<H &, vix::vhttp::Request &, vix::vhttp::ResponseWrapper &>;
-
-    template <class H>
-    static constexpr bool is_raw_handler_v =
-        std::is_invocable_v<H &, const RawRequestT &, vix::vhttp::ResponseWrapper &>;
 
     /**
      * @brief Registers a route using default route options.
@@ -708,7 +700,7 @@ namespace vix
      * @param handler Route handler.
      */
     template <typename Handler>
-    void add_route(http::verb method, const std::string &path, Handler handler)
+    void add_route(const std::string &method, const std::string &path, Handler handler)
     {
       add_route(method, path, std::move(handler), vix::router::RouteOptions{});
     }
@@ -718,7 +710,6 @@ namespace vix
      *
      * Supported handlers are:
      * - (vix::vhttp::Request&, vix::vhttp::ResponseWrapper&)
-     * - (const vix::vhttp::RawRequest&, vix::vhttp::ResponseWrapper&)
      *
      * @tparam Handler Route handler type.
      * @param method HTTP method.
@@ -727,7 +718,7 @@ namespace vix
      * @param opt Route options.
      */
     template <typename Handler>
-    void add_route(http::verb method,
+    void add_route(const std::string &method,
                    const std::string &path,
                    Handler handler,
                    vix::router::RouteOptions opt)
@@ -735,9 +726,8 @@ namespace vix
       if (!router_)
         log().throwError("Router is not initialized in App");
 
-      static_assert(is_facade_handler_v<Handler> || is_raw_handler_v<Handler>,
-                    "Invalid handler: expected (vix::vhttp::Request&, ResponseWrapper&) "
-                    "or (const vix::vhttp::RawRequest&, ResponseWrapper&)");
+      static_assert(is_facade_handler_v<Handler>,
+                    "Invalid handler: expected (vix::vhttp::Request&, ResponseWrapper&)");
 
       auto chain = collect_middlewares_for_(path);
       auto final = std::move(handler);
@@ -751,38 +741,20 @@ namespace vix
           auto should_auto_send = [&]() -> bool
           {
             return res.res.body().empty() &&
-                   res.res.find(http::field::content_length) == res.res.end();
+                   !res.res.has_header("Content-Length");
           };
 
-          if constexpr (is_facade_handler_v<decltype(final)>)
-          {
-            using Ret = std::invoke_result_t<decltype(final), vix::vhttp::Request &, vix::vhttp::ResponseWrapper &>;
+          using Ret = std::invoke_result_t<decltype(final), vix::vhttp::Request &, vix::vhttp::ResponseWrapper &>;
 
-            if constexpr (std::is_void_v<Ret>)
-            {
-              final(req, res);
-            }
-            else
-            {
-              auto out = final(req, res);
-              if (should_auto_send())
-                res.send(out);
-            }
+          if constexpr (std::is_void_v<Ret>)
+          {
+            final(req, res);
           }
-          else if constexpr (is_raw_handler_v<decltype(final)>)
+          else
           {
-            using Ret = std::invoke_result_t<decltype(final), const RawRequestT &, vix::vhttp::ResponseWrapper &>;
-
-            if constexpr (std::is_void_v<Ret>)
-            {
-              final(req.raw(), res);
-            }
-            else
-            {
-              auto out = final(req.raw(), res);
-              if (should_auto_send())
-                res.send(out);
-            }
+            auto out = final(req, res);
+            if (should_auto_send())
+              res.send(out);
           }
         };
 
@@ -794,7 +766,7 @@ namespace vix
 
       router_->add_route(method, path, request_handler, opt);
 
-      if (method != http::verb::options)
+      if (method != "OPTIONS")
       {
         ensure_options_route_for_path_(path);
       }
@@ -877,7 +849,7 @@ namespace vix
       if (!router_)
         return;
 
-      if (router_->has_route(http::verb::options, path))
+      if (router_->has_route("OPTIONS", path))
         return;
 
       auto chain = collect_middlewares_for_(path);
@@ -888,11 +860,11 @@ namespace vix
       {
         std::function<void()> final_handler = [&]()
         {
-          if (res.res.result() == http::status::unknown && res.res.body().empty())
+          if (res.res.status() == 0 && res.res.body().empty())
           {
             res.status(204).send();
           }
-          else if (res.res.result() == http::status::unknown)
+          else if (res.res.status() == 0)
           {
             res.send();
           }
@@ -904,7 +876,7 @@ namespace vix
       using Adapter = vix::vhttp::RequestHandler<decltype(wrapped)>;
       auto request_handler = std::make_shared<Adapter>(path, std::move(wrapped));
 
-      router_->add_route(http::verb::options, path, request_handler, vix::router::RouteOptions{});
+      router_->add_route("OPTIONS", path, request_handler, vix::router::RouteOptions{});
     }
 
   private:

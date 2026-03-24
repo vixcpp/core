@@ -22,9 +22,9 @@
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
+#include <variant>
+#include <memory>
 
-#include <boost/beast/core/string.hpp>
-#include <boost/beast/http.hpp>
 #include <nlohmann/json.hpp>
 
 #include <vix/http/Response.hpp>
@@ -33,69 +33,74 @@
 
 namespace vix::vhttp
 {
-  namespace http = boost::beast::http;
   using OrderedJson = nlohmann::ordered_json;
 
   inline nlohmann::json token_to_nlohmann(const vix::json::token &t);
   inline nlohmann::json kvs_to_nlohmann(const vix::json::kvs &list);
 
-  /** @brief Write an ordered JSON response into a Beast string response with the given status. */
+  /** @brief Write an ordered JSON response into a native Vix response with the given status. */
   inline void ordered_json_response(
-      http::response<http::string_body> &res,
+      Response &res,
       const OrderedJson &j,
-      http::status status_code = http::status::ok)
+      int status_code = OK)
   {
-    res.result(status_code);
-    res.body() = j.dump();
-    res.set(http::field::content_type, "application/json");
-    res.prepare_payload();
+    res.set_status(normalize_status(status_code));
+    res.set_header("Content-Type", "application/json; charset=utf-8");
+    res.set_body(j.dump());
   }
 
   /** @brief Convert a vix::json token into nlohmann::json. */
   inline nlohmann::json token_to_nlohmann(const vix::json::token &t)
   {
     nlohmann::json j = nullptr;
-    std::visit([&](auto &&val)
-               {
-                 using T = std::decay_t<decltype(val)>;
-                 if constexpr (std::is_same_v<T, std::monostate>)
-                 {
-                   j = nullptr;
-                 }
-                 else if constexpr (std::is_same_v<T, bool> ||
-                                    std::is_same_v<T, long long> ||
-                                    std::is_same_v<T, double> ||
-                                    std::is_same_v<T, std::string>)
-                 {
-                   j = val;
-                 }
-                 else if constexpr (std::is_same_v<T, std::shared_ptr<vix::json::array_t>>)
-                 {
-                   if (!val)
-                   {
-                     j = nullptr;
-                     return;
-                   }
-                   j = nlohmann::json::array();
-                   for (const auto &el : val->elems)
-                   {
-                     j.push_back(token_to_nlohmann(el));
-                   }
-                 }
-                 else if constexpr (std::is_same_v<T, std::shared_ptr<vix::json::kvs>>)
-                 {
-                   if (!val)
-                   {
-                     j = nullptr;
-                     return;
-                   }
-                   j = kvs_to_nlohmann(*val);
-                 }
-                 else
-                 {
-                   j = nullptr;
-                 } },
-               t.v);
+
+    std::visit(
+        [&](auto &&val)
+        {
+          using T = std::decay_t<decltype(val)>;
+
+          if constexpr (std::is_same_v<T, std::monostate>)
+          {
+            j = nullptr;
+          }
+          else if constexpr (std::is_same_v<T, bool> ||
+                             std::is_same_v<T, long long> ||
+                             std::is_same_v<T, double> ||
+                             std::is_same_v<T, std::string>)
+          {
+            j = val;
+          }
+          else if constexpr (std::is_same_v<T, std::shared_ptr<vix::json::array_t>>)
+          {
+            if (!val)
+            {
+              j = nullptr;
+              return;
+            }
+
+            j = nlohmann::json::array();
+            for (const auto &el : val->elems)
+            {
+              j.push_back(token_to_nlohmann(el));
+            }
+          }
+          else if constexpr (std::is_same_v<T, std::shared_ptr<vix::json::kvs>>)
+          {
+            if (!val)
+            {
+              j = nullptr;
+              return;
+            }
+
+            j = kvs_to_nlohmann(*val);
+          }
+          else
+          {
+            j = nullptr;
+          }
+        },
+        t.v);
+
     return j;
   }
 
@@ -117,19 +122,21 @@ namespace vix::vhttp
       const std::string &key = std::get<std::string>(k);
       obj[key] = token_to_nlohmann(v);
     }
+
     return obj;
   }
 
   /** @brief Lightweight response helper that sets status/headers and sends text, JSON, redirects, or static files. */
   struct ResponseWrapper
   {
-    http::response<http::string_body> &res;
+    Response &res;
 
-    /** @brief Wrap an existing Beast response and ensure a default status code. */
-    explicit ResponseWrapper(http::response<http::string_body> &r) noexcept : res(r)
+    /** @brief Wrap an existing native Vix response and ensure a default status code. */
+    explicit ResponseWrapper(Response &r) noexcept
+        : res(r)
     {
-      if (res.result() == http::status::unknown)
-        res.result(http::status::ok);
+      if (!is_valid_status(res.status()))
+        res.set_status(OK);
     }
 
     /** @brief Return a best-effort MIME type for a file extension (including leading dot). */
@@ -148,8 +155,7 @@ namespace vix::vhttp
           {".ico", "image/x-icon"},
           {".txt", "text/plain; charset=utf-8"},
           {".woff", "font/woff"},
-          {".woff2", "font/woff2"},
-      };
+          {".woff2", "font/woff2"}};
 
       auto it = m.find(std::string(ext));
       return it == m.end() ? "application/octet-stream" : it->second;
@@ -171,7 +177,8 @@ namespace vix::vhttp
       out.resize(static_cast<std::size_t>(n));
       if (n > 0)
         f.read(out.data(), n);
-      return true;
+
+      return f.good() || f.eof();
     }
 
     /** @brief Send a static file (auto index.html for directories) with basic path safety and MIME detection. */
@@ -181,7 +188,7 @@ namespace vix::vhttp
 
       const std::string s = p.lexically_normal().generic_string();
       if (s.find("..") != std::string::npos)
-        return status(400).text("Bad path");
+        return status(BAD_REQUEST).text("Bad path");
 
       std::error_code ec;
       if (std::filesystem::is_directory(p, ec))
@@ -190,17 +197,19 @@ namespace vix::vhttp
       }
 
       if (!std::filesystem::exists(p, ec) || !std::filesystem::is_regular_file(p, ec))
-        return status(404).text("Not Found");
+        return status(NOT_FOUND).text("Not Found");
 
       std::string body;
       if (!read_file_binary(p, body))
-        return status(500).text("File read error");
+        return status(INTERNAL_ERROR).text("File read error");
 
       std::string ext = p.extension().string();
       if (!ext.empty())
       {
         for (char &c : ext)
+        {
           c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
       }
 
       std::string mime = "application/octet-stream";
@@ -215,27 +224,26 @@ namespace vix::vhttp
       }
 
       type(mime);
-      res.set("X-Content-Type-Options", "nosniff");
+      header("X-Content-Type-Options", "nosniff");
 
-      if (!has_header(http::field::cache_control))
+      if (!has_header("Cache-Control"))
         header("Cache-Control", "public, max-age=3600");
 
-      res.body() = std::move(body);
-      res.prepare_payload();
+      res.set_body(std::move(body));
       return *this;
     }
 
     /** @brief Ensure the response has a valid status (defaults to 200 OK). */
     void ensure_status() noexcept
     {
-      if (res.result() == http::status::unknown)
-        res.result(http::status::ok);
+      if (!is_valid_status(res.status()))
+        res.set_status(OK);
     }
 
     /** @brief Return true if the response already contains the given header. */
-    bool has_header(http::field f) const
+    bool has_header(std::string_view key) const
     {
-      return res.find(f) != res.end();
+      return res.has_header(key);
     }
 
     /** @brief Return true if the response body is non-empty. */
@@ -244,117 +252,106 @@ namespace vix::vhttp
       return !res.body().empty();
     }
 
-    /** @brief Return a default message for a numeric status code (e.g. 404 -> "Not Found"). */
+    /** @brief Return a default message for a numeric status code (e.g. 404 -> "404 Not Found"). */
     static std::string default_status_message(int code)
     {
       return vix::vhttp::status_to_string(code);
     }
 
-    /** @brief Set the HTTP status code using Beast status enum. */
-    ResponseWrapper &status(http::status code) noexcept
-    {
-      res.result(code);
-      return *this;
-    }
-
-    /** @brief Alias for status(http::status). */
-    ResponseWrapper &set_status(http::status code) noexcept { return status(code); }
-
     /** @brief Set the HTTP status code using an integer in [100..599]. */
     ResponseWrapper &status(int code)
     {
-      if (code < 100 || code > 599)
-      {
 #ifndef NDEBUG
+      if (!is_valid_status(code))
+      {
         throw std::runtime_error(
             "Invalid HTTP status code: " + std::to_string(code) +
             ". Status code must be between 100 and 599.");
-#else
-        res.result(http::status::internal_server_error);
-        return *this;
-#endif
       }
-
-      res.result(vix::vhttp::to_status(code));
+#endif
+      res.set_status(normalize_status(code));
       return *this;
     }
 
     /** @brief Alias for status(int). */
-    ResponseWrapper &set_status(int code) { return status(code); }
+    ResponseWrapper &set_status(int code)
+    {
+      return status(code);
+    }
 
     /** @brief Set a compile-time status code constant. */
     template <int Code>
     ResponseWrapper &status_c() noexcept
     {
       static_assert(Code >= 100 && Code <= 599, "HTTP status code must be in [100..599]");
-      res.result(static_cast<http::status>(Code));
+      res.set_status(Code);
       return *this;
     }
 
     /** @brief Alias for status_c<Code>(). */
     template <int Code>
-    ResponseWrapper &set_status_c() noexcept { return status_c<Code>(); }
+    ResponseWrapper &set_status_c() noexcept
+    {
+      return status_c<Code>();
+    }
 
     /** @brief Set or replace a header. */
     ResponseWrapper &header(std::string_view key, std::string_view value)
     {
-      res.set(boost::beast::string_view{key.data(), key.size()},
-              boost::beast::string_view{value.data(), value.size()});
+      res.set_header(std::string(key), std::string(value));
       return *this;
     }
 
     /** @brief Alias for header(key, value). */
-    ResponseWrapper &set(std::string_view key, std::string_view value) { return header(key, value); }
+    ResponseWrapper &set(std::string_view key, std::string_view value)
+    {
+      return header(key, value);
+    }
 
     /** @brief Append a value to a header as a comma-separated list. */
     ResponseWrapper &append(std::string_view key, std::string_view value)
     {
-      boost::beast::string_view k{key.data(), key.size()};
-      boost::beast::string_view v{value.data(), value.size()};
-
-      auto it = res.find(k);
-      if (it == res.end())
+      std::string existing = res.header(key);
+      if (existing.empty())
       {
-        res.insert(k, v);
-        return *this;
+        return header(key, value);
       }
 
-      std::string combined = std::string(it->value());
-      if (!combined.empty())
-        combined += ", ";
-      combined.append(v.data(), v.size());
-
-      res.set(k, combined);
+      existing += ", ";
+      existing += value;
+      res.set_header(std::string(key), std::move(existing));
       return *this;
     }
 
     /** @brief Set the Content-Type header. */
     ResponseWrapper &type(std::string_view mime)
     {
-      res.set(http::field::content_type,
-              boost::beast::string_view{mime.data(), mime.size()});
+      res.set_header("Content-Type", std::string(mime));
       return *this;
     }
 
     /** @brief Alias for type(mime). */
-    ResponseWrapper &contentType(std::string_view mime) { return type(mime); }
+    ResponseWrapper &contentType(std::string_view mime)
+    {
+      return type(mime);
+    }
 
     /** @brief Send a 302 redirect to the given URL. */
     ResponseWrapper &redirect(std::string_view url)
     {
-      return redirect(http::status::found, url);
+      return redirect(FOUND, url);
     }
 
     /** @brief Send a redirect response with a specific status code (e.g. 301, 302, 307, 308). */
-    ResponseWrapper &redirect(http::status code, std::string_view url)
+    ResponseWrapper &redirect(int code, std::string_view url)
     {
       status(code);
       header("Location", url);
 
-      if (!has_header(http::field::content_type))
+      if (!has_header("Content-Type"))
       {
         type("text/html; charset=utf-8");
-        res.set("X-Content-Type-Options", "nosniff");
+        header("X-Content-Type-Options", "nosniff");
       }
 
       std::string body;
@@ -364,15 +361,8 @@ namespace vix::vhttp
       body += std::string(url);
       body += "</body></html>";
 
-      vix::vhttp::Response::text_response(res, body, res.result());
+      Response::text_response(res, body, res.status());
       return *this;
-    }
-
-    /** @brief Send a redirect response using an integer status code. */
-    ResponseWrapper &redirect(int code, std::string_view url)
-    {
-      status(code);
-      return redirect(res.result(), url);
     }
 
     /** @brief Send an empty response for no-content statuses or a default body for other statuses. */
@@ -380,9 +370,10 @@ namespace vix::vhttp
     {
       status(code);
 
-      const int s = static_cast<int>(res.result());
-      if (s == 204 || s == 304)
+      const int s = res.status();
+      if (s == NO_CONTENT || s == NOT_MODIFIED)
         return this->send();
+
       return send(default_status_message(s));
     }
 
@@ -391,17 +382,17 @@ namespace vix::vhttp
     {
       ensure_status();
 
-      const int s = static_cast<int>(res.result());
-      if (s == 204 || s == 304)
+      const int s = res.status();
+      if (s == NO_CONTENT || s == NOT_MODIFIED)
         return this->send();
 
-      if (!has_header(http::field::content_type))
+      if (!has_header("Content-Type"))
       {
         type("text/plain; charset=utf-8");
-        res.set("X-Content-Type-Options", "nosniff");
+        header("X-Content-Type-Options", "nosniff");
       }
 
-      vix::vhttp::Response::text_response(res, data, res.result());
+      Response::text_response(res, data, res.status());
       return *this;
     }
 
@@ -410,17 +401,17 @@ namespace vix::vhttp
     {
       ensure_status();
 
-      const int s = static_cast<int>(res.result());
-      if (s == 204 || s == 304)
+      const int s = res.status();
+      if (s == NO_CONTENT || s == NOT_MODIFIED)
         return this->send();
 
-      if (!has_header(http::field::content_type))
+      if (!has_header("Content-Type"))
       {
         type("application/json; charset=utf-8");
-        res.set("X-Content-Type-Options", "nosniff");
+        header("X-Content-Type-Options", "nosniff");
       }
 
-      vix::vhttp::Response::json_response(res, j, res.result());
+      Response::json_response(res, j, res.status());
       return *this;
     }
 
@@ -442,17 +433,17 @@ namespace vix::vhttp
     {
       ensure_status();
 
-      const int s = static_cast<int>(res.result());
-      if (s == 204 || s == 304)
+      const int s = res.status();
+      if (s == NO_CONTENT || s == NOT_MODIFIED)
         return this->send();
 
-      if (!has_header(http::field::content_type))
+      if (!has_header("Content-Type"))
       {
         type("application/json; charset=utf-8");
-        res.set("X-Content-Type-Options", "nosniff");
+        header("X-Content-Type-Options", "nosniff");
       }
 
-      vix::vhttp::ordered_json_response(res, j, res.result());
+      ordered_json_response(res, j, res.status());
       return *this;
     }
 
@@ -466,30 +457,29 @@ namespace vix::vhttp
     {
       ensure_status();
 
-      const int s = static_cast<int>(res.result());
-      if (s == 204 || s == 304)
+      const int s = res.status();
+      if (s == NO_CONTENT || s == NOT_MODIFIED)
         return this->send();
 
-      if (!has_header(http::field::content_type))
+      if (!has_header("Content-Type"))
       {
         type("application/json; charset=utf-8");
-        res.set("X-Content-Type-Options", "nosniff");
+        header("X-Content-Type-Options", "nosniff");
       }
 
-      vix::vhttp::Response::json_response(res, data, res.result());
+      Response::json_response(res, data, res.status());
       return *this;
     }
 
-    /** @brief Finalize the response by preparing the payload and ensuring a body when appropriate. */
+    /** @brief Finalize the response by ensuring a body when appropriate. */
     ResponseWrapper &send()
     {
       ensure_status();
 
-      const int s = static_cast<int>(res.result());
-      if (s == 204 || s == 304)
+      const int s = res.status();
+      if (s == NO_CONTENT || s == NOT_MODIFIED)
       {
-        res.body().clear();
-        res.prepare_payload();
+        res.set_body("");
         return *this;
       }
 
@@ -498,7 +488,6 @@ namespace vix::vhttp
         return text(default_status_message(s));
       }
 
-      res.prepare_payload();
       return *this;
     }
 
@@ -511,29 +500,50 @@ namespace vix::vhttp
     /** @brief Set the Location header (use with status(3xx) for redirects). */
     ResponseWrapper &location(std::string_view url)
     {
-      return header("location", url);
+      return header("Location", url);
     }
 
     /** @brief Send plain text (alias for text()). */
-    ResponseWrapper &send(std::string_view data) { return text(data); }
+    ResponseWrapper &send(std::string_view data)
+    {
+      return text(data);
+    }
 
     /** @brief Send plain text (null-safe). */
-    ResponseWrapper &send(const char *data) { return text(data ? std::string_view{data} : std::string_view{}); }
+    ResponseWrapper &send(const char *data)
+    {
+      return text(data ? std::string_view{data} : std::string_view{});
+    }
 
     /** @brief Send plain text from std::string. */
-    ResponseWrapper &send(const std::string &data) { return text(std::string_view{data}); }
+    ResponseWrapper &send(const std::string &data)
+    {
+      return text(std::string_view{data});
+    }
 
     /** @brief Send JSON (alias for json()). */
-    ResponseWrapper &send(const nlohmann::json &j) { return json(j); }
+    ResponseWrapper &send(const nlohmann::json &j)
+    {
+      return json(j);
+    }
 
     /** @brief Send JSON from vix::json key-value list. */
-    ResponseWrapper &send(const vix::json::kvs &kv) { return json(kv); }
+    ResponseWrapper &send(const vix::json::kvs &kv)
+    {
+      return json(kv);
+    }
 
     /** @brief Send JSON from initializer list of vix::json tokens. */
-    ResponseWrapper &send(std::initializer_list<vix::json::token> list) { return json(list); }
+    ResponseWrapper &send(std::initializer_list<vix::json::token> list)
+    {
+      return json(list);
+    }
 
     /** @brief Send ordered JSON (stable key order). */
-    ResponseWrapper &send(const OrderedJson &j) { return json_ordered(j); }
+    ResponseWrapper &send(const OrderedJson &j)
+    {
+      return json_ordered(j);
+    }
 
     /** @brief Send JSON from a custom type (must be supported by vix::vhttp::Response::json_response). */
     template <typename J>
@@ -564,43 +574,43 @@ namespace vix::vhttp
     }
 
     /** @brief Convenience: set status to 200 OK. */
-    ResponseWrapper &ok() { return status(http::status::ok); }
+    ResponseWrapper &ok() { return status(OK); }
 
     /** @brief Convenience: set status to 201 Created. */
-    ResponseWrapper &created() { return status(http::status::created); }
+    ResponseWrapper &created() { return status(CREATED); }
 
     /** @brief Convenience: set status to 202 Accepted. */
-    ResponseWrapper &accepted() { return status(http::status::accepted); }
+    ResponseWrapper &accepted() { return status(ACCEPTED); }
 
     /** @brief Convenience: set status to 204 No Content. */
-    ResponseWrapper &no_content() { return status(http::status::no_content); }
+    ResponseWrapper &no_content() { return status(NO_CONTENT); }
 
     /** @brief Convenience: set status to 400 Bad Request. */
-    ResponseWrapper &bad_request() { return status(http::status::bad_request); }
+    ResponseWrapper &bad_request() { return status(BAD_REQUEST); }
 
     /** @brief Convenience: set status to 401 Unauthorized. */
-    ResponseWrapper &unauthorized() { return status(http::status::unauthorized); }
+    ResponseWrapper &unauthorized() { return status(UNAUTHORIZED); }
 
     /** @brief Convenience: set status to 403 Forbidden. */
-    ResponseWrapper &forbidden() { return status(http::status::forbidden); }
+    ResponseWrapper &forbidden() { return status(FORBIDDEN); }
 
     /** @brief Convenience: set status to 404 Not Found. */
-    ResponseWrapper &not_found() { return status(http::status::not_found); }
+    ResponseWrapper &not_found() { return status(NOT_FOUND); }
 
     /** @brief Convenience: set status to 409 Conflict. */
-    ResponseWrapper &conflict() { return status(http::status::conflict); }
+    ResponseWrapper &conflict() { return status(CONFLICT); }
 
     /** @brief Convenience: set status to 500 Internal Server Error. */
-    ResponseWrapper &internal_error() { return status(http::status::internal_server_error); }
+    ResponseWrapper &internal_error() { return status(INTERNAL_ERROR); }
 
     /** @brief Convenience: set status to 501 Not Implemented. */
-    ResponseWrapper &not_implemented() { return status(http::status::not_implemented); }
+    ResponseWrapper &not_implemented() { return status(NOT_IMPLEMENTED); }
 
     /** @brief Convenience: set status to 502 Bad Gateway. */
-    ResponseWrapper &bad_gateway() { return status(http::status::bad_gateway); }
+    ResponseWrapper &bad_gateway() { return status(BAD_GATEWAY); }
 
     /** @brief Convenience: set status to 503 Service Unavailable. */
-    ResponseWrapper &service_unavailable() { return status(http::status::service_unavailable); }
+    ResponseWrapper &service_unavailable() { return status(SERVICE_UNAVAILABLE); }
   };
 
 } // namespace vix::vhttp

@@ -21,8 +21,6 @@
 #include <string_view>
 #include <utility>
 
-#include <boost/beast/http.hpp>
-
 #include <vix/http/IRequestHandler.hpp>
 #include <vix/http/RequestHandler.hpp>
 
@@ -35,8 +33,6 @@
 
 namespace vix::openapi
 {
-  namespace http = boost::beast::http;
-
   namespace detail
   {
     inline void send_bytes(vix::vhttp::ResponseWrapper &res,
@@ -105,7 +101,7 @@ namespace vix::openapi
           "200",
           "OpenAPI JSON");
 
-      router.add_route(http::verb::get,
+      router.add_route("GET",
                        "/openapi.json",
                        detail::as_handler(h),
                        vix::router::RouteOptions{},
@@ -132,7 +128,7 @@ namespace vix::openapi
           "200",
           "CSS");
 
-      router.add_route(http::verb::get,
+      router.add_route("GET",
                        "/docs/swagger-ui.css",
                        detail::as_handler(h),
                        vix::router::RouteOptions{},
@@ -159,7 +155,7 @@ namespace vix::openapi
           "200",
           "JavaScript");
 
-      router.add_route(http::verb::get,
+      router.add_route("GET",
                        "/docs/swagger-ui-bundle.js",
                        detail::as_handler(h),
                        vix::router::RouteOptions{},
@@ -185,7 +181,7 @@ namespace vix::openapi
           "200",
           "HTML page");
 
-      router.add_route(http::verb::get,
+      router.add_route("GET",
                        "/docs",
                        detail::as_handler(h),
                        vix::router::RouteOptions{},
@@ -202,7 +198,7 @@ namespace vix::openapi
           "200",
           "HTML page");
 
-      router.add_route(http::verb::get,
+      router.add_route("GET",
                        "/docs/",
                        detail::as_handler(h),
                        vix::router::RouteOptions{},
@@ -219,7 +215,7 @@ namespace vix::openapi
           "200",
           "HTML page");
 
-      router.add_route(http::verb::get,
+      router.add_route("GET",
                        "/docs/index.html",
                        detail::as_handler(h),
                        vix::router::RouteOptions{},

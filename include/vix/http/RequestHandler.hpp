@@ -13,22 +13,26 @@
 #define VIX_REQUEST_HANDLER_HPP
 
 #include <concepts>
+#include <exception>
+#include <memory>
+#include <string>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include <boost/beast/http.hpp>
 #include <nlohmann/json.hpp>
 
+#include <vix/async/core/task.hpp>
 #include <vix/http/IRequestHandler.hpp>
 #include <vix/http/Request.hpp>
 #include <vix/http/RequestState.hpp>
 #include <vix/http/Response.hpp>
 #include <vix/http/ResponseWrapper.hpp>
+#include <vix/http/Status.hpp>
 #include <vix/utils/Logger.hpp>
-#include <vix/utils/String.hpp>
 
 #ifdef _WIN32
 #ifdef ERROR
@@ -38,8 +42,7 @@
 
 namespace vix::vhttp
 {
-  namespace http = boost::beast::http;
-  using RawRequest = http::request<http::string_body>;
+  using vix::async::core::task;
 
   /** @brief Return the global Vix logger instance. */
   inline vix::utils::Logger &log()
@@ -90,18 +93,17 @@ namespace vix::vhttp
       const auto p = pSeg[i];
       const auto a = aSeg[i];
 
-      const bool isParam = (p.size() >= 3 && p.front() == '{' && p.back() == '}');
+      const bool is_param = (p.size() >= 3 && p.front() == '{' && p.back() == '}');
 
-      if (isParam)
+      if (is_param)
       {
         const auto name = p.substr(1, p.size() - 2);
         if (!name.empty())
           params.emplace(std::string(name), std::string(a));
       }
-      else
+      else if (p != a)
       {
-        if (p != a)
-          return {};
+        return {};
       }
     }
 
@@ -114,11 +116,10 @@ namespace vix::vhttp
   template <class T>
   using decay_t = std::decay_t<T>;
 
-  /** @brief True for types usable as HTTP status (integral or boost::beast::http::status). */
+  /** @brief True for integral HTTP status codes. */
   template <class T>
   concept HttpStatusLike =
-      std::is_integral_v<T> ||
-      std::is_same_v<T, http::status>;
+      std::is_integral_v<decay_t<T>>;
 
   /** @brief True if ResponseWrapper::send(value) is valid for the given type. */
   template <class T>
@@ -156,52 +157,30 @@ namespace vix::vhttp
       StatusPayloadTuple<T>;
 
   template <class H>
-  concept HandlerFacadeReqRes =
+  concept HandlerReqResVoid =
       std::is_void_v<invoke_result_t<H, Request &, ResponseWrapper &>>;
 
   template <class H>
-  concept HandlerFacadeReqResParams =
+  concept HandlerReqResParamsVoid =
       std::is_void_v<invoke_result_t<H, Request &, ResponseWrapper &, const Request::ParamMap &>>;
 
   template <class H>
-  concept HandlerRawReqRes =
-      std::is_void_v<invoke_result_t<H, const RawRequest &, ResponseWrapper &>>;
-
-  template <class H>
-  concept HandlerRawReqResParams =
-      std::is_void_v<invoke_result_t<H, const RawRequest &, ResponseWrapper &, const Request::ParamMap &>>;
-
-  template <class H>
-  concept HandlerFacadeReqResRet =
+  concept HandlerReqResRet =
       (!std::is_void_v<invoke_result_t<H, Request &, ResponseWrapper &>>) &&
       Returnable<invoke_result_t<H, Request &, ResponseWrapper &>>;
 
   template <class H>
-  concept HandlerFacadeReqResParamsRet =
+  concept HandlerReqResParamsRet =
       (!std::is_void_v<invoke_result_t<H, Request &, ResponseWrapper &, const Request::ParamMap &>>) &&
       Returnable<invoke_result_t<H, Request &, ResponseWrapper &, const Request::ParamMap &>>;
 
-  template <class H>
-  concept HandlerRawReqResRet =
-      (!std::is_void_v<invoke_result_t<H, const RawRequest &, ResponseWrapper &>>) &&
-      Returnable<invoke_result_t<H, const RawRequest &, ResponseWrapper &>>;
-
-  template <class H>
-  concept HandlerRawReqResParamsRet =
-      (!std::is_void_v<invoke_result_t<H, const RawRequest &, ResponseWrapper &, const Request::ParamMap &>>) &&
-      Returnable<invoke_result_t<H, const RawRequest &, ResponseWrapper &, const Request::ParamMap &>>;
-
-  /** @brief True for all supported handler signatures (facade/raw, optional params, void or returnable). */
+  /** @brief True for all supported native handler signatures. */
   template <class H>
   concept ValidHandler =
-      HandlerFacadeReqRes<H> ||
-      HandlerFacadeReqResParams<H> ||
-      HandlerRawReqRes<H> ||
-      HandlerRawReqResParams<H> ||
-      HandlerFacadeReqResRet<H> ||
-      HandlerFacadeReqResParamsRet<H> ||
-      HandlerRawReqResRet<H> ||
-      HandlerRawReqResParamsRet<H>;
+      HandlerReqResVoid<H> ||
+      HandlerReqResParamsVoid<H> ||
+      HandlerReqResRet<H> ||
+      HandlerReqResParamsRet<H>;
 
   /** @brief Build a simple HTML dev error page with route, method, and path for local debugging. */
   inline std::string make_dev_error_html(
@@ -227,150 +206,161 @@ namespace vix::vhttp
     return html;
   }
 
-  /** @brief Adapter that wraps a user handler and exposes a uniform IRequestHandler interface for the router/server. */
+  /** @brief Adapter that wraps a user handler and exposes a uniform native IRequestHandler interface for the router/server. */
   template <ValidHandler Handler>
-  class RequestHandler : public IRequestHandler
+  class RequestHandler final : public IRequestHandler
   {
     static_assert(
         ValidHandler<Handler>,
         "Invalid handler signature. Expected:\n"
         "  void (Request&, ResponseWrapper&)\n"
         "  void (Request&, ResponseWrapper&, const Request::ParamMap&)\n"
-        "  void (const RawRequest&, ResponseWrapper&)\n"
-        "  void (const RawRequest&, ResponseWrapper&, const Request::ParamMap&)\n"
-        "  or a returnable value (payload | pair(status,payload) | tuple(status,payload)).");
+        "  payload (sendable by ResponseWrapper)\n"
+        "  pair(status, payload)\n"
+        "  tuple(status, payload)");
 
   public:
     /** @brief Create a handler adapter for a route pattern and a user handler. */
     RequestHandler(std::string route_pattern, Handler handler)
-        : route_pattern_(std::move(route_pattern)), handler_(std::move(handler))
+        : route_pattern_(std::move(route_pattern)),
+          handler_(std::move(handler))
     {
       static_assert(sizeof(Handler) > 0, "Handler type must be complete here.");
     }
 
     /** @brief Execute the user handler and write the final HTTP response. */
-    void handle_request(const http::request<http::string_body> &rawReq,
-                        http::response<http::string_body> &res) override
+    task<void> handle_request(const Request &incoming_req, Response &res) override
     {
       ResponseWrapper wrapped{res};
 
-      std::string_view target(rawReq.target().data(), rawReq.target().size());
-      const auto qpos = target.find('?');
-      std::string_view path_only =
-          (qpos == std::string_view::npos) ? target : target.substr(0, qpos);
+      auto params = extract_params_from_path(route_pattern_, incoming_req.path());
+      auto state = incoming_req.state_ptr()
+                       ? std::const_pointer_cast<RequestState>(incoming_req.state_ptr())
+                       : std::make_shared<RequestState>();
 
-      auto params = extract_params_from_path(route_pattern_, path_only);
-      auto state = std::make_shared<vix::vhttp::RequestState>();
-      vix::vhttp::Request req(rawReq, std::move(params), std::move(state));
+      Request req(
+          incoming_req.method(),
+          incoming_req.target(),
+          incoming_req.headers(),
+          incoming_req.body(),
+          std::move(params),
+          std::move(state));
 
       try
       {
-        if constexpr (HandlerFacadeReqResParamsRet<Handler>)
+        if constexpr (HandlerReqResParamsRet<Handler>)
         {
           auto out = handler_(req, wrapped, req.params());
           maybe_auto_send(wrapped, res, std::move(out));
         }
-        else if constexpr (HandlerFacadeReqResRet<Handler>)
+        else if constexpr (HandlerReqResRet<Handler>)
         {
           auto out = handler_(req, wrapped);
           maybe_auto_send(wrapped, res, std::move(out));
         }
-        else if constexpr (HandlerRawReqResParamsRet<Handler>)
-        {
-          auto out = handler_(rawReq, wrapped, req.params());
-          maybe_auto_send(wrapped, res, std::move(out));
-        }
-        else if constexpr (HandlerRawReqResRet<Handler>)
-        {
-          auto out = handler_(rawReq, wrapped);
-          maybe_auto_send(wrapped, res, std::move(out));
-        }
-        else if constexpr (HandlerFacadeReqResParams<Handler>)
+        else if constexpr (HandlerReqResParamsVoid<Handler>)
         {
           handler_(req, wrapped, req.params());
         }
-        else if constexpr (HandlerFacadeReqRes<Handler>)
+        else if constexpr (HandlerReqResVoid<Handler>)
         {
           handler_(req, wrapped);
-        }
-        else if constexpr (HandlerRawReqResParams<Handler>)
-        {
-          handler_(rawReq, wrapped, req.params());
-        }
-        else if constexpr (HandlerRawReqRes<Handler>)
-        {
-          handler_(rawReq, wrapped);
         }
         else
         {
           static_assert(ValidHandler<Handler>, "Unsupported handler signature.");
         }
 
-        const bool keep_alive =
-            (rawReq[http::field::connection] == "keep-alive") ||
-            (rawReq.version() == 11 && rawReq[http::field::connection].empty());
-
-        res.set(http::field::connection, keep_alive ? "keep-alive" : "close");
-        res.prepare_payload();
+        finalize_response(req, res);
       }
       catch (const std::range_error &e)
       {
         log().log(vix::utils::Logger::Level::Error,
                   "Route '{}' threw range_error: {} (method={}, path={})",
-                  route_pattern_, e.what(),
-                  std::string(rawReq.method_string()), std::string(rawReq.target()));
+                  route_pattern_, e.what(), req.method(), req.path());
 
 #ifndef NDEBUG
-        res.result(http::status::internal_server_error);
-        res.set(http::field::content_type, "text/html; charset=utf-8");
-        res.set("X-Content-Type-Options", "nosniff");
-
-        const auto html = make_dev_error_html(
-            "RangeError", e.what(), route_pattern_,
-            std::string(rawReq.method_string()), std::string(rawReq.target()));
-        res.body() = html;
-        res.prepare_payload();
+        res.set_status(INTERNAL_ERROR);
+        res.set_header("Content-Type", "text/html; charset=utf-8");
+        res.set_header("X-Content-Type-Options", "nosniff");
+        res.set_body(make_dev_error_html(
+            "RangeError", e.what(), route_pattern_, req.method(), req.path()));
 #else
         nlohmann::json j{
             {"error", "Internal Server Error"},
             {"hint", "Invalid status code passed by handler. See server logs."},
             {"code", "E_INVALID_STATUS"}};
-        vix::vhttp::Response::json_response(res, j, http::status::internal_server_error);
-        res.prepare_payload();
+        Response::json_response(res, j, INTERNAL_ERROR);
 #endif
+        finalize_response(req, res);
       }
       catch (const std::exception &e)
       {
         log().log(vix::utils::Logger::Level::Error,
                   "Route '{}' threw exception: {} (method={}, path={})",
-                  route_pattern_, e.what(),
-                  std::string(rawReq.method_string()), std::string(rawReq.target()));
+                  route_pattern_, e.what(), req.method(), req.path());
 
 #ifndef NDEBUG
-        res.result(http::status::internal_server_error);
-        res.set(http::field::content_type, "text/html; charset=utf-8");
-        res.set("X-Content-Type-Options", "nosniff");
-
-        const auto html = make_dev_error_html(
-            "Error", e.what(), route_pattern_,
-            std::string(rawReq.method_string()), std::string(rawReq.target()));
-        res.body() = html;
-        res.prepare_payload();
+        res.set_status(INTERNAL_ERROR);
+        res.set_header("Content-Type", "text/html; charset=utf-8");
+        res.set_header("X-Content-Type-Options", "nosniff");
+        res.set_body(make_dev_error_html(
+            "Error", e.what(), route_pattern_, req.method(), req.path()));
 #else
-        vix::vhttp::Response::error_response(
-            res, http::status::internal_server_error, "Internal Server Error");
+        Response::error_response(res, INTERNAL_ERROR, "Internal Server Error");
 #endif
+        finalize_response(req, res);
       }
+
+      co_return;
     }
 
   private:
     std::string route_pattern_;
     Handler handler_;
 
+    static void finalize_response(const Request &req, Response &res)
+    {
+      if (res.status() == NO_CONTENT || res.status() == NOT_MODIFIED)
+      {
+        res.set_body("");
+      }
+
+      if (!res.has_header("Connection"))
+      {
+        const std::string connection = req.header("Connection");
+        if (!connection.empty())
+        {
+          res.set_header("Connection", connection);
+          res.set_should_close(connection == "close");
+        }
+        else
+        {
+          res.set_header("Connection", "keep-alive");
+          res.set_should_close(false);
+        }
+      }
+
+      if (!res.has_header("Content-Length"))
+      {
+        res.set_header("Content-Length", std::to_string(res.body().size()));
+      }
+
+      if (!res.has_header("Server"))
+      {
+        res.set_header("Server", "Vix.cpp");
+      }
+
+      if (!res.has_header("Date"))
+      {
+        res.set_header("Date", Response::http_date_now());
+      }
+    }
+
     template <class T>
     static void maybe_auto_send(
         ResponseWrapper &wrapped,
-        http::response<http::string_body> &res,
+        Response &res,
         T &&value)
     {
       if (!res.body().empty())
@@ -381,19 +371,28 @@ namespace vix::vhttp
       if constexpr (StatusPayloadPair<V>)
       {
         auto &&v = std::forward<T>(value);
+        wrapped.status(static_cast<int>(v.first));
 
-        if constexpr (std::is_same_v<typename V::first_type, http::status>)
-          wrapped.status(v.first);
-        else
-          wrapped.status(static_cast<int>(v.first));
-
-        if (res.result() == http::status::no_content)
+        if (res.status() == NO_CONTENT)
         {
           wrapped.send();
           return;
         }
 
         wrapped.send(v.second);
+      }
+      else if constexpr (StatusPayloadTuple<V>)
+      {
+        auto &&v = std::forward<T>(value);
+        wrapped.status(static_cast<int>(std::get<0>(v)));
+
+        if (res.status() == NO_CONTENT)
+        {
+          wrapped.send();
+          return;
+        }
+
+        wrapped.send(std::get<1>(v));
       }
       else
       {
