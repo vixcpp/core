@@ -2,66 +2,80 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
 ## [Unreleased]
+## [2.0.0] - 2026-03-24
+
+- Removed Boost.Beast completely
+- Introduced native HTTP layer (vix::vhttp)
+- New Request / Response / ResponseWrapper API
+- Async-first architecture powered by vix::async
+- Middleware system updated to new model
+
+Breaking changes:
+- Old Beast-based APIs removed
+- Middleware and tests updated to new HTTP layer
+
+Vix is now fully independent from Boost.
+
 ## [1.13.2] - 2026-01-03
 
 ### Added
-- 
+-
 
 ### Changed
-- 
+-
 
 ### Removed
-- 
+-
 
 ## [1.13.1] - 2026-01-02
 
 ### Added
-- 
+-
 
 ### Changed
-- 
+-
 
 ### Removed
-- 
+-
 
 ## [1.13.0] - 2026-01-02
 
 ### Added
-- 
+-
 
 ### Changed
-- 
+-
 
 ### Removed
-- 
+-
 
 ## [1.12.0] - 2025-12-25
 
 ### Added
-- 
+-
 
 ### Changed
-- 
+-
 
 ### Removed
-- 
+-
 
 ## [1.11.0] - 2025-12-24
 
 ### Added
-- 
+-
 
 ### Changed
-- 
+-
 
 ### Removed
-- 
+-
 
 
 ### Core v1.11.0
