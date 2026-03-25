@@ -13,6 +13,7 @@
  */
 #include <vix/server/HTTPServer.hpp>
 
+#include <cerrno>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -84,8 +85,9 @@ namespace vix::server
         io_threads_(),
         metrics_thread_(),
         stop_requested_(false),
-        startup_t0_(std::chrono::steady_clock::now()),
-        bound_port_(0)
+        accept_loop_started_(false),
+        bound_port_(0),
+        startup_t0_(std::chrono::steady_clock::now())
   {
     if (!executor_)
     {
@@ -155,10 +157,14 @@ namespace vix::server
       ep.host = "0.0.0.0";
       ep.port = port;
 
-      auto t = listener_->async_listen(ep);
-      std::move(t).start(io_context_->get_scheduler());
+      listener_->listen(ep);
 
       bound_port_.store(static_cast<int>(port), std::memory_order_relaxed);
+
+      log().log(Logger::Level::Info,
+                "[http] listener bound on {}:{}",
+                ep.host,
+                static_cast<unsigned int>(port));
     }
     catch (const std::exception &e)
     {
@@ -242,11 +248,10 @@ namespace vix::server
       init_listener(static_cast<unsigned short>(port));
     }
 
-    start_accept();
     start_io_threads();
+    start_accept();
     monitor_metrics();
   }
-
   void HTTPServer::start_accept()
   {
     if (stop_requested_.load(std::memory_order_acquire))
@@ -254,46 +259,111 @@ namespace vix::server
       return;
     }
 
+    bool expected = false;
+    if (!accept_loop_started_.compare_exchange_strong(
+            expected,
+            true,
+            std::memory_order_acq_rel,
+            std::memory_order_acquire))
+    {
+      return;
+    }
+
     spawn_detached(*io_context_, accept_loop());
+  }
+
+  bool HTTPServer::is_listener_open() const noexcept
+  {
+    return listener_ && listener_->is_open();
+  }
+
+  bool HTTPServer::should_silence_accept_error(const std::exception &e) const noexcept
+  {
+    if (stop_requested_.load(std::memory_order_acquire))
+    {
+      return true;
+    }
+
+    if (!is_listener_open())
+    {
+      return true;
+    }
+
+    const auto *se = dynamic_cast<const std::system_error *>(&e);
+    if (!se)
+    {
+      return false;
+    }
+
+    const auto code = se->code();
+
+    if (code == std::errc::operation_canceled ||
+        code == std::errc::bad_file_descriptor)
+    {
+      return true;
+    }
+
+#ifdef ECANCELED
+    if (code.value() == ECANCELED)
+    {
+      return true;
+    }
+#endif
+
+#ifdef EBADF
+    if (code.value() == EBADF)
+    {
+      return true;
+    }
+#endif
+
+    return false;
   }
 
   vix::async::core::task<void> HTTPServer::accept_loop()
   {
     while (!stop_requested_.load(std::memory_order_acquire))
     {
+      if (!is_listener_open())
+      {
+        break;
+      }
+
       try
       {
         auto stream = co_await listener_->async_accept();
 
         if (!stream)
         {
+          if (stop_requested_.load(std::memory_order_acquire) || !is_listener_open())
+          {
+            break;
+          }
           continue;
         }
 
         if (stop_requested_.load(std::memory_order_acquire))
         {
           close_stream(std::move(stream));
-          co_return;
+          break;
         }
 
         spawn_detached(*io_context_, handle_client(std::move(stream)));
       }
       catch (const std::exception &e)
       {
-        if (!stop_requested_.load(std::memory_order_acquire))
-        {
-          log().log(Logger::Level::Error,
-                    "Accept error: {}",
-                    e.what());
-        }
-
-        if (stop_requested_.load(std::memory_order_acquire))
+        if (should_silence_accept_error(e))
         {
           break;
         }
+
+        log().log(Logger::Level::Error,
+                  "Accept error: {}",
+                  e.what());
       }
     }
 
+    accept_loop_started_.store(false, std::memory_order_release);
     co_return;
   }
 
