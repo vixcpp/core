@@ -18,6 +18,8 @@
 #include <memory>
 #include <thread>
 #include <vector>
+#include <condition_variable>
+#include <mutex>
 
 #include <vix/async/core/io_context.hpp>
 #include <vix/async/core/task.hpp>
@@ -242,6 +244,26 @@ namespace vix::server
      * @brief Background thread used to monitor runtime metrics.
      */
     std::thread metrics_thread_;
+
+    /**
+     * @brief Mutex protecting the metrics monitor wait state.
+     */
+    std::mutex metrics_mutex_;
+
+    /**
+     * @brief Condition variable used to wake the metrics thread during shutdown.
+     */
+    std::condition_variable metrics_cv_;
+
+    /**
+     * @brief Protects the join phase against concurrent callers.
+     */
+    mutable std::mutex join_mutex_;
+
+    /**
+     * @brief Guards against running thread joins multiple times.
+     */
+    std::atomic<bool> threads_joined_{false};
 
     /**
      * @brief Indicates whether shutdown has been requested.

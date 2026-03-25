@@ -97,26 +97,7 @@ namespace vix::threadpool
 
     void setThreadAffinity(std::size_t id)
     {
-#ifdef __linux__
-      if (maxThreads <= 1)
-        return;
-
-      cpu_set_t cpuset;
-      CPU_ZERO(&cpuset);
-      const std::size_t hc = std::thread::hardware_concurrency();
-      const std::size_t denom = (hc == 0u) ? 1u : hc;
-      const std::size_t coreIndex = id % denom;
-      CPU_SET(coreIndex, &cpuset);
-      const int ret = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
-      if (ret != 0)
-      {
-        log().log(Logger::Level::Warn,
-                  "[ThreadPool][Thread {}] Failed to set thread affinity, error: {}",
-                  threadId, ret);
-      }
-#else
       (void)id;
-#endif
     }
 
     void createThread(std::size_t id)
