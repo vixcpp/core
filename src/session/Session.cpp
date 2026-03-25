@@ -28,6 +28,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <cerrno>
 
 #include <nlohmann/json.hpp>
 
@@ -238,6 +239,64 @@ namespace vix::session
     timer_cancel_.request_cancel();
   }
 
+  bool Session::is_normal_disconnect(const std::system_error &e) noexcept
+  {
+    const auto code = e.code();
+
+    if (code == std::errc::operation_canceled ||
+        code == std::errc::broken_pipe ||
+        code == std::errc::connection_reset ||
+        code == std::errc::connection_aborted ||
+        code == std::errc::timed_out)
+    {
+      return true;
+    }
+
+#ifdef ECANCELED
+    if (code.value() == ECANCELED)
+    {
+      return true;
+    }
+#endif
+
+#ifdef EPIPE
+    if (code.value() == EPIPE)
+    {
+      return true;
+    }
+#endif
+
+#ifdef ECONNRESET
+    if (code.value() == ECONNRESET)
+    {
+      return true;
+    }
+#endif
+
+#ifdef ECONNABORTED
+    if (code.value() == ECONNABORTED)
+    {
+      return true;
+    }
+#endif
+
+#ifdef ETIMEDOUT
+    if (code.value() == ETIMEDOUT)
+    {
+      return true;
+    }
+#endif
+
+    const std::string msg = to_lower(e.what());
+    if (msg.find("end of file") != std::string::npos ||
+        msg.find("eof") != std::string::npos)
+    {
+      return true;
+    }
+
+    return false;
+  }
+
   task<std::optional<vix::vhttp::Request>> Session::read_request()
   {
     if (!stream_ || !stream_->is_open())
@@ -283,6 +342,14 @@ namespace vix::session
     catch (const std::system_error &e)
     {
       cancel_timer();
+
+      if (is_normal_disconnect(e))
+      {
+        log().log(Logger::Level::Debug,
+                  "[session] client disconnected: {}",
+                  e.what());
+        co_return std::nullopt;
+      }
 
       log().log(Logger::Level::Error,
                 "[session] read/system error: {}",
