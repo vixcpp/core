@@ -152,7 +152,7 @@ namespace vix::server
     return ep;
   }
 
-  void HTTPServer::init_listener(unsigned short port)
+  vix::async::core::task<void> HTTPServer::init_listener(unsigned short port)
   {
     listener_ = vix::async::net::make_tcp_listener(*io_context_);
     if (!listener_)
@@ -166,7 +166,7 @@ namespace vix::server
       ep.host = "0.0.0.0";
       ep.port = port;
 
-      listener_->listen(ep);
+      co_await listener_->async_listen(ep);
 
       bound_port_.store(static_cast<int>(port), std::memory_order_relaxed);
 
@@ -183,6 +183,34 @@ namespace vix::server
                 e.what());
       throw;
     }
+
+    co_return;
+  }
+
+  vix::async::core::task<void> HTTPServer::start_server()
+  {
+    const int port = config_.getServerPort();
+
+    if ((port != 0 && port < 1024) || port > 65535)
+    {
+      log().log(Logger::Level::Error,
+                "Server port {} out of range (1024-65535)",
+                port);
+      throw std::invalid_argument("Invalid port number");
+    }
+
+    if (!listener_)
+    {
+      co_await init_listener(static_cast<unsigned short>(port));
+    }
+
+    if (stop_requested_.load(std::memory_order_acquire))
+    {
+      co_return;
+    }
+
+    start_accept();
+    co_return;
   }
 
   std::size_t HTTPServer::calculate_io_thread_count()
@@ -242,23 +270,8 @@ namespace vix::server
 
     executor_->start();
 
-    if (!listener_)
-    {
-      const int port = config_.getServerPort();
-
-      if ((port != 0 && port < 1024) || port > 65535)
-      {
-        log().log(Logger::Level::Error,
-                  "Server port {} out of range (1024-65535)",
-                  port);
-        throw std::invalid_argument("Invalid port number");
-      }
-
-      init_listener(static_cast<unsigned short>(port));
-    }
-
     start_io_threads();
-    start_accept();
+    spawn_detached(*io_context_, start_server());
     monitor_metrics();
   }
 

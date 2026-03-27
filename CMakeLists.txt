@@ -64,6 +64,9 @@ option(VIX_CORE_WITH_MYSQL   "Enable MySQL client linkage" OFF)
 option(VIX_CORE_FETCH_UTILS  "Auto-resolve vix::utils if missing" ON)
 option(VIX_CORE_FETCH_ASYNC  "Auto-resolve vix::async if missing" ON)
 option(VIX_BENCH_MODE        "Enable ultra-minimal /bench route for benchmarking" OFF)
+option(VIX_CORE_FETCH_TEMPLATE "Auto-resolve vix::template if missing" ON)
+set(VIX_CORE_WITH_TEMPLATE "AUTO" CACHE STRING "Link template backend (AUTO|ON|OFF)")
+set_property(CACHE VIX_CORE_WITH_TEMPLATE PROPERTY STRINGS AUTO ON OFF)
 
 # Sources discovery
 # If any .cpp exists under src/, we switch to STATIC build mode.
@@ -164,6 +167,62 @@ function(vix_core_try_link_json onto link_scope)
   endif()
 endfunction()
 
+function(vix_core_try_link_template onto link_scope)
+  if (VIX_CORE_WITH_TEMPLATE STREQUAL "OFF")
+    message(STATUS "[core] Template disabled (OFF)")
+    target_compile_definitions(${onto} ${link_scope} VIX_CORE_NO_TEMPLATE=1)
+    return()
+  endif()
+
+  set(_template_candidates
+    vix::template
+    template
+  )
+
+  set(_template_found "")
+  foreach(t IN LISTS _template_candidates)
+    if (TARGET ${t})
+      set(_template_found ${t})
+      break()
+    endif()
+  endforeach()
+
+  if (_template_found)
+    message(STATUS "[core] Template backend: ${_template_found}")
+    target_link_libraries(${onto} ${link_scope} ${_template_found})
+    target_compile_definitions(${onto} ${link_scope} VIX_CORE_HAS_TEMPLATE=1)
+  else()
+    if (VIX_CORE_WITH_TEMPLATE STREQUAL "ON")
+      message(FATAL_ERROR
+        "Template required but not found (expected: vix::template or template)."
+      )
+    else()
+      message(STATUS "[core] No template backend detected; building without template.")
+      target_compile_definitions(${onto} ${link_scope} VIX_CORE_NO_TEMPLATE=1)
+    endif()
+  endif()
+endfunction()
+
+# --------------------------------------------------------------------
+# template dependency
+# --------------------------------------------------------------------
+if (NOT TARGET vix::template AND NOT TARGET template)
+  if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../template/CMakeLists.txt")
+    message(STATUS "[core] Adding template from umbrella: ../template")
+    add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../template" "template")
+  elseif (VIX_CORE_FETCH_TEMPLATE)
+    find_package(template CONFIG QUIET)
+    find_package(vix_template CONFIG QUIET)
+  endif()
+endif()
+
+set(VIX_TEMPLATE_TARGET "")
+if (TARGET vix::template)
+  set(VIX_TEMPLATE_TARGET vix::template)
+elseif (TARGET template)
+  set(VIX_TEMPLATE_TARGET template)
+endif()
+
 # ============================== STATIC ===============================
 if (CORE_SOURCES)
   message(STATUS "[core] Building STATIC library with detected sources.")
@@ -212,6 +271,7 @@ if (CORE_SOURCES)
   endif()
 
   vix_core_try_link_json(vix_core PUBLIC)
+  vix_core_try_link_template(vix_core PUBLIC)
 
   if (VIX_CORE_WITH_MYSQL)
     find_library(MYSQLCPP_CONN8_LIB mysqlcppconn8)
@@ -280,6 +340,7 @@ else()
   endif()
 
   vix_core_try_link_json(vix_core INTERFACE)
+  vix_core_try_link_template(vix_core INTERFACE)
 
   target_compile_definitions(vix_core INTERFACE
     VIX_CORE_WITH_MYSQL=0
