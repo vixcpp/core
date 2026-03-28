@@ -46,6 +46,20 @@ namespace vix::runtime
    * - executes it,
    * - reschedules yielded tasks,
    * - or tries to steal work if idle.
+   *
+   * Lifecycle:
+   * - start() launches the worker thread once
+   * - stop() requests shutdown
+   * - join() waits for thread completion
+   * - destruction performs stop() + join()
+   *
+   * Shutdown behavior:
+   * - once stopping is requested, the worker loop exits as soon as possible
+   * - yielded tasks are no longer resubmitted after shutdown begins
+   *
+   * Thread-safety:
+   * - submit() is safe as long as RunQueue is thread-safe
+   * - start/stop state is coordinated through atomics
    */
   class Worker
   {
@@ -56,8 +70,9 @@ namespace vix::runtime
      * @param workerId Unique worker identifier.
      * @param budgetConfig Scheduling budget configuration.
      */
-    explicit Worker(std::uint32_t workerId,
-                    const BudgetConfig &budgetConfig = BudgetConfig{}) noexcept
+    explicit Worker(
+        std::uint32_t workerId,
+        const BudgetConfig &budgetConfig = BudgetConfig{}) noexcept
         : id_(workerId),
           queue_(),
           running_(false),
@@ -106,15 +121,26 @@ namespace vix::runtime
      * @brief Start the worker thread.
      *
      * Has no effect if the worker is already running.
+     *
+     * If a previous thread object is still joinable, it is joined before
+     * launching a new one. This prevents std::terminate caused by assigning
+     * a new std::thread over a joinable thread.
      */
     void start()
     {
       bool expected = false;
-      if (!running_.compare_exchange_strong(expected, true,
-                                            std::memory_order_acq_rel,
-                                            std::memory_order_acquire))
+      if (!running_.compare_exchange_strong(
+              expected,
+              true,
+              std::memory_order_acq_rel,
+              std::memory_order_acquire))
       {
         return;
+      }
+
+      if (thread_.joinable())
+      {
+        thread_.join();
       }
 
       thread_ = std::thread([this]()
@@ -134,7 +160,7 @@ namespace vix::runtime
     /**
      * @brief Join the worker thread if joinable.
      */
-    void join()
+    void join() noexcept
     {
       if (thread_.joinable())
       {
@@ -145,11 +171,18 @@ namespace vix::runtime
     /**
      * @brief Enqueue a task into the local run queue.
      *
+     * New tasks are rejected once the worker is stopping.
+     *
      * @param task Task to enqueue.
      * @return true if enqueued successfully, false otherwise.
      */
     [[nodiscard]] bool submit(Task task)
     {
+      if (!running())
+      {
+        return false;
+      }
+
       return queue_.push(std::move(task));
     }
 
@@ -198,6 +231,9 @@ namespace vix::runtime
   private:
     /**
      * @brief Main worker loop.
+     *
+     * The worker prefers local tasks first, then attempts work stealing.
+     * If no work is available, it waits briefly to avoid hot spinning.
      */
     void run_loop()
     {
@@ -223,12 +259,18 @@ namespace vix::runtime
     /**
      * @brief Execute one task using a fresh scheduling budget.
      *
-     * If the task yields, it is rescheduled locally.
+     * If the task yields, it is rescheduled locally while the worker is still
+     * running. Once shutdown begins, yielded tasks are not resubmitted.
      *
      * @param task Task to execute.
      */
     void execute_task(Task &task)
     {
+      if (!running())
+      {
+        return;
+      }
+
       if (!task.valid() || task.done())
       {
         return;
@@ -237,7 +279,7 @@ namespace vix::runtime
       Budget budget(budgetConfig_);
       budget.reset();
 
-      while (!budget.should_yield())
+      while (running() && !budget.should_yield())
       {
         const TaskResult result = task.run();
         budget.consume();
@@ -254,15 +296,37 @@ namespace vix::runtime
 
         if (result == TaskResult::yield)
         {
-          submit(std::move(task));
+          task.state = TaskState::yielded;
+
+          if (!running())
+          {
+            return;
+          }
+
+          const bool resubmitted = submit(std::move(task));
+          if (!resubmitted)
+          {
+            return;
+          }
+
           return;
         }
+      }
+
+      if (!running())
+      {
+        return;
       }
 
       if (!task.done())
       {
         task.state = TaskState::yielded;
-        submit(std::move(task));
+
+        const bool resubmitted = submit(std::move(task));
+        if (!resubmitted)
+        {
+          return;
+        }
       }
     }
 
