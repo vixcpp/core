@@ -904,6 +904,7 @@ namespace vix
     std::atomic<bool> has_ready_info_{false};
 
     std::vector<MiddlewareEntry> middlewares_;
+    std::atomic<bool> closed_{false};
   };
 
 } // namespace vix

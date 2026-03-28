@@ -391,6 +391,16 @@ namespace vix
 
   void App::close()
   {
+    bool expected = false;
+    if (!closed_.compare_exchange_strong(
+            expected,
+            true,
+            std::memory_order_acq_rel,
+            std::memory_order_acquire))
+    {
+      return;
+    }
+
     if (!started_.load(std::memory_order_relaxed))
     {
       return;
@@ -405,13 +415,8 @@ namespace vix
       {
         shutdown_cb_();
       }
-      catch (const std::exception &e)
-      {
-        log().log(Logger::Level::Error, "Shutdown callback threw: {}", e.what());
-      }
       catch (...)
       {
-        log().log(Logger::Level::Error, "Shutdown callback threw unknown exception");
       }
     }
 
