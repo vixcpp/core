@@ -11,8 +11,8 @@ on:
       - "src/**"
       - "tests/**"
       - "scripts/**"
-      - "cmake/**"
       - "README.md"
+      - "CHANGELOG.md"
       - "vix.json"
   pull_request:
     branches: [main, master, dev]
@@ -24,8 +24,8 @@ on:
       - "src/**"
       - "tests/**"
       - "scripts/**"
-      - "cmake/**"
       - "README.md"
+      - "CHANGELOG.md"
       - "vix.json"
   workflow_dispatch:
 
@@ -49,7 +49,9 @@ env:
     libspdlog-dev
     libfmt-dev
     libssl-dev
+    git
   BUILD_JOBS: 2
+  VIX_GIT_BRANCH: dev
 
 jobs:
   build-test-sanitized:
@@ -63,51 +65,47 @@ jobs:
         template_mode: [AUTO, OFF]
 
     steps:
-      - name: Checkout repository
+      - name: Checkout core repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           fetch-depth: 0
-
-      - name: Force submodule URLs to HTTPS
-        run: |
-          git config --global url."https://github.com/".insteadOf "git@github.com:"
-          git submodule sync --recursive
-
-      - name: Initialize submodules
-        run: |
-          git submodule update --init --recursive --depth 1
-          echo "---- submodule status ----"
-          git submodule status --recursive || true
-          echo "---- repository root ----"
-          pwd
-          echo "---- repository files ----"
-          ls -la || true
-          echo "---- sibling dependencies ----"
-          ls -la ../utils || true
-          ls -la ../async || true
-          ls -la ../json || true
-          ls -la ../template || true
-
-      - name: Verify required sibling modules
-        run: |
-          test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
-          test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
-          echo "Required sibling dependencies are present."
 
       - name: Install dependencies
         run: |
           sudo apt-get update -y
           sudo apt-get install -y $DEPS
 
+      - name: Fetch sibling dependencies
+        run: |
+          rm -rf ../utils ../async ../json ../template
+
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/async.git ../async
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json || true
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/template.git ../template || true
+
+          echo "---- repository root ----"
+          pwd
+          echo "---- sibling dependencies ----"
+          ls -la ../utils || true
+          ls -la ../async || true
+          ls -la ../json || true
+          ls -la ../template || true
+
+      - name: Verify required sibling dependencies
+        run: |
+          test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
+          test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
+          echo "Required sibling dependencies are present."
+
       - name: Select compiler
         run: |
           if [ "${{ matrix.compiler }}" = "clang" ]; then
-            echo "CC=clang" >> $GITHUB_ENV
-            echo "CXX=clang++" >> $GITHUB_ENV
+            echo "CC=clang" >> "$GITHUB_ENV"
+            echo "CXX=clang++" >> "$GITHUB_ENV"
           else
-            echo "CC=gcc" >> $GITHUB_ENV
-            echo "CXX=g++" >> $GITHUB_ENV
+            echo "CC=gcc" >> "$GITHUB_ENV"
+            echo "CXX=g++" >> "$GITHUB_ENV"
           fi
 
       - name: Configure
@@ -124,7 +122,7 @@ jobs:
 
       - name: Build
         run: |
-          cmake --build build-sanitize -j${BUILD_JOBS}
+          cmake --build build-sanitize -j"${BUILD_JOBS}"
 
       - name: Print executables
         run: |
@@ -148,31 +146,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout core repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           fetch-depth: 0
-
-      - name: Force submodule URLs to HTTPS
-        run: |
-          git config --global url."https://github.com/".insteadOf "git@github.com:"
-          git submodule sync --recursive
-
-      - name: Initialize submodules
-        run: |
-          git submodule update --init --recursive --depth 1
-
-      - name: Verify required sibling modules
-        run: |
-          test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
-          test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
-          echo "Required sibling dependencies are present."
 
       - name: Install dependencies
         run: |
           sudo apt-get update -y
           sudo apt-get install -y $DEPS
+
+      - name: Fetch sibling dependencies
+        run: |
+          rm -rf ../utils ../async ../json ../template
+
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/async.git ../async
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json || true
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/template.git ../template || true
+
+      - name: Verify required sibling dependencies
+        run: |
+          test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
+          test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
+          echo "Required sibling dependencies are present."
 
       - name: Configure runtime build
         run: |
@@ -187,7 +184,7 @@ jobs:
 
       - name: Build runtime artifacts
         run: |
-          cmake --build build-runtime -j${BUILD_JOBS}
+          cmake --build build-runtime -j"${BUILD_JOBS}"
 
       - name: List candidate executables
         run: |
@@ -297,31 +294,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout core repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           fetch-depth: 0
-
-      - name: Force submodule URLs to HTTPS
-        run: |
-          git config --global url."https://github.com/".insteadOf "git@github.com:"
-          git submodule sync --recursive
-
-      - name: Initialize submodules
-        run: |
-          git submodule update --init --recursive --depth 1
-
-      - name: Verify required sibling modules
-        run: |
-          test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
-          test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
-          echo "Required sibling dependencies are present."
 
       - name: Install dependencies
         run: |
           sudo apt-get update -y
           sudo apt-get install -y $DEPS
+
+      - name: Fetch sibling dependencies
+        run: |
+          rm -rf ../utils ../async ../json ../template
+
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/async.git ../async
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json || true
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/template.git ../template || true
+
+      - name: Verify required sibling dependencies
+        run: |
+          test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
+          test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
+          echo "Required sibling dependencies are present."
 
       - name: Configure for analysis
         run: |
@@ -371,31 +367,30 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout repository
+      - name: Checkout core repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           fetch-depth: 0
-
-      - name: Force submodule URLs to HTTPS
-        run: |
-          git config --global url."https://github.com/".insteadOf "git@github.com:"
-          git submodule sync --recursive
-
-      - name: Initialize submodules
-        run: |
-          git submodule update --init --recursive --depth 1
-
-      - name: Verify required sibling modules
-        run: |
-          test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
-          test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
-          echo "Required sibling dependencies are present."
 
       - name: Install dependencies
         run: |
           sudo apt-get update -y
           sudo apt-get install -y $DEPS
+
+      - name: Fetch sibling dependencies
+        run: |
+          rm -rf ../utils ../async ../json ../template
+
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/async.git ../async
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json || true
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/template.git ../template || true
+
+      - name: Verify required sibling dependencies
+        run: |
+          test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
+          test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
+          echo "Required sibling dependencies are present."
 
       - name: Configure valgrind build
         run: |
@@ -410,7 +405,7 @@ jobs:
 
       - name: Build
         run: |
-          cmake --build build-valgrind -j${BUILD_JOBS}
+          cmake --build build-valgrind -j"${BUILD_JOBS}"
 
       - name: Run valgrind on test executables
         shell: bash
@@ -454,31 +449,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout core repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           fetch-depth: 0
-
-      - name: Force submodule URLs to HTTPS
-        run: |
-          git config --global url."https://github.com/".insteadOf "git@github.com:"
-          git submodule sync --recursive
-
-      - name: Initialize submodules
-        run: |
-          git submodule update --init --recursive --depth 1
-
-      - name: Verify required sibling modules
-        run: |
-          test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
-          test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
-          echo "Required sibling dependencies are present."
 
       - name: Install dependencies
         run: |
           sudo apt-get update -y
           sudo apt-get install -y $DEPS
+
+      - name: Fetch sibling dependencies
+        run: |
+          rm -rf ../utils ../async ../json ../template
+
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/async.git ../async
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json || true
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/template.git ../template || true
+
+      - name: Verify required sibling dependencies
+        run: |
+          test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
+          test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
+          echo "Required sibling dependencies are present."
 
       - name: Configure release mode
         run: |
@@ -493,7 +487,7 @@ jobs:
 
       - name: Build release mode
         run: |
-          cmake --build build-release -j${BUILD_JOBS}
+          cmake --build build-release -j"${BUILD_JOBS}"
 
       - name: Configure bench mode
         run: |
@@ -508,7 +502,7 @@ jobs:
 
       - name: Build bench mode
         run: |
-          cmake --build build-bench -j${BUILD_JOBS}
+          cmake --build build-bench -j"${BUILD_JOBS}"
 
   summary:
     name: Core Strict CI Summary
