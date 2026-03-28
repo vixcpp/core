@@ -45,11 +45,12 @@ env:
     clang-tidy
     valgrind
     pkg-config
+    git
+    libasio-dev
     nlohmann-json3-dev
     libspdlog-dev
     libfmt-dev
     libssl-dev
-    git
   BUILD_JOBS: 2
   VIX_GIT_BRANCH: dev
 
@@ -74,21 +75,27 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y $DEPS
+          test -f /usr/include/asio.hpp || (echo "::error::System Asio header not found after install"; exit 1)
 
       - name: Fetch sibling dependencies
         run: |
           rm -rf ../utils ../async ../json ../template
 
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/async.git ../async
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" --recurse-submodules https://github.com/vixcpp/async.git ../async
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json || true
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/template.git ../template || true
+
+          git -C ../async submodule update --init --recursive --depth 1 || true
 
           echo "---- repository root ----"
           pwd
           echo "---- sibling dependencies ----"
           ls -la ../utils || true
           ls -la ../async || true
+          ls -la ../async/third_party || true
+          ls -la ../async/third_party/asio || true
+          ls -la ../async/third_party/asio/include || true
           ls -la ../json || true
           ls -la ../template || true
 
@@ -96,6 +103,14 @@ jobs:
         run: |
           test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
           test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
+          if [ -f ../async/third_party/asio/include/asio.hpp ]; then
+            echo "Vendored Asio found in async."
+          elif [ -f /usr/include/asio.hpp ]; then
+            echo "System Asio found."
+          else
+            echo "::error::Neither vendored Asio nor system Asio was found."
+            exit 1
+          fi
           echo "Required sibling dependencies are present."
 
       - name: Select compiler
@@ -155,21 +170,29 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y $DEPS
+          test -f /usr/include/asio.hpp || (echo "::error::System Asio header not found after install"; exit 1)
 
       - name: Fetch sibling dependencies
         run: |
           rm -rf ../utils ../async ../json ../template
 
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/async.git ../async
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" --recurse-submodules https://github.com/vixcpp/async.git ../async
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json || true
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/template.git ../template || true
+
+          git -C ../async submodule update --init --recursive --depth 1 || true
 
       - name: Verify required sibling dependencies
         run: |
           test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
           test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
-          echo "Required sibling dependencies are present."
+          if [ -f ../async/third_party/asio/include/asio.hpp ] || [ -f /usr/include/asio.hpp ]; then
+            echo "Asio is available."
+          else
+            echo "::error::Asio is not available for async."
+            exit 1
+          fi
 
       - name: Configure runtime build
         run: |
@@ -303,21 +326,29 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y $DEPS
+          test -f /usr/include/asio.hpp || (echo "::error::System Asio header not found after install"; exit 1)
 
       - name: Fetch sibling dependencies
         run: |
           rm -rf ../utils ../async ../json ../template
 
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/async.git ../async
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" --recurse-submodules https://github.com/vixcpp/async.git ../async
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json || true
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/template.git ../template || true
+
+          git -C ../async submodule update --init --recursive --depth 1 || true
 
       - name: Verify required sibling dependencies
         run: |
           test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
           test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
-          echo "Required sibling dependencies are present."
+          if [ -f ../async/third_party/asio/include/asio.hpp ] || [ -f /usr/include/asio.hpp ]; then
+            echo "Asio is available."
+          else
+            echo "::error::Asio is not available for async."
+            exit 1
+          fi
 
       - name: Configure for analysis
         run: |
@@ -376,21 +407,29 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y $DEPS
+          test -f /usr/include/asio.hpp || (echo "::error::System Asio header not found after install"; exit 1)
 
       - name: Fetch sibling dependencies
         run: |
           rm -rf ../utils ../async ../json ../template
 
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/async.git ../async
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" --recurse-submodules https://github.com/vixcpp/async.git ../async
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json || true
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/template.git ../template || true
+
+          git -C ../async submodule update --init --recursive --depth 1 || true
 
       - name: Verify required sibling dependencies
         run: |
           test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
           test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
-          echo "Required sibling dependencies are present."
+          if [ -f ../async/third_party/asio/include/asio.hpp ] || [ -f /usr/include/asio.hpp ]; then
+            echo "Asio is available."
+          else
+            echo "::error::Asio is not available for async."
+            exit 1
+          fi
 
       - name: Configure valgrind build
         run: |
@@ -458,21 +497,29 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y $DEPS
+          test -f /usr/include/asio.hpp || (echo "::error::System Asio header not found after install"; exit 1)
 
       - name: Fetch sibling dependencies
         run: |
           rm -rf ../utils ../async ../json ../template
 
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/async.git ../async
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" --recurse-submodules https://github.com/vixcpp/async.git ../async
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json || true
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/template.git ../template || true
+
+          git -C ../async submodule update --init --recursive --depth 1 || true
 
       - name: Verify required sibling dependencies
         run: |
           test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
           test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
-          echo "Required sibling dependencies are present."
+          if [ -f ../async/third_party/asio/include/asio.hpp ] || [ -f /usr/include/asio.hpp ]; then
+            echo "Asio is available."
+          else
+            echo "::error::Asio is not available for async."
+            exit 1
+          fi
 
       - name: Configure release mode
         run: |
