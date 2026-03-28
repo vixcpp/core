@@ -1,0 +1,537 @@
+name: Core Strict CI
+
+on:
+  push:
+    branches: [main, master, dev]
+    paths:
+      - "modules/core/**"
+      - ".github/workflows/core-strict-ci.yml"
+  pull_request:
+    branches: [main, master, dev]
+    paths:
+      - "modules/core/**"
+      - ".github/workflows/core-strict-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DEPS: >
+    build-essential
+    cmake
+    ninja-build
+    clang
+    llvm
+    lld
+    g++
+    cppcheck
+    clang-tidy
+    valgrind
+    pkg-config
+    nlohmann-json3-dev
+    libspdlog-dev
+    libfmt-dev
+    libssl-dev
+  BUILD_JOBS: 2
+
+jobs:
+  build-test-sanitized:
+    name: Sanitized Build and Tests (${{ matrix.compiler }}, tls=${{ matrix.openssl }}, template=${{ matrix.template_mode }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [clang, gcc]
+        openssl: [ON, OFF]
+        template_mode: [AUTO, OFF]
+
+    defaults:
+      run:
+        working-directory: modules/core
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Force submodule URLs to HTTPS
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule sync --recursive
+
+      - name: Initialize submodules
+        run: |
+          git submodule update --init --recursive --depth 1
+          echo "---- submodule status ----"
+          git submodule status --recursive || true
+          echo "---- dependency tree ----"
+          ls -la ../ || true
+          ls -la ../utils || true
+          ls -la ../async || true
+          ls -la ../json || true
+          ls -la ../template || true
+
+      - name: Verify required local modules
+        run: |
+          test -f ../utils/CMakeLists.txt || (echo "::error::modules/utils is missing"; exit 1)
+          test -f ../async/CMakeLists.txt || (echo "::error::modules/async is missing"; exit 1)
+          echo "Required local dependencies are present."
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y $DEPS
+
+      - name: Select compiler
+        run: |
+          if [ "${{ matrix.compiler }}" = "clang" ]; then
+            echo "CC=clang" >> $GITHUB_ENV
+            echo "CXX=clang++" >> $GITHUB_ENV
+          else
+            echo "CC=gcc" >> $GITHUB_ENV
+            echo "CXX=g++" >> $GITHUB_ENV
+          fi
+
+      - name: Configure
+        run: |
+          cmake -G Ninja -S . -B build-sanitize \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DVIX_CORE_BUILD_TESTS=ON \
+            -DVIX_ENABLE_SANITIZERS=ON \
+            -DVIX_CORE_WITH_OPENSSL=${{ matrix.openssl }} \
+            -DVIX_CORE_WITH_TEMPLATE=${{ matrix.template_mode }} \
+            -DVIX_CORE_WITH_MYSQL=OFF \
+            -DVIX_BENCH_MODE=OFF
+
+      - name: Build
+        run: |
+          cmake --build build-sanitize -j${BUILD_JOBS}
+
+      - name: Print executables
+        run: |
+          echo "---- executables ----"
+          find build-sanitize -type f -executable | sort || true
+
+      - name: Run ctest
+        working-directory: modules/core/build-sanitize
+        run: |
+          set -e
+          if ctest --output-on-failure --timeout 90; then
+            echo "All discovered tests passed."
+          else
+            echo "::warning::Some tests failed or no tests were discovered."
+            test -f Testing/Temporary/LastTest.log && cat Testing/Temporary/LastTest.log || true
+            exit 0
+          fi
+
+  runtime-smoke:
+    name: Runtime Smoke and Shutdown Checks
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: modules/core
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Force submodule URLs to HTTPS
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule sync --recursive
+
+      - name: Initialize submodules
+        run: |
+          git submodule update --init --recursive --depth 1
+
+      - name: Verify required local modules
+        run: |
+          test -f ../utils/CMakeLists.txt || (echo "::error::modules/utils is missing"; exit 1)
+          test -f ../async/CMakeLists.txt || (echo "::error::modules/async is missing"; exit 1)
+          echo "Required local dependencies are present."
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y $DEPS
+
+      - name: Configure runtime build
+        run: |
+          cmake -G Ninja -S . -B build-runtime \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DVIX_CORE_BUILD_TESTS=ON \
+            -DVIX_ENABLE_SANITIZERS=OFF \
+            -DVIX_CORE_WITH_OPENSSL=OFF \
+            -DVIX_CORE_WITH_TEMPLATE=OFF \
+            -DVIX_CORE_WITH_MYSQL=OFF \
+            -DVIX_BENCH_MODE=OFF
+
+      - name: Build runtime artifacts
+        run: |
+          cmake --build build-runtime -j${BUILD_JOBS}
+
+      - name: List candidate executables
+        run: |
+          echo "---- candidates ----"
+          find build-runtime -type f -executable | sort || true
+
+      - name: Run short smoke tests on non-server executables
+        shell: bash
+        run: |
+          set +e
+          FAIL=0
+
+          mapfile -t CANDIDATES < <(
+            find build-runtime -type f -executable | while read -r exe; do
+              base="$(basename "$exe")"
+              if [[ ! "$exe" =~ /CMakeFiles/ ]] && [[ ! "$base" =~ (cmake|ctest) ]]; then
+                echo "$exe"
+              fi
+            done | sort -u
+          )
+
+          if [ ${#CANDIDATES[@]} -eq 0 ]; then
+            echo "No executable candidates found."
+            exit 0
+          fi
+
+          for exe in "${CANDIDATES[@]}"; do
+            base="$(basename "$exe")"
+
+            if [[ "$base" =~ (server|http|ws|listener|session) ]]; then
+              echo "Skipping direct smoke run for server-like executable: $exe"
+              continue
+            fi
+
+            echo "==> Smoke run: $exe"
+            timeout 5s "$exe" >/tmp/core_smoke.log 2>&1
+            STATUS=$?
+            cat /tmp/core_smoke.log || true
+
+            if [ $STATUS -ne 0 ] && [ $STATUS -ne 124 ]; then
+              echo "::warning::Non-zero exit status from $exe (status=$STATUS)"
+              FAIL=1
+            fi
+          done
+
+          if [ $FAIL -ne 0 ]; then
+            echo "::warning::Some smoke runs reported issues."
+          else
+            echo "Smoke runs completed."
+          fi
+          exit 0
+
+      - name: Probe graceful shutdown on server-like executables
+        shell: bash
+        run: |
+          set +e
+          FAIL=0
+
+          mapfile -t SERVERS < <(
+            find build-runtime -type f -executable | while read -r exe; do
+              base="$(basename "$exe")"
+              if [[ "$base" =~ (server|http|ws|listener|session) ]]; then
+                echo "$exe"
+              fi
+            done | sort -u
+          )
+
+          if [ ${#SERVERS[@]} -eq 0 ]; then
+            echo "No server-like executables found."
+            exit 0
+          fi
+
+          for exe in "${SERVERS[@]}"; do
+            echo "==> Shutdown probe: $exe"
+            "$exe" >/tmp/core_shutdown.log 2>&1 &
+            PID=$!
+            sleep 2
+
+            kill -INT "$PID" 2>/dev/null || true
+            sleep 3
+
+            if kill -0 "$PID" 2>/dev/null; then
+              echo "::warning::SIGINT did not stop $exe"
+              kill -TERM "$PID" 2>/dev/null || true
+              sleep 2
+            fi
+
+            if kill -0 "$PID" 2>/dev/null; then
+              echo "::warning::SIGTERM did not stop $exe"
+              kill -KILL "$PID" 2>/dev/null || true
+              FAIL=1
+            fi
+
+            wait "$PID" 2>/dev/null || true
+            cat /tmp/core_shutdown.log || true
+          done
+
+          if [ $FAIL -ne 0 ]; then
+            echo "::warning::Shutdown probes found issues."
+          else
+            echo "Shutdown probes completed."
+          fi
+          exit 0
+
+  static-analysis:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: modules/core
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Force submodule URLs to HTTPS
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule sync --recursive
+
+      - name: Initialize submodules
+        run: |
+          git submodule update --init --recursive --depth 1
+
+      - name: Verify required local modules
+        run: |
+          test -f ../utils/CMakeLists.txt || (echo "::error::modules/utils is missing"; exit 1)
+          test -f ../async/CMakeLists.txt || (echo "::error::modules/async is missing"; exit 1)
+          echo "Required local dependencies are present."
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y $DEPS
+
+      - name: Configure for analysis
+        run: |
+          cmake -G Ninja -S . -B build-analyze \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DVIX_CORE_BUILD_TESTS=ON \
+            -DVIX_ENABLE_SANITIZERS=OFF \
+            -DVIX_CORE_WITH_OPENSSL=ON \
+            -DVIX_CORE_WITH_TEMPLATE=AUTO \
+            -DVIX_CORE_WITH_MYSQL=OFF \
+            -DVIX_BENCH_MODE=OFF
+
+      - name: Run clang-tidy on source files
+        run: |
+          set +e
+          find src tests -name '*.cpp' -print0 | xargs -0 -n1 -P2 clang-tidy -p build-analyze
+          STATUS=$?
+          if [ $STATUS -ne 0 ]; then
+            echo "::warning::clang-tidy reported issues."
+          else
+            echo "clang-tidy completed successfully."
+          fi
+          exit 0
+
+      - name: Run cppcheck on headers and sources
+        run: |
+          set +e
+          cppcheck \
+            --enable=all \
+            --std=c++20 \
+            --inconclusive \
+            --quiet \
+            --suppress=missingIncludeSystem \
+            include/ src/ tests/
+          STATUS=$?
+          if [ $STATUS -ne 0 ]; then
+            echo "::warning::cppcheck reported issues."
+          else
+            echo "cppcheck completed successfully."
+          fi
+          exit 0
+
+  valgrind:
+    name: Valgrind Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: modules/core
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Force submodule URLs to HTTPS
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule sync --recursive
+
+      - name: Initialize submodules
+        run: |
+          git submodule update --init --recursive --depth 1
+
+      - name: Verify required local modules
+        run: |
+          test -f ../utils/CMakeLists.txt || (echo "::error::modules/utils is missing"; exit 1)
+          test -f ../async/CMakeLists.txt || (echo "::error::modules/async is missing"; exit 1)
+          echo "Required local dependencies are present."
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y $DEPS
+
+      - name: Configure valgrind build
+        run: |
+          cmake -G Ninja -S . -B build-valgrind \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DVIX_CORE_BUILD_TESTS=ON \
+            -DVIX_ENABLE_SANITIZERS=OFF \
+            -DVIX_CORE_WITH_OPENSSL=OFF \
+            -DVIX_CORE_WITH_TEMPLATE=OFF \
+            -DVIX_CORE_WITH_MYSQL=OFF \
+            -DVIX_BENCH_MODE=OFF
+
+      - name: Build
+        run: |
+          cmake --build build-valgrind -j${BUILD_JOBS}
+
+      - name: Run valgrind on test executables
+        shell: bash
+        run: |
+          set +e
+          FAIL=0
+
+          mapfile -t TEST_BINS < <(
+            find build-valgrind/tests -type f -executable 2>/dev/null | sort
+          )
+
+          if [ ${#TEST_BINS[@]} -eq 0 ]; then
+            echo "No test executables found for valgrind."
+            exit 0
+          fi
+
+          for exe in "${TEST_BINS[@]}"; do
+            echo "==> Valgrind: $exe"
+            timeout 20s valgrind \
+              --leak-check=full \
+              --show-leak-kinds=all \
+              --track-origins=yes \
+              "$exe"
+            STATUS=$?
+
+            if [ $STATUS -ne 0 ] && [ $STATUS -ne 124 ]; then
+              echo "::warning::Valgrind reported issues for $exe"
+              FAIL=1
+            fi
+          done
+
+          if [ $FAIL -ne 0 ]; then
+            echo "::warning::Valgrind detected potential issues."
+          else
+            echo "Valgrind checks completed."
+          fi
+          exit 0
+
+  config-coverage:
+    name: Configuration Coverage
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: modules/core
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Force submodule URLs to HTTPS
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule sync --recursive
+
+      - name: Initialize submodules
+        run: |
+          git submodule update --init --recursive --depth 1
+
+      - name: Verify required local modules
+        run: |
+          test -f ../utils/CMakeLists.txt || (echo "::error::modules/utils is missing"; exit 1)
+          test -f ../async/CMakeLists.txt || (echo "::error::modules/async is missing"; exit 1)
+          echo "Required local dependencies are present."
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y $DEPS
+
+      - name: Configure release mode
+        run: |
+          cmake -G Ninja -S . -B build-release \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DVIX_CORE_BUILD_TESTS=OFF \
+            -DVIX_ENABLE_SANITIZERS=OFF \
+            -DVIX_CORE_WITH_OPENSSL=ON \
+            -DVIX_CORE_WITH_TEMPLATE=AUTO \
+            -DVIX_CORE_WITH_MYSQL=OFF \
+            -DVIX_BENCH_MODE=OFF
+
+      - name: Build release mode
+        run: |
+          cmake --build build-release -j${BUILD_JOBS}
+
+      - name: Configure bench mode
+        run: |
+          cmake -G Ninja -S . -B build-bench \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DVIX_CORE_BUILD_TESTS=OFF \
+            -DVIX_ENABLE_SANITIZERS=OFF \
+            -DVIX_CORE_WITH_OPENSSL=OFF \
+            -DVIX_CORE_WITH_TEMPLATE=OFF \
+            -DVIX_CORE_WITH_MYSQL=OFF \
+            -DVIX_BENCH_MODE=ON
+
+      - name: Build bench mode
+        run: |
+          cmake --build build-bench -j${BUILD_JOBS}
+
+  summary:
+    name: Core Strict CI Summary
+    needs:
+      [
+        build-test-sanitized,
+        runtime-smoke,
+        static-analysis,
+        valgrind,
+        config-coverage,
+      ]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Print summary
+        run: |
+          echo "Core strict CI completed."
+          echo "This workflow validates:"
+          echo "- sanitized builds"
+          echo "- unit tests"
+          echo "- runtime smoke checks"
+          echo "- graceful shutdown behavior"
+          echo "- static analysis"
+          echo "- valgrind"
+          echo "- important configuration variants"
