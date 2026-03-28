@@ -20,18 +20,6 @@
 
 namespace vix::config
 {
-  namespace
-  {
-    nlohmann::json make_default_config()
-    {
-      return {
-          {"server",
-           {
-               {"port", Config::getInstance().getServerPort()},
-           }}};
-    }
-  } // namespace
-
   Config::Config(const std::filesystem::path &configPath)
       : configPath_(configPath),
         db_host(DEFAULT_DB_HOST),
