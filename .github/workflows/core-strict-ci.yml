@@ -4,13 +4,29 @@ on:
   push:
     branches: [main, master, dev]
     paths:
-      - "modules/core/**"
       - ".github/workflows/core-strict-ci.yml"
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "include/**"
+      - "src/**"
+      - "tests/**"
+      - "scripts/**"
+      - "cmake/**"
+      - "README.md"
+      - "vix.json"
   pull_request:
     branches: [main, master, dev]
     paths:
-      - "modules/core/**"
       - ".github/workflows/core-strict-ci.yml"
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "include/**"
+      - "src/**"
+      - "tests/**"
+      - "scripts/**"
+      - "cmake/**"
+      - "README.md"
+      - "vix.json"
   workflow_dispatch:
 
 permissions:
@@ -46,10 +62,6 @@ jobs:
         openssl: [ON, OFF]
         template_mode: [AUTO, OFF]
 
-    defaults:
-      run:
-        working-directory: modules/core
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -67,18 +79,21 @@ jobs:
           git submodule update --init --recursive --depth 1
           echo "---- submodule status ----"
           git submodule status --recursive || true
-          echo "---- dependency tree ----"
-          ls -la ../ || true
+          echo "---- repository root ----"
+          pwd
+          echo "---- repository files ----"
+          ls -la || true
+          echo "---- sibling dependencies ----"
           ls -la ../utils || true
           ls -la ../async || true
           ls -la ../json || true
           ls -la ../template || true
 
-      - name: Verify required local modules
+      - name: Verify required sibling modules
         run: |
-          test -f ../utils/CMakeLists.txt || (echo "::error::modules/utils is missing"; exit 1)
-          test -f ../async/CMakeLists.txt || (echo "::error::modules/async is missing"; exit 1)
-          echo "Required local dependencies are present."
+          test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
+          test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
+          echo "Required sibling dependencies are present."
 
       - name: Install dependencies
         run: |
@@ -117,9 +132,9 @@ jobs:
           find build-sanitize -type f -executable | sort || true
 
       - name: Run ctest
-        working-directory: modules/core/build-sanitize
         run: |
           set -e
+          cd build-sanitize
           if ctest --output-on-failure --timeout 90; then
             echo "All discovered tests passed."
           else
@@ -131,10 +146,6 @@ jobs:
   runtime-smoke:
     name: Runtime Smoke and Shutdown Checks
     runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: modules/core
 
     steps:
       - name: Checkout repository
@@ -152,11 +163,11 @@ jobs:
         run: |
           git submodule update --init --recursive --depth 1
 
-      - name: Verify required local modules
+      - name: Verify required sibling modules
         run: |
-          test -f ../utils/CMakeLists.txt || (echo "::error::modules/utils is missing"; exit 1)
-          test -f ../async/CMakeLists.txt || (echo "::error::modules/async is missing"; exit 1)
-          echo "Required local dependencies are present."
+          test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
+          test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
+          echo "Required sibling dependencies are present."
 
       - name: Install dependencies
         run: |
@@ -285,10 +296,6 @@ jobs:
     name: Static Analysis
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: modules/core
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -305,11 +312,11 @@ jobs:
         run: |
           git submodule update --init --recursive --depth 1
 
-      - name: Verify required local modules
+      - name: Verify required sibling modules
         run: |
-          test -f ../utils/CMakeLists.txt || (echo "::error::modules/utils is missing"; exit 1)
-          test -f ../async/CMakeLists.txt || (echo "::error::modules/async is missing"; exit 1)
-          echo "Required local dependencies are present."
+          test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
+          test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
+          echo "Required sibling dependencies are present."
 
       - name: Install dependencies
         run: |
@@ -363,10 +370,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    defaults:
-      run:
-        working-directory: modules/core
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -383,11 +386,11 @@ jobs:
         run: |
           git submodule update --init --recursive --depth 1
 
-      - name: Verify required local modules
+      - name: Verify required sibling modules
         run: |
-          test -f ../utils/CMakeLists.txt || (echo "::error::modules/utils is missing"; exit 1)
-          test -f ../async/CMakeLists.txt || (echo "::error::modules/async is missing"; exit 1)
-          echo "Required local dependencies are present."
+          test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
+          test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
+          echo "Required sibling dependencies are present."
 
       - name: Install dependencies
         run: |
@@ -450,10 +453,6 @@ jobs:
     name: Configuration Coverage
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: modules/core
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -470,11 +469,11 @@ jobs:
         run: |
           git submodule update --init --recursive --depth 1
 
-      - name: Verify required local modules
+      - name: Verify required sibling modules
         run: |
-          test -f ../utils/CMakeLists.txt || (echo "::error::modules/utils is missing"; exit 1)
-          test -f ../async/CMakeLists.txt || (echo "::error::modules/async is missing"; exit 1)
-          echo "Required local dependencies are present."
+          test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
+          test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
+          echo "Required sibling dependencies are present."
 
       - name: Install dependencies
         run: |
