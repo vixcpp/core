@@ -34,6 +34,9 @@
 #include <vix/server/HTTPServer.hpp>
 #include <vix/utils/Logger.hpp>
 #include <vix/utils/ServerPrettyLogs.hpp>
+#include <vix/template/Engine.hpp>
+#include <vix/template/FileSystemLoader.hpp>
+#include <vix/view/TemplateView.hpp>
 
 namespace vix::router
 {
@@ -323,6 +326,44 @@ namespace vix
     {
       return *executor_;
     }
+
+    /**
+     * @brief Configure the application template directory.
+     *
+     * This initializes:
+     * - the file-system template loader
+     * - the template engine
+     * - the HTTP-oriented template view facade
+     *
+     * @param directory Root directory containing template files.
+     * @return App& Current application instance.
+     */
+    App &templates(const std::string &directory);
+
+    /**
+     * @brief Returns whether template rendering is configured.
+     *
+     * @return true if views are available, false otherwise.
+     */
+    [[nodiscard]] bool has_views() const noexcept;
+
+    /**
+     * @brief Returns the template rendering facade.
+     *
+     * @return vix::view::TemplateView& Mutable template view facade.
+     *
+     * @throws std::runtime_error if templates() was not called.
+     */
+    [[nodiscard]] vix::view::TemplateView &views();
+
+    /**
+     * @brief Returns the template rendering facade.
+     *
+     * @return const vix::view::TemplateView& Immutable template view facade.
+     *
+     * @throws std::runtime_error if templates() was not called.
+     */
+    [[nodiscard]] const vix::view::TemplateView &views() const;
 
     /**
      * @brief Indicates whether the server has started.
@@ -762,7 +803,10 @@ namespace vix
       };
 
       using Adapter = vix::vhttp::RequestHandler<decltype(wrapped)>;
-      auto request_handler = std::make_shared<Adapter>(path, std::move(wrapped));
+      auto request_handler = std::make_shared<Adapter>(
+          path,
+          std::move(wrapped),
+          template_view_.get());
 
       router_->add_route(method, path, request_handler, opt);
 
@@ -874,7 +918,10 @@ namespace vix
       };
 
       using Adapter = vix::vhttp::RequestHandler<decltype(wrapped)>;
-      auto request_handler = std::make_shared<Adapter>(path, std::move(wrapped));
+      auto request_handler = std::make_shared<Adapter>(
+          path,
+          std::move(wrapped),
+          template_view_.get());
 
       router_->add_route("OPTIONS", path, request_handler, vix::router::RouteOptions{});
     }
@@ -905,6 +952,21 @@ namespace vix
 
     std::vector<MiddlewareEntry> middlewares_;
     std::atomic<bool> closed_{false};
+
+    /**
+     * @brief Shared template engine used by the application runtime.
+     */
+    std::shared_ptr<vix::template_::Engine> template_engine_{};
+
+    /**
+     * @brief HTTP-oriented template rendering facade.
+     */
+    std::unique_ptr<vix::view::TemplateView> template_view_{};
+
+    /**
+     * @brief Configured template root directory.
+     */
+    std::string templates_directory_{};
   };
 
 } // namespace vix

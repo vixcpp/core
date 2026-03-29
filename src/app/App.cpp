@@ -272,6 +272,50 @@ namespace vix
     }
   }
 
+  App &App::templates(const std::string &directory)
+  {
+    auto loader =
+        std::make_shared<vix::template_::FileSystemLoader>(directory);
+
+    template_engine_ =
+        std::make_shared<vix::template_::Engine>(std::move(loader));
+
+    template_view_ =
+        std::make_unique<vix::view::TemplateView>(template_engine_);
+
+    templates_directory_ = directory;
+
+    return *this;
+  }
+
+  bool App::has_views() const noexcept
+  {
+    return static_cast<bool>(template_engine_) &&
+           static_cast<bool>(template_view_);
+  }
+
+  vix::view::TemplateView &App::views()
+  {
+    if (!template_view_)
+    {
+      throw std::runtime_error(
+          "App::views() called before templates() configuration");
+    }
+
+    return *template_view_;
+  }
+
+  const vix::view::TemplateView &App::views() const
+  {
+    if (!template_view_)
+    {
+      throw std::runtime_error(
+          "App::views() called before templates() configuration");
+    }
+
+    return *template_view_;
+  }
+
   App::~App()
   {
     if (listen_called_.load(std::memory_order_relaxed) &&

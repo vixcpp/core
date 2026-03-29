@@ -221,9 +221,12 @@ namespace vix::vhttp
 
   public:
     /** @brief Create a handler adapter for a route pattern and a user handler. */
-    RequestHandler(std::string route_pattern, Handler handler)
+    RequestHandler(std::string route_pattern,
+                   Handler handler,
+                   vix::view::TemplateView *template_view = nullptr)
         : route_pattern_(std::move(route_pattern)),
-          handler_(std::move(handler))
+          handler_(std::move(handler)),
+          template_view_(template_view)
     {
       static_assert(sizeof(Handler) > 0, "Handler type must be complete here.");
     }
@@ -231,7 +234,7 @@ namespace vix::vhttp
     /** @brief Execute the user handler and write the final HTTP response. */
     task<void> handle_request(const Request &incoming_req, Response &res) override
     {
-      ResponseWrapper wrapped{res};
+      ResponseWrapper wrapped{res, template_view_};
 
       auto params = extract_params_from_path(route_pattern_, incoming_req.path());
       auto state = incoming_req.state_ptr()
@@ -318,6 +321,7 @@ namespace vix::vhttp
   private:
     std::string route_pattern_;
     Handler handler_;
+    vix::view::TemplateView *template_view_{nullptr};
 
     static void finalize_response(const Request &req, Response &res)
     {

@@ -30,6 +30,8 @@
 #include <vix/http/Response.hpp>
 #include <vix/http/Status.hpp>
 #include <vix/json/Simple.hpp>
+#include <vix/template/Context.hpp>
+#include <vix/view/TemplateView.hpp>
 
 namespace vix::vhttp
 {
@@ -130,10 +132,14 @@ namespace vix::vhttp
   struct ResponseWrapper
   {
     Response &res;
+    vix::view::TemplateView *template_view_{nullptr};
 
     /** @brief Wrap an existing native Vix response and ensure a default status code. */
-    explicit ResponseWrapper(Response &r) noexcept
-        : res(r)
+    explicit ResponseWrapper(
+        Response &r,
+        vix::view::TemplateView *template_view = nullptr) noexcept
+        : res(r),
+          template_view_(template_view)
     {
       if (!is_valid_status(res.status()))
         res.set_status(OK);
@@ -393,6 +399,32 @@ namespace vix::vhttp
       }
 
       Response::text_response(res, data, res.status());
+      return *this;
+    }
+
+    /** @brief Render an HTML template using the configured template view. */
+    ResponseWrapper &render(
+        const std::string &name,
+        const vix::template_::Context &context)
+    {
+      ensure_status();
+
+      const int s = res.status();
+      if (s == NO_CONTENT || s == NOT_MODIFIED)
+        return this->send();
+
+      if (!template_view_)
+      {
+        throw std::runtime_error(
+            "ResponseWrapper::render() called but templates are not configured");
+      }
+
+      const int current_status = res.status();
+
+      auto rendered = template_view_->render_response(name, context);
+      rendered.set_status(current_status);
+
+      res = std::move(rendered);
       return *this;
     }
 
