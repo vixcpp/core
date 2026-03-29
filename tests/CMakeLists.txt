@@ -45,7 +45,18 @@ target_link_libraries(runtime_bench PRIVATE
 
 target_compile_features(runtime_bench PRIVATE cxx_std_20)
 
+add_executable(format_test
+  format_test.cpp
+)
+
+target_link_libraries(format_test PRIVATE
+  ${VIX_CORE_TEST_TARGET}
+)
+
+target_compile_features(format_test PRIVATE cxx_std_20)
+
 if (BUILD_TESTING)
   add_test(NAME core_smoke_test COMMAND core_smoke_test)
   add_test(NAME runtime_test COMMAND runtime_test)
+  add_test(NAME format_test COMMAND format_test)
 endif()

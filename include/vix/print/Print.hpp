@@ -501,6 +501,7 @@ namespace vix
     bool show_type = false;         ///< Show type annotations
     bool compact = false;           ///< Compact single-line output
     std::string indent_str = "  ";  ///< Indentation unit (unused in compact)
+    bool raw_strings = true;
   };
 
   /// @brief Thread-local default config (modifiable by user).
@@ -1069,7 +1070,14 @@ namespace vix
       // String-like
       else if constexpr (traits::is_string_like_v<U>)
       {
-        write_string(os, value);
+        if (default_config().raw_strings)
+        {
+          os << value;
+        }
+        else
+        {
+          write_string(os, value);
+        }
       }
       // filesystem::path
       else if constexpr (traits::is_fs_path_v<U>)
@@ -1281,6 +1289,14 @@ namespace vix
   template <typename... Args>
   void print(const print_config &cfg, const Args &...args)
   {
+    detail::print_impl(cfg, args...);
+  }
+
+  template <typename... Args>
+  void print_py(const Args &...args)
+  {
+    print_config cfg = default_config();
+    cfg.raw_strings = true;
     detail::print_impl(cfg, args...);
   }
 
