@@ -12,6 +12,7 @@
  */
 
 #include <vix/config/Config.hpp>
+#include <vix/utils/Env.hpp>
 
 #include <cstdlib>
 #include <fstream>
@@ -124,17 +125,17 @@ namespace vix::config
 
   std::string Config::getDbPasswordFromEnv()
   {
-    if (const char *value = std::getenv("VIX_DB_PASSWORD"); value && *value != '\0')
+    if (const char *value = vix::utils::vix_getenv("VIX_DB_PASSWORD"); value && *value != '\0')
     {
       return std::string(value);
     }
 
-    if (const char *value = std::getenv("DB_PASSWORD"); value && *value != '\0')
+    if (const char *value = vix::utils::vix_getenv("DB_PASSWORD"); value && *value != '\0')
     {
       return std::string(value);
     }
 
-    if (const char *value = std::getenv("MYSQL_PASSWORD"); value && *value != '\0')
+    if (const char *value = vix::utils::vix_getenv("MYSQL_PASSWORD"); value && *value != '\0')
     {
       return std::string(value);
     }

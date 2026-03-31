@@ -280,7 +280,7 @@ namespace vix
      * @return Estimated output size.
      */
     [[nodiscard]] inline std::size_t estimate_output_size(std::string_view fmt,
-                                                          const rendered_arg_list &args) noexcept
+                                                          const rendered_arg_list &args)
     {
       std::size_t total = fmt.size();
       for (std::size_t i = 0; i < args.size(); ++i)

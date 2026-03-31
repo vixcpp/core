@@ -219,6 +219,21 @@ namespace vix
       os << static_cast<std::underlying_type_t<E>>(e);
     }
 
+#ifdef _WIN32
+    inline constexpr const char *kBoxTopLeft = "+";
+    inline constexpr const char *kBoxTopRight = "+";
+    inline constexpr const char *kBoxBottomLeft = "+";
+    inline constexpr const char *kBoxBottomRight = "+";
+    inline constexpr const char *kBoxHorizontal = "-";
+    inline constexpr const char *kBoxVertical = "|";
+#else
+    inline constexpr const char *kBoxTopLeft = "\u250C";
+    inline constexpr const char *kBoxTopRight = "\u2510";
+    inline constexpr const char *kBoxBottomLeft = "\u2514";
+    inline constexpr const char *kBoxBottomRight = "\u2518";
+    inline constexpr const char *kBoxHorizontal = "\u2500";
+    inline constexpr const char *kBoxVertical = "\u2502";
+#endif
     // write_duration
     template <typename Rep, typename Period>
     void write_duration(std::ostream &os,
@@ -233,7 +248,11 @@ namespace vix
       }
       else if constexpr (std::is_same_v<Period, std::micro>)
       {
+#ifdef _WIN32
+        os << d.count() << "us";
+#else
         os << d.count() << "µs";
+#endif
       }
       else if constexpr (std::is_same_v<Period, std::milli>)
       {
