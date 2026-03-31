@@ -169,11 +169,6 @@ namespace vix::server
       co_await listener_->async_listen(ep);
 
       bound_port_.store(static_cast<int>(port), std::memory_order_relaxed);
-
-      log().log(Logger::Level::Debug,
-                "[http] listener bound on {}:{}",
-                ep.host,
-                static_cast<unsigned int>(port));
     }
     catch (const std::exception &e)
     {
@@ -500,11 +495,8 @@ namespace vix::server
 
     if (threads_joined_.load(std::memory_order_acquire))
     {
-      log().log(Logger::Level::Debug, "[http] join_threads: already joined");
       return;
     }
-
-    log().log(Logger::Level::Debug, "[http] join_threads: begin");
 
     const std::thread::id current_id = std::this_thread::get_id();
     bool deferred_completion = false;
@@ -520,9 +512,7 @@ namespace vix::server
       }
       else
       {
-        log().log(Logger::Level::Debug, "[http] joining metrics_thread");
         metrics_thread_.join();
-        log().log(Logger::Level::Debug, "[http] joined metrics_thread");
       }
     }
 
@@ -543,9 +533,7 @@ namespace vix::server
         continue;
       }
 
-      log().log(Logger::Level::Debug, "[http] joining io thread {}", i);
       io_threads_[i].join();
-      log().log(Logger::Level::Debug, "[http] joined io thread {}", i);
     }
 
     io_threads_.clear();
@@ -553,15 +541,7 @@ namespace vix::server
     if (!deferred_completion)
     {
       threads_joined_.store(true, std::memory_order_release);
-      log().log(Logger::Level::Debug, "[http] join_threads: fully completed");
     }
-    else
-    {
-      log().log(Logger::Level::Debug,
-                "[http] join_threads: deferred final completion");
-    }
-
-    log().log(Logger::Level::Debug, "[http] join_threads: end");
   }
 
   void HTTPServer::stop_blocking()

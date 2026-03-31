@@ -474,8 +474,6 @@ namespace vix
 
     g_app_ptr.store(nullptr, std::memory_order_relaxed);
     started_.store(false, std::memory_order_relaxed);
-
-    log().log(Logger::Level::Debug, "Application shutdown complete");
   }
 
   void App::run(int port)
