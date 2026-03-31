@@ -2341,26 +2341,26 @@ namespace vix
       std::size_t min_width = 40)
   {
     auto &os = *default_config().out;
-    std::size_t content_width = std::max(message.size() + 4, min_width);
+    const std::size_t content_width = std::max(message.size() + 4, min_width);
 
     // Top border
-    os << "\u250c";
+    os << detail::kBoxTopLeft;
     for (std::size_t i = 0; i < content_width; ++i)
-      os << "\u2500";
-    os << "\u2510\n";
+      os << detail::kBoxHorizontal;
+    os << detail::kBoxTopRight << '\n';
 
     // Content line
-    os << "\u2502  " << message;
-    std::size_t pad = content_width - message.size() - 2;
+    os << detail::kBoxVertical << "  " << message;
+    const std::size_t pad = content_width - message.size() - 2;
     for (std::size_t i = 0; i < pad; ++i)
       os << ' ';
-    os << "\u2502\n";
+    os << detail::kBoxVertical << '\n';
 
     // Bottom border
-    os << "\u2514";
+    os << detail::kBoxBottomLeft;
     for (std::size_t i = 0; i < content_width; ++i)
-      os << "\u2500";
-    os << "\u2518\n";
+      os << detail::kBoxHorizontal;
+    os << detail::kBoxBottomRight << '\n';
   }
 
   /**
