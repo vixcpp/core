@@ -42,8 +42,22 @@ namespace vix::runtime
      * @param q Maximum number of steps allowed per slice.
      */
     explicit BudgetConfig(std::uint32_t q = 64) noexcept
-        : quantum(q == 0 ? 1u : q)
+        : quantum(normalize_quantum(q))
     {
+    }
+
+    /**
+     * @brief Normalize a requested budget quantum.
+     *
+     * A zero quantum is never allowed because it would make all tasks yield
+     * immediately without doing any useful work.
+     *
+     * @param q Requested quantum.
+     * @return Normalized quantum value.
+     */
+    [[nodiscard]] static constexpr std::uint32_t normalize_quantum(std::uint32_t q) noexcept
+    {
+      return (q == 0u) ? 1u : q;
     }
   };
 
@@ -62,7 +76,7 @@ namespace vix::runtime
      * @param config Budget configuration.
      */
     explicit Budget(const BudgetConfig &config = BudgetConfig{}) noexcept
-        : limit_(config.quantum),
+        : limit_(BudgetConfig::normalize_quantum(config.quantum)),
           used_(0)
     {
     }
@@ -76,35 +90,65 @@ namespace vix::runtime
     }
 
     /**
-     * @brief Consume one unit of work.
+     * @brief Reconfigure the budget limit and reset the consumed work.
+     *
+     * @param config New budget configuration.
      */
-    void consume() noexcept
+    void reconfigure(const BudgetConfig &config) noexcept
+    {
+      limit_ = BudgetConfig::normalize_quantum(config.quantum);
+      used_ = 0;
+    }
+
+    /**
+     * @brief Consume one unit of work.
+     *
+     * @return true if the budget still has capacity after consumption,
+     * false if it is exhausted.
+     */
+    [[nodiscard]] bool consume() noexcept
     {
       if (used_ < limit_)
       {
         ++used_;
       }
+
+      return !exhausted();
     }
 
     /**
      * @brief Consume several units of work.
      *
+     * Consumption is saturating: if @p steps exceeds the remaining capacity,
+     * the budget becomes fully exhausted.
+     *
      * @param steps Number of steps to consume.
+     * @return true if the budget still has capacity after consumption,
+     * false if it is exhausted.
      */
-    void consume(std::uint32_t steps) noexcept
+    [[nodiscard]] bool consume(std::uint32_t steps) noexcept
     {
-      if (steps == 0)
+      if (steps == 0u)
       {
-        return;
+        return !exhausted();
       }
 
       if (steps >= remaining())
       {
         used_ = limit_;
-        return;
+        return false;
       }
 
       used_ += steps;
+      return !exhausted();
+    }
+
+    /**
+     * @brief Force the budget into the exhausted state.
+     */
+    void exhaust() noexcept
+    {
+      used_ = limit_;
     }
 
     /**
@@ -115,6 +159,36 @@ namespace vix::runtime
     [[nodiscard]] bool exhausted() const noexcept
     {
       return used_ >= limit_;
+    }
+
+    /**
+     * @brief Check whether the budget still has available capacity.
+     *
+     * @return true if more work may still be executed in this slice.
+     */
+    [[nodiscard]] bool available() const noexcept
+    {
+      return !exhausted();
+    }
+
+    /**
+     * @brief Check whether the budget is empty.
+     *
+     * @return true if no step has been consumed yet.
+     */
+    [[nodiscard]] bool empty() const noexcept
+    {
+      return used_ == 0u;
+    }
+
+    /**
+     * @brief Check whether the budget is completely full.
+     *
+     * @return true if the full budget was consumed.
+     */
+    [[nodiscard]] bool full() const noexcept
+    {
+      return exhausted();
     }
 
     /**

@@ -31,9 +31,9 @@ namespace vix::runtime
    * @brief Result returned by a task execution step.
    *
    * A task may either:
-   * - complete its work,
-   * - yield and request rescheduling,
-   * - or fail.
+   * - complete its work
+   * - yield and request rescheduling
+   * - or fail
    */
   enum class TaskResult : std::uint8_t
   {
@@ -136,6 +136,20 @@ namespace vix::runtime
     }
 
     /**
+     * @brief Check whether the task is ready to be scheduled.
+     *
+     * @return true if the task may be executed by the runtime.
+     */
+    [[nodiscard]] bool schedulable() const noexcept
+    {
+      return valid() &&
+             state != TaskState::running &&
+             state != TaskState::completed &&
+             state != TaskState::failed &&
+             state != TaskState::cancelled;
+    }
+
+    /**
      * @brief Check whether the task reached a terminal state.
      *
      * @return true if the task is completed, failed, or cancelled.
@@ -148,11 +162,58 @@ namespace vix::runtime
     }
 
     /**
+     * @brief Check whether the task is currently running.
+     *
+     * @return true if the task is in the running state.
+     */
+    [[nodiscard]] bool running() const noexcept
+    {
+      return state == TaskState::running;
+    }
+
+    /**
+     * @brief Check whether the task yielded and expects rescheduling.
+     *
+     * @return true if the task is in the yielded state.
+     */
+    [[nodiscard]] bool yielded() const noexcept
+    {
+      return state == TaskState::yielded;
+    }
+
+    /**
+     * @brief Mark the task as ready for scheduling.
+     *
+     * This is useful when the scheduler or worker wants to normalize the state
+     * before placing the task back into a queue.
+     */
+    void mark_ready() noexcept
+    {
+      if (!done())
+      {
+        state = TaskState::ready;
+      }
+    }
+
+    /**
      * @brief Cancel the task before execution.
+     *
+     * Cancellation only changes the state if the task is not already terminal.
      */
     void cancel() noexcept
     {
-      state = TaskState::cancelled;
+      if (!done())
+      {
+        state = TaskState::cancelled;
+      }
+    }
+
+    /**
+     * @brief Clear the last captured error.
+     */
+    void clear_error() noexcept
+    {
+      error = nullptr;
     }
 
     /**
@@ -164,9 +225,14 @@ namespace vix::runtime
      * If the callable throws, the task is marked as failed and the exception
      * is captured in @ref error.
      *
+     * Rules:
+     * - an invalid task fails immediately
+     * - a cancelled task is treated as failed to execute
+     * - a terminal task is not re-executed
+     *
      * @return TaskResult Result of the execution step.
      */
-    TaskResult run() noexcept
+    [[nodiscard]] TaskResult run() noexcept
     {
       if (!valid())
       {
@@ -179,6 +245,12 @@ namespace vix::runtime
         return TaskResult::failed;
       }
 
+      if (state == TaskState::completed || state == TaskState::failed)
+      {
+        return TaskResult::failed;
+      }
+
+      clear_error();
       state = TaskState::running;
 
       try
@@ -189,19 +261,17 @@ namespace vix::runtime
         {
         case TaskResult::complete:
           state = TaskState::completed;
-          break;
+          return TaskResult::complete;
 
         case TaskResult::yield:
           state = TaskState::yielded;
-          break;
+          return TaskResult::yield;
 
         case TaskResult::failed:
         default:
           state = TaskState::failed;
-          break;
+          return TaskResult::failed;
         }
-
-        return result;
       }
       catch (...)
       {

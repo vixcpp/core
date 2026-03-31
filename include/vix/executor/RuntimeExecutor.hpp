@@ -141,13 +141,13 @@ namespace vix::executor
     {
       std::lock_guard<std::mutex> lock(lifecycleMutex_);
 
+      state_->accepting.store(false, std::memory_order_release);
+
       if (!started_.load(std::memory_order_acquire))
       {
-        state_->accepting.store(false, std::memory_order_release);
         return;
       }
 
-      state_->accepting.store(false, std::memory_order_release);
       runtime_->stop();
       started_.store(false, std::memory_order_release);
     }
@@ -162,6 +162,7 @@ namespace vix::executor
      */
     void stop_and_wait()
     {
+      state_->accepting.store(false, std::memory_order_release);
       wait_idle();
       stop();
     }
@@ -187,6 +188,16 @@ namespace vix::executor
     }
 
     /**
+     * @brief Return whether the executor is currently accepting new work.
+     *
+     * @return true if new submissions may still be accepted.
+     */
+    [[nodiscard]] bool accepting() const noexcept
+    {
+      return state_->accepting.load(std::memory_order_acquire);
+    }
+
+    /**
      * @brief Submit a pre-built runtime task directly.
      *
      * @param task Runtime task to submit.
@@ -195,12 +206,23 @@ namespace vix::executor
      */
     [[nodiscard]] bool submit(vix::runtime::Task task)
     {
-      if (!state_->accepting.load(std::memory_order_acquire))
+      if (!accepting())
       {
+        state_->rejected.fetch_add(1, std::memory_order_relaxed);
         return false;
       }
 
-      return runtime_->submit(std::move(task));
+      const bool accepted = runtime_->submit(std::move(task));
+      if (accepted)
+      {
+        state_->submitted.fetch_add(1, std::memory_order_relaxed);
+      }
+      else
+      {
+        state_->rejected.fetch_add(1, std::memory_order_relaxed);
+      }
+
+      return accepted;
     }
 
     /**
@@ -217,12 +239,104 @@ namespace vix::executor
     [[nodiscard]] bool submit(vix::runtime::TaskFn fn,
                               std::uint32_t affinity = 0)
     {
-      if (!state_->accepting.load(std::memory_order_acquire))
+      if (!fn)
       {
+        state_->rejected.fetch_add(1, std::memory_order_relaxed);
         return false;
       }
 
-      return runtime_->submit(std::move(fn), affinity);
+      if (!accepting())
+      {
+        state_->rejected.fetch_add(1, std::memory_order_relaxed);
+        return false;
+      }
+
+      const bool accepted = runtime_->submit(std::move(fn), affinity);
+      if (accepted)
+      {
+        state_->submitted.fetch_add(1, std::memory_order_relaxed);
+      }
+      else
+      {
+        state_->rejected.fetch_add(1, std::memory_order_relaxed);
+      }
+
+      return accepted;
+    }
+
+    /**
+     * @brief Submit a hot-path HTTP task with minimal executor overhead.
+     *
+     * This path is intentionally lighter than @ref post:
+     * - no active task tracking
+     * - no timeout measurement
+     * - no extra wrapper bookkeeping beyond submission counters
+     *
+     * It is designed for short-lived request handlers that complete quickly
+     * and do not require generic executor accounting.
+     *
+     * @param fn Runtime task function.
+     * @param affinity Optional worker affinity hint.
+     *
+     * @return true if the task was accepted, false otherwise.
+     */
+    [[nodiscard]] bool post_http_fast(vix::runtime::TaskFn fn,
+                                      std::uint32_t affinity = 0)
+    {
+      if (!fn)
+      {
+        state_->rejected.fetch_add(1, std::memory_order_relaxed);
+        return false;
+      }
+
+      if (!accepting())
+      {
+        state_->rejected.fetch_add(1, std::memory_order_relaxed);
+        return false;
+      }
+
+      const bool accepted = runtime_->submit(std::move(fn), affinity);
+      if (accepted)
+      {
+        state_->submitted.fetch_add(1, std::memory_order_relaxed);
+        state_->fastSubmitted.fetch_add(1, std::memory_order_relaxed);
+      }
+      else
+      {
+        state_->rejected.fetch_add(1, std::memory_order_relaxed);
+      }
+
+      return accepted;
+    }
+
+    /**
+     * @brief Submit a simple HTTP task from a void callable.
+     *
+     * This is a convenience overload for short handlers that do not need to
+     * return a runtime result manually.
+     *
+     * @param fn Void task function.
+     * @param affinity Optional worker affinity hint.
+     *
+     * @return true if the task was accepted, false otherwise.
+     */
+    [[nodiscard]] bool post_http_fast(std::function<void()> fn,
+                                      std::uint32_t affinity = 0)
+    {
+      if (!fn)
+      {
+        state_->rejected.fetch_add(1, std::memory_order_relaxed);
+        return false;
+      }
+
+      vix::runtime::TaskFn runtimeFn =
+          [task = std::move(fn)]() mutable -> vix::runtime::TaskResult
+      {
+        task();
+        return vix::runtime::TaskResult::complete;
+      };
+
+      return post_http_fast(std::move(runtimeFn), affinity);
     }
 
     /**
@@ -245,17 +359,19 @@ namespace vix::executor
     {
       if (!fn)
       {
+        state_->rejected.fetch_add(1, std::memory_order_relaxed);
         return false;
       }
 
-      if (!state_->accepting.load(std::memory_order_acquire))
+      if (!accepting())
       {
+        state_->rejected.fetch_add(1, std::memory_order_relaxed);
         return false;
       }
 
       const auto shared = state_;
 
-      return runtime_->submit(
+      const bool accepted = runtime_->submit(
           [shared,
            task = std::move(fn),
            options = opt]() mutable -> vix::runtime::TaskResult
@@ -278,7 +394,7 @@ namespace vix::executor
 
                 if (elapsed > options.timeout)
                 {
-                  shared->timed_out.fetch_add(1, std::memory_order_relaxed);
+                  shared->timedOut.fetch_add(1, std::memory_order_relaxed);
                 }
               }
 
@@ -296,13 +412,25 @@ namespace vix::executor
 
                 if (elapsed > options.timeout)
                 {
-                  shared->timed_out.fetch_add(1, std::memory_order_relaxed);
+                  shared->timedOut.fetch_add(1, std::memory_order_relaxed);
                 }
               }
 
+              shared->failed.fetch_add(1, std::memory_order_relaxed);
               return vix::runtime::TaskResult::failed;
             }
           });
+
+      if (accepted)
+      {
+        state_->submitted.fetch_add(1, std::memory_order_relaxed);
+      }
+      else
+      {
+        state_->rejected.fetch_add(1, std::memory_order_relaxed);
+      }
+
+      return accepted;
     }
 
     /**
@@ -315,7 +443,7 @@ namespace vix::executor
       vix::executor::Metrics m;
       m.pending = static_cast<std::uint64_t>(runtime_->size());
       m.active = state_->active.load(std::memory_order_relaxed);
-      m.timed_out = state_->timed_out.load(std::memory_order_relaxed);
+      m.timed_out = state_->timedOut.load(std::memory_order_relaxed);
       return m;
     }
 
@@ -336,6 +464,46 @@ namespace vix::executor
 
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
       }
+    }
+
+    /**
+     * @brief Return the number of submitted tasks.
+     *
+     * @return Submitted task count.
+     */
+    [[nodiscard]] std::uint64_t submitted_tasks() const noexcept
+    {
+      return state_->submitted.load(std::memory_order_relaxed);
+    }
+
+    /**
+     * @brief Return the number of rejected tasks.
+     *
+     * @return Rejected task count.
+     */
+    [[nodiscard]] std::uint64_t rejected_tasks() const noexcept
+    {
+      return state_->rejected.load(std::memory_order_relaxed);
+    }
+
+    /**
+     * @brief Return the number of fast-path HTTP submissions.
+     *
+     * @return Fast-path HTTP task count.
+     */
+    [[nodiscard]] std::uint64_t fast_http_submitted_tasks() const noexcept
+    {
+      return state_->fastSubmitted.load(std::memory_order_relaxed);
+    }
+
+    /**
+     * @brief Return the number of failed posted tasks.
+     *
+     * @return Failed task count observed by post().
+     */
+    [[nodiscard]] std::uint64_t failed_tasks() const noexcept
+    {
+      return state_->failed.load(std::memory_order_relaxed);
     }
 
     /**
@@ -368,7 +536,11 @@ namespace vix::executor
     struct SharedState
     {
       std::atomic<std::uint64_t> active{0};
-      std::atomic<std::uint64_t> timed_out{0};
+      std::atomic<std::uint64_t> timedOut{0};
+      std::atomic<std::uint64_t> submitted{0};
+      std::atomic<std::uint64_t> rejected{0};
+      std::atomic<std::uint64_t> fastSubmitted{0};
+      std::atomic<std::uint64_t> failed{0};
       std::atomic<bool> accepting{false};
     };
 
@@ -381,10 +553,10 @@ namespace vix::executor
      */
     [[nodiscard]] static vix::runtime::RuntimeConfig make_config_from_workers(std::uint32_t workers)
     {
-      const std::uint32_t normalized_workers = std::max<std::uint32_t>(1u, workers);
+      const std::uint32_t normalizedWorkers = std::max<std::uint32_t>(1u, workers);
 
       return vix::runtime::RuntimeConfig{
-          normalized_workers,
+          normalizedWorkers,
           vix::runtime::BudgetConfig{16}};
     }
 
