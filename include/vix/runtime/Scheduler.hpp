@@ -50,6 +50,7 @@ namespace vix::runtime
                        const BudgetConfig &budgetConfig = BudgetConfig{})
         : workers_(),
           nextWorker_(0),
+          nextVictimSeed_(0),
           running_(false),
           submittedTasks_(0),
           rejectedTasks_(0),
@@ -158,7 +159,7 @@ namespace vix::runtime
      *
      * Dispatch policy:
      * - if affinity is valid, use it
-     * - otherwise use round-robin
+     * - otherwise prefer a lightly loaded worker near the round-robin cursor
      *
      * Only schedulable tasks are accepted.
      *
@@ -202,6 +203,58 @@ namespace vix::runtime
     }
 
     /**
+     * @brief Submit several tasks to the scheduler.
+     *
+     * This amortizes scheduler-side overhead when a caller needs to enqueue
+     * multiple tasks at once.
+     *
+     * @param tasks Tasks to schedule.
+     * @return Number of tasks accepted.
+     */
+    [[nodiscard]] std::size_t submit_batch(std::vector<Task> tasks)
+    {
+      if (!running() || workers_.empty())
+      {
+        rejectedTasks_.fetch_add(static_cast<std::uint64_t>(tasks.size()),
+                                 std::memory_order_relaxed);
+        return 0;
+      }
+
+      std::size_t accepted = 0;
+
+      for (auto &task : tasks)
+      {
+        if (!task.schedulable())
+        {
+          rejectedTasks_.fetch_add(1, std::memory_order_relaxed);
+          continue;
+        }
+
+        Worker *worker = select_worker(task);
+        if (worker == nullptr)
+        {
+          rejectedTasks_.fetch_add(1, std::memory_order_relaxed);
+          continue;
+        }
+
+        task.mark_ready();
+
+        if (worker->submit(std::move(task)))
+        {
+          ++accepted;
+        }
+        else
+        {
+          rejectedTasks_.fetch_add(1, std::memory_order_relaxed);
+        }
+      }
+
+      submittedTasks_.fetch_add(static_cast<std::uint64_t>(accepted),
+                                std::memory_order_relaxed);
+      return accepted;
+    }
+
+    /**
      * @brief Try to steal work for one worker from the others.
      *
      * The requesting worker never steals from itself.
@@ -219,7 +272,12 @@ namespace vix::runtime
 
       const std::size_t thiefIndex =
           static_cast<std::size_t>(thiefId) % count;
-      const std::size_t start = (thiefIndex + 1u) % count;
+
+      const std::size_t seed =
+          static_cast<std::size_t>(
+              nextVictimSeed_.fetch_add(1, std::memory_order_relaxed));
+
+      const std::size_t start = (thiefIndex + 1u + seed) % count;
 
       for (std::size_t offset = 0; offset < count - 1u; ++offset)
       {
@@ -229,7 +287,13 @@ namespace vix::runtime
           continue;
         }
 
-        if (auto task = workers_[victimIndex]->try_steal(); task.has_value())
+        Worker *victim = workers_[victimIndex].get();
+        if (victim == nullptr || victim->empty())
+        {
+          continue;
+        }
+
+        if (auto task = victim->try_steal(); task.has_value())
         {
           stolenTasks_.fetch_add(1, std::memory_order_relaxed);
           return task;
@@ -355,6 +419,13 @@ namespace vix::runtime
     /**
      * @brief Select the destination worker for a task.
      *
+     * Strategy:
+     * - explicit affinity wins
+     * - otherwise start from round-robin cursor
+     * - then probe a few nearby workers and choose the least loaded one
+     *
+     * This keeps dispatch cheap while avoiding a purely blind round-robin policy.
+     *
      * @param task Task to place.
      * @return Pointer to the selected worker, or nullptr on failure.
      */
@@ -372,12 +443,43 @@ namespace vix::runtime
         return workers_[index].get();
       }
 
-      const std::size_t index =
+      const std::size_t count = workers_.size();
+      const std::size_t start =
           static_cast<std::size_t>(
               nextWorker_.fetch_add(1, std::memory_order_relaxed)) %
-          workers_.size();
+          count;
 
-      return workers_[index].get();
+      Worker *bestWorker = workers_[start].get();
+      if (bestWorker == nullptr)
+      {
+        return nullptr;
+      }
+
+      std::size_t bestSize = bestWorker->size();
+
+      const std::size_t probeCount = (count < 4u) ? count : 4u;
+      for (std::size_t i = 1; i < probeCount; ++i)
+      {
+        Worker *candidate = workers_[(start + i) % count].get();
+        if (candidate == nullptr)
+        {
+          continue;
+        }
+
+        const std::size_t candidateSize = candidate->size();
+        if (candidateSize < bestSize)
+        {
+          bestSize = candidateSize;
+          bestWorker = candidate;
+
+          if (bestSize == 0u)
+          {
+            break;
+          }
+        }
+      }
+
+      return bestWorker;
     }
 
   private:
@@ -386,6 +488,9 @@ namespace vix::runtime
 
     /** @brief Round-robin dispatch cursor. */
     std::atomic<std::uint32_t> nextWorker_;
+
+    /** @brief Rotating seed used to diversify stealing start points. */
+    std::atomic<std::uint32_t> nextVictimSeed_;
 
     /** @brief Global scheduler running flag. */
     std::atomic<bool> running_;

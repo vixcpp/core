@@ -13,7 +13,9 @@
 #define VIX_ROUTER_HPP
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <string>
@@ -323,6 +325,56 @@ namespace vix::router
       return path;
     }
 
+    static bool equals_icase(std::string_view a, std::string_view b)
+    {
+      if (a.size() != b.size())
+      {
+        return false;
+      }
+
+      for (std::size_t i = 0; i < a.size(); ++i)
+      {
+        const unsigned char ca = static_cast<unsigned char>(a[i]);
+        const unsigned char cb = static_cast<unsigned char>(b[i]);
+
+        if (static_cast<char>(std::tolower(ca)) !=
+            static_cast<char>(std::tolower(cb)))
+        {
+          return false;
+        }
+      }
+
+      return true;
+    }
+
+    static const std::string &cached_date_header()
+    {
+      using clock = std::chrono::system_clock;
+
+      static std::string cached = vix::vhttp::Response::http_date_now();
+      static auto last_tick = clock::now();
+      static std::atomic_flag lock = ATOMIC_FLAG_INIT;
+
+      const auto now = clock::now();
+      if (now - last_tick < std::chrono::seconds(1))
+      {
+        return cached;
+      }
+
+      while (lock.test_and_set(std::memory_order_acquire))
+      {
+      }
+
+      if (clock::now() - last_tick >= std::chrono::seconds(1))
+      {
+        cached = vix::vhttp::Response::http_date_now();
+        last_tick = clock::now();
+      }
+
+      lock.clear(std::memory_order_release);
+      return cached;
+    }
+
     RouteNode *match_handler_node(
         const std::string &method,
         const std::string &target)
@@ -426,7 +478,7 @@ namespace vix::router
         if (!connection.empty())
         {
           res.set_header("Connection", connection);
-          res.set_should_close(connection == "close");
+          res.set_should_close(equals_icase(connection, "close"));
         }
         else
         {
@@ -447,7 +499,7 @@ namespace vix::router
 
       if (!res.has_header("Date"))
       {
-        res.set_header("Date", vix::vhttp::Response::http_date_now());
+        res.set_header("Date", cached_date_header());
       }
     }
   };

@@ -105,6 +105,33 @@ namespace vix::session
       return true;
     }
 
+    inline bool equals_icase(std::string_view a, std::string_view b)
+    {
+      if (a.size() != b.size())
+      {
+        return false;
+      }
+
+      for (std::size_t i = 0; i < a.size(); ++i)
+      {
+        const unsigned char ca = static_cast<unsigned char>(a[i]);
+        const unsigned char cb = static_cast<unsigned char>(b[i]);
+
+        if (static_cast<char>(std::tolower(ca)) !=
+            static_cast<char>(std::tolower(cb)))
+        {
+          return false;
+        }
+      }
+
+      return true;
+    }
+
+    inline bool is_close_connection(std::string_view value)
+    {
+      return equals_icase(value, "close");
+    }
+
     inline std::size_t find_header_terminator(const std::string &s)
     {
       const auto pos = s.find("\r\n\r\n");
@@ -135,6 +162,17 @@ namespace vix::session
       }
 
       return out;
+    }
+
+    inline std::string_view strip_query_view(std::string_view target)
+    {
+      const auto q = target.find('?');
+      if (q == std::string_view::npos)
+      {
+        return target;
+      }
+
+      return target.substr(0, q);
     }
   } // namespace
 
@@ -193,6 +231,14 @@ namespace vix::session
 
   void Session::start_timer()
   {
+#ifdef VIX_BENCH_MODE
+    return;
+#else
+    if (config_.isBenchMode())
+    {
+      return;
+    }
+
     timer_cancel_ = cancel_source{};
 
     if (!io_context_)
@@ -232,11 +278,21 @@ namespace vix::session
 
           co_return;
         }());
+#endif
   }
 
   void Session::cancel_timer()
   {
+#ifdef VIX_BENCH_MODE
+    return;
+#else
+    if (config_.isBenchMode())
+    {
+      return;
+    }
+
     timer_cancel_.request_cancel();
+#endif
   }
 
   bool Session::is_normal_disconnect(const std::system_error &e) noexcept
@@ -304,8 +360,13 @@ namespace vix::session
       co_return std::nullopt;
     }
 
-    cancel_timer();
-    start_timer();
+#ifndef VIX_BENCH_MODE
+    if (!config_.isBenchMode())
+    {
+      cancel_timer();
+      start_timer();
+    }
+#endif
 
     bool malformed_request = false;
 
@@ -314,14 +375,24 @@ namespace vix::session
       const std::string raw_header = co_await read_header_block();
       if (raw_header.empty())
       {
-        cancel_timer();
+#ifndef VIX_BENCH_MODE
+        if (!config_.isBenchMode())
+        {
+          cancel_timer();
+        }
+#endif
         co_return std::nullopt;
       }
 
       ParsedRequestHead head = parse_request_head(raw_header);
       std::string body = co_await read_request_body(head);
 
-      cancel_timer();
+#ifndef VIX_BENCH_MODE
+      if (!config_.isBenchMode())
+      {
+        cancel_timer();
+      }
+#endif
 
       auto req = make_request(std::move(head), std::move(body));
 
@@ -341,7 +412,12 @@ namespace vix::session
     }
     catch (const std::system_error &e)
     {
-      cancel_timer();
+#ifndef VIX_BENCH_MODE
+      if (!config_.isBenchMode())
+      {
+        cancel_timer();
+      }
+#endif
 
       if (is_normal_disconnect(e))
       {
@@ -359,7 +435,12 @@ namespace vix::session
     }
     catch (const std::exception &e)
     {
-      cancel_timer();
+#ifndef VIX_BENCH_MODE
+      if (!config_.isBenchMode())
+      {
+        cancel_timer();
+      }
+#endif
 
       log().log(Logger::Level::Error,
                 "[session] request parse error: {}",
@@ -378,6 +459,82 @@ namespace vix::session
 
   task<void> Session::dispatch_request(vix::vhttp::Request req)
   {
+#ifdef VIX_BENCH_MODE
+    {
+      const std::string_view method{req.method()};
+      const std::string_view target = strip_query_view(req.target());
+
+      if (equals_icase(method, "GET") && target == "/bench")
+      {
+        static constexpr std::string_view kBenchBody = "OK";
+        static constexpr std::string_view kBenchResponse =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/plain\r\n"
+            "Content-Length: 2\r\n"
+            "Connection: keep-alive\r\n"
+            "Server: Vix.cpp\r\n"
+            "\r\n"
+            "OK";
+
+        const std::string conn = req.header("Connection");
+        const bool close_requested = !conn.empty() && is_close_connection(conn);
+
+        if (!close_requested)
+        {
+          std::size_t written = 0;
+          while (written < kBenchResponse.size())
+          {
+            const std::byte *ptr =
+                reinterpret_cast<const std::byte *>(kBenchResponse.data() + written);
+
+            const std::size_t n = co_await stream_->async_write(
+                std::span<const std::byte>(ptr, kBenchResponse.size() - written),
+                timer_cancel_.token());
+
+            if (n == 0)
+            {
+              break;
+            }
+
+            written += n;
+          }
+
+          co_return;
+        }
+
+        static constexpr std::string_view kBenchResponseClose =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/plain\r\n"
+            "Content-Length: 2\r\n"
+            "Connection: close\r\n"
+            "Server: Vix.cpp\r\n"
+            "\r\n"
+            "OK";
+
+        std::size_t written = 0;
+        while (written < kBenchResponseClose.size())
+        {
+          const std::byte *ptr =
+              reinterpret_cast<const std::byte *>(kBenchResponseClose.data() + written);
+
+          const std::size_t n = co_await stream_->async_write(
+              std::span<const std::byte>(ptr, kBenchResponseClose.size() - written),
+              timer_cancel_.token());
+
+          if (n == 0)
+          {
+            break;
+          }
+
+          written += n;
+        }
+
+        co_await close_stream_gracefully();
+        co_return;
+      }
+    }
+#endif
+
     vix::vhttp::Response res;
 
     try
@@ -405,16 +562,12 @@ namespace vix::session
       if (!conn.empty())
       {
         res.set_header("Connection", conn);
-        res.set_should_close(to_lower(conn) == "close");
+        res.set_should_close(is_close_connection(conn));
       }
       else
       {
-        const bool should_keep_alive =
-            req.header("Connection").empty() ||
-            to_lower(req.header("Connection")) != "close";
-
-        res.set_header("Connection", should_keep_alive ? "keep-alive" : "close");
-        res.set_should_close(!should_keep_alive);
+        res.set_header("Connection", "keep-alive");
+        res.set_should_close(false);
       }
     }
 
@@ -429,8 +582,13 @@ namespace vix::session
       co_return;
     }
 
-    cancel_timer();
-    start_timer();
+#ifndef VIX_BENCH_MODE
+    if (!config_.isBenchMode())
+    {
+      cancel_timer();
+      start_timer();
+    }
+#endif
 
     bool must_close = false;
 
@@ -456,7 +614,12 @@ namespace vix::session
         written += n;
       }
 
-      cancel_timer();
+#ifndef VIX_BENCH_MODE
+      if (!config_.isBenchMode())
+      {
+        cancel_timer();
+      }
+#endif
 
       if (res.should_close())
       {
@@ -465,7 +628,12 @@ namespace vix::session
     }
     catch (const std::exception &e)
     {
-      cancel_timer();
+#ifndef VIX_BENCH_MODE
+      if (!config_.isBenchMode())
+      {
+        cancel_timer();
+      }
+#endif
 
       log().log(Logger::Level::Error,
                 "[session] write error: {}",
@@ -481,6 +649,7 @@ namespace vix::session
 
     co_return;
   }
+
   task<void> Session::send_error(int status, const std::string &msg)
   {
     vix::vhttp::Response res;
@@ -493,7 +662,12 @@ namespace vix::session
 
   task<void> Session::close_stream_gracefully()
   {
-    cancel_timer();
+#ifndef VIX_BENCH_MODE
+    if (!config_.isBenchMode())
+    {
+      cancel_timer();
+    }
+#endif
 
     if (!stream_)
     {

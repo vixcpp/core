@@ -129,7 +129,14 @@ namespace
     auto handler = [](vix::vhttp::Request &req, vix::vhttp::ResponseWrapper &res)
     {
       (void)req;
+
+#ifdef VIX_BENCH_MODE
+      res.set_status(vix::vhttp::OK);
+      res.set_header("Content-Type", "text/plain");
+      res.set_body("OK");
+#else
       res.ok().text("OK");
+#endif
     };
 
     using HandlerT = vix::vhttp::RequestHandler<decltype(handler)>;

@@ -22,6 +22,7 @@
 #include <optional>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include <vix/runtime/Budget.hpp>
 #include <vix/runtime/RunQueue.hpp>
@@ -192,6 +193,22 @@ namespace vix::runtime
     }
 
     /**
+     * @brief Enqueue multiple tasks into the local run queue.
+     *
+     * @param tasks Tasks to enqueue.
+     * @return Number of tasks accepted.
+     */
+    [[nodiscard]] std::size_t submit_batch(std::vector<Task> tasks)
+    {
+      if (!running())
+      {
+        return 0;
+      }
+
+      return queue_.push_batch(std::move(tasks));
+    }
+
+    /**
      * @brief Return whether the worker is currently running.
      *
      * @return true if the worker loop is active.
@@ -287,41 +304,55 @@ namespace vix::runtime
     /**
      * @brief Main worker loop.
      *
-     * The worker prefers local tasks first, then attempts work stealing.
-     * If no work is available, it waits briefly with a progressive idle
-     * strategy to reduce both hot spinning and wake-up latency.
+     * Strategy:
+     * - first drain a small local batch to reduce lock traffic
+     * - if empty, try one direct local pop
+     * - then try stealing
+     * - if still idle, use progressive backoff
      */
     void run_loop()
     {
       std::uint32_t idleStreak = 0;
+      std::vector<Task> localBatch;
+      localBatch.reserve(kLocalBatchSize);
 
       while (running())
       {
-        std::optional<Task> task = queue_.try_pop();
-        bool stolen = false;
-
-        if (!task.has_value() && stealFn_)
+        if (localBatch.empty())
         {
-          task = stealFn_(id_);
-          stolen = task.has_value();
+          localBatch = queue_.try_pop_batch(kLocalBatchSize);
         }
 
-        if (!task.has_value())
+        if (!localBatch.empty())
         {
-          ++idleStreak;
-          idleCycles_.fetch_add(1, std::memory_order_relaxed);
-          idle_wait(idleStreak);
+          idleStreak = 0;
+
+          Task task = std::move(localBatch.back());
+          localBatch.pop_back();
+          execute_task(task, false);
           continue;
         }
 
-        idleStreak = 0;
-
-        if (stolen)
+        if (auto task = queue_.try_pop(); task.has_value())
         {
-          stolenTasks_.fetch_add(1, std::memory_order_relaxed);
+          idleStreak = 0;
+          execute_task(*task, false);
+          continue;
         }
 
-        execute_task(*task);
+        if (stealFn_)
+        {
+          if (auto task = stealFn_(id_); task.has_value())
+          {
+            idleStreak = 0;
+            execute_task(*task, true);
+            continue;
+          }
+        }
+
+        ++idleStreak;
+        idleCycles_.fetch_add(1, std::memory_order_relaxed);
+        idle_wait(idleStreak);
       }
     }
 
@@ -332,8 +363,9 @@ namespace vix::runtime
      * running. Once shutdown begins, yielded tasks are not resubmitted.
      *
      * @param task Task to execute.
+     * @param stolen Whether the task came from stealing.
      */
-    void execute_task(Task &task)
+    void execute_task(Task &task, bool stolen)
     {
       if (!running())
       {
@@ -343,6 +375,11 @@ namespace vix::runtime
       if (!task.schedulable())
       {
         return;
+      }
+
+      if (stolen)
+      {
+        stolenTasks_.fetch_add(1, std::memory_order_relaxed);
       }
 
       Budget budget(budgetConfig_);
@@ -407,8 +444,8 @@ namespace vix::runtime
      *
      * This uses a progressive strategy:
      * - first a few cheap yields
+     * - then a short pause
      * - then a very short sleep
-     * - then a slightly longer sleep if idle persists
      *
      * This keeps the worker responsive for bursty HTTP workloads while still
      * avoiding permanent hot spinning.
@@ -417,20 +454,23 @@ namespace vix::runtime
      */
     void idle_wait(std::uint32_t idleStreak) const
     {
-      if (idleStreak <= 16u)
+      if (idleStreak <= 32u)
       {
         std::this_thread::yield();
         return;
       }
 
-      if (idleStreak <= 64u)
+      if (idleStreak <= 128u)
       {
-        std::this_thread::sleep_for(std::chrono::microseconds(5));
+        std::this_thread::sleep_for(std::chrono::microseconds(2));
         return;
       }
 
-      std::this_thread::sleep_for(std::chrono::microseconds(25));
+      std::this_thread::sleep_for(std::chrono::microseconds(10));
     }
+
+  private:
+    static constexpr std::size_t kLocalBatchSize = 8u;
 
   private:
     /** @brief Worker identifier. */
