@@ -19,6 +19,7 @@
 #include <optional>
 #include <regex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <vix/async/core/cancel.hpp>
@@ -27,7 +28,7 @@
 #include <vix/async/core/timer.hpp>
 #include <vix/async/net/tcp.hpp>
 #include <vix/config/Config.hpp>
-#include <vix/executor/RuntimeExecutor.hpp>
+#include <vix/executor/IExecutor.hpp>
 #include <vix/http/Request.hpp>
 #include <vix/http/Response.hpp>
 #include <vix/router/Router.hpp>
@@ -74,12 +75,12 @@ namespace vix::session
      * @param stream Connected TCP stream.
      * @param router Router used to dispatch the HTTP request.
      * @param config Server configuration.
-     * @param executor Runtime-backed executor used for handler execution.
+     * @param executor Executor used for handler execution.
      */
     explicit Session(std::unique_ptr<tcp_stream> stream,
                      vix::router::Router &router,
                      const vix::config::Config &config,
-                     std::shared_ptr<vix::executor::RuntimeExecutor> executor);
+                     std::shared_ptr<vix::executor::IExecutor> executor);
 
     /** @brief Destroy the session. */
     ~Session() = default;
@@ -109,7 +110,7 @@ namespace vix::session
     task<std::optional<vix::vhttp::Request>> read_request();
 
     /**
-     * @brief Dispatch one parsed request to the runtime and router.
+     * @brief Dispatch one parsed request to the executor and router.
      *
      * @param req Parsed native Vix HTTP request.
      */
@@ -194,7 +195,7 @@ namespace vix::session
     std::unique_ptr<tcp_stream> stream_;
     vix::router::Router &router_;
     const vix::config::Config &config_;
-    std::shared_ptr<vix::executor::RuntimeExecutor> executor_;
+    std::shared_ptr<vix::executor::IExecutor> executor_;
 
     std::string read_buffer_{};
     std::shared_ptr<io_context> io_context_{};

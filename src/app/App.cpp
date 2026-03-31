@@ -13,6 +13,7 @@
  */
 #include <vix/app/App.hpp>
 
+#include <vix/experimental/ThreadPoolExecutor.hpp>
 #include <vix/openapi/register_docs.hpp>
 #include <vix/router/Router.hpp>
 #include <vix/utils/Env.hpp>
@@ -124,6 +125,26 @@ namespace
     return static_cast<std::size_t>(hc);
   }
 
+  std::shared_ptr<vix::executor::IExecutor> make_default_executor()
+  {
+    const std::size_t threads = compute_executor_threads();
+    const std::size_t max_threads = threads;
+    constexpr int default_priority = 0;
+
+    std::unique_ptr<vix::executor::IExecutor> exec =
+        vix::experimental::make_threadpool_executor(
+            threads,
+            max_threads,
+            default_priority);
+
+    if (!exec)
+    {
+      throw std::runtime_error("failed to create default thread pool executor");
+    }
+
+    return std::shared_ptr<vix::executor::IExecutor>(std::move(exec));
+  }
+
   void register_bench_route(vix::router::Router &router)
   {
     auto handler = [](vix::vhttp::Request &req, vix::vhttp::ResponseWrapper &res)
@@ -169,14 +190,15 @@ namespace vix
     std::call_once(g_module_init_once, []
                    {
                      if (auto fn = module_init_ref())
-                       fn(); });
+                     {
+                       fn();
+                     } });
   }
 
   App::App()
       : config_(),
         router_(nullptr),
-        executor_(std::make_shared<vix::executor::RuntimeExecutor>(
-            static_cast<std::uint32_t>(compute_executor_threads()))),
+        executor_(make_default_executor()),
         server_(config_, executor_)
   {
     log().setLevelFromEnv("VIX_LOG_LEVEL");
@@ -215,7 +237,7 @@ namespace vix
     }
   }
 
-  App::App(std::shared_ptr<vix::executor::RuntimeExecutor> executor)
+  App::App(std::shared_ptr<vix::executor::IExecutor> executor)
       : config_(),
         router_(nullptr),
         executor_(std::move(executor)),
@@ -341,7 +363,9 @@ namespace vix
            {
              const int bound = server_.bound_port();
              if (cb)
-               cb(bound); });
+             {
+               cb(bound);
+             } });
   }
 
   void App::listen(int port, ListenCallback on_listen)
@@ -375,7 +399,9 @@ namespace vix
     {
       bound = server_.bound_port();
       if (bound != 0)
+      {
         break;
+      }
 
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
@@ -385,7 +411,9 @@ namespace vix
         std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
 
     if (ready_ms < 1)
+    {
       ready_ms = 1;
+    }
 
     vix::utils::ServerReadyInfo info;
     info.app = "vix.cpp";
@@ -415,9 +443,13 @@ namespace vix
     }
 
     if (on_listen)
+    {
       on_listen();
+    }
     else
+    {
       vix::utils::RuntimeBanner::emit_server_ready(info);
+    }
   }
 
   void App::wait()
@@ -498,16 +530,24 @@ namespace vix
                                      const std::string &path) const
   {
     if (prefix.empty())
+    {
       return true;
+    }
 
     if (path.size() < prefix.size())
+    {
       return false;
+    }
 
     if (path.compare(0, prefix.size(), prefix) != 0)
+    {
       return false;
+    }
 
     if (path.size() == prefix.size())
+    {
       return true;
+    }
 
     return path[prefix.size()] == '/';
   }
@@ -520,13 +560,17 @@ namespace vix
     for (const auto &e : middlewares_)
     {
       if (e.prefix.empty())
+      {
         out.push_back(e.mw);
+      }
     }
 
     for (const auto &e : middlewares_)
     {
       if (!e.prefix.empty() && match_middleware_prefix_(e.prefix, path))
+      {
         out.push_back(e.mw);
+      }
     }
 
     return out;

@@ -76,12 +76,12 @@ namespace vix::server
   } // namespace
 
   HTTPServer::HTTPServer(vix::config::Config &config,
-                         std::shared_ptr<vix::executor::RuntimeExecutor> exec)
+                         std::shared_ptr<vix::executor::IExecutor> executor)
       : config_(config),
         io_context_(std::make_shared<vix::async::core::io_context>()),
         listener_(nullptr),
         router_(std::make_shared<vix::router::Router>()),
-        executor_(std::move(exec)),
+        executor_(std::move(executor)),
         io_threads_(),
         metrics_thread_(),
         metrics_mutex_(),
@@ -95,7 +95,7 @@ namespace vix::server
   {
     if (!executor_)
     {
-      throw std::invalid_argument("HTTPServer requires a valid runtime executor");
+      throw std::invalid_argument("HTTPServer requires a valid executor");
     }
 
     try
@@ -144,15 +144,15 @@ namespace vix::server
     }
   }
 
-  vix::async::net::tcp_endpoint HTTPServer::make_bind_endpoint() const
+  tcp_endpoint HTTPServer::make_bind_endpoint() const
   {
-    vix::async::net::tcp_endpoint ep{};
+    tcp_endpoint ep{};
     ep.host = "0.0.0.0";
     ep.port = static_cast<std::uint16_t>(config_.getServerPort());
     return ep;
   }
 
-  vix::async::core::task<void> HTTPServer::init_listener(unsigned short port)
+  task<void> HTTPServer::init_listener(unsigned short port)
   {
     listener_ = vix::async::net::make_tcp_listener(*io_context_);
     if (!listener_)
@@ -162,7 +162,7 @@ namespace vix::server
 
     try
     {
-      vix::async::net::tcp_endpoint ep{};
+      tcp_endpoint ep{};
       ep.host = "0.0.0.0";
       ep.port = port;
 
@@ -182,7 +182,7 @@ namespace vix::server
     co_return;
   }
 
-  vix::async::core::task<void> HTTPServer::start_server()
+  task<void> HTTPServer::start_server()
   {
     const int port = config_.getServerPort();
 
@@ -260,10 +260,8 @@ namespace vix::server
 
     if (!executor_)
     {
-      throw std::runtime_error("runtime executor is null");
+      throw std::runtime_error("executor is null");
     }
-
-    executor_->start();
 
     start_io_threads();
     spawn_detached(*io_context_, start_server());
@@ -338,7 +336,7 @@ namespace vix::server
     return false;
   }
 
-  vix::async::core::task<void> HTTPServer::accept_loop()
+  task<void> HTTPServer::accept_loop()
   {
     while (!stop_requested_.load(std::memory_order_acquire))
     {
@@ -385,7 +383,7 @@ namespace vix::server
     co_return;
   }
 
-  vix::async::core::task<void> HTTPServer::handle_client(std::unique_ptr<tcp_stream> stream)
+  task<void> HTTPServer::handle_client(std::unique_ptr<tcp_stream> stream)
   {
     if (!stream)
     {

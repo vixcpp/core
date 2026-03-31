@@ -26,7 +26,7 @@
 #include <vector>
 
 #include <vix/config/Config.hpp>
-#include <vix/executor/RuntimeExecutor.hpp>
+#include <vix/executor/IExecutor.hpp>
 #include <vix/http/RequestHandler.hpp>
 #include <vix/http/ResponseWrapper.hpp>
 #include <vix/router/Router.hpp>
@@ -60,9 +60,9 @@ namespace vix
   /**
    * @brief Main application entry point for building a Vix HTTP server.
    *
-   * This class owns the router, runtime executor and HTTP server. It provides
+   * This class owns the router, executor and HTTP server. It provides
    * route registration helpers, middleware support, static file mounting and
-   * lifecycle methods such as listen(), run(), wait() and close().
+   * lifecycle methods such as listen(), run(), wait() and close(). :contentReference[oaicite:0]{index=0}
    */
   class App
   {
@@ -111,16 +111,16 @@ namespace vix
     using ModuleInitFn = void (*)();
 
     /**
-     * @brief Constructs an application with a default runtime executor.
+     * @brief Constructs an application with a default executor.
      */
     App();
 
     /**
-     * @brief Constructs an application with an externally provided runtime executor.
+     * @brief Constructs an application with an externally provided executor.
      *
-     * @param executor Shared runtime executor used by the application.
+     * @param executor Shared executor used by the application.
      */
-    explicit App(std::shared_ptr<vix::executor::RuntimeExecutor> executor);
+    explicit App(std::shared_ptr<vix::executor::IExecutor> executor);
 
     /**
      * @brief Destroys the application and releases owned resources.
@@ -261,8 +261,8 @@ namespace vix
     /**
      * @brief Registers a heavy GET route.
      *
-     * Heavy routes are marked with RouteOptions{ .heavy = true } so the runtime
-     * can treat them differently when needed.
+     * Heavy routes are marked with RouteOptions{ .heavy = true } so the executor
+     * can treat them differently when needed. :contentReference[oaicite:1]{index=1}
      *
      * @tparam Handler Route handler type.
      * @param path Route path.
@@ -318,11 +318,11 @@ namespace vix
     }
 
     /**
-     * @brief Returns the runtime executor used by the application.
+     * @brief Returns the executor used by the application.
      *
-     * @return vix::executor::RuntimeExecutor& Runtime executor.
+     * @return vix::executor::IExecutor& Executor.
      */
-    vix::executor::RuntimeExecutor &executor() noexcept
+    vix::executor::IExecutor &executor() noexcept
     {
       return *executor_;
     }
@@ -929,7 +929,7 @@ namespace vix
   private:
     vix::config::Config config_;
     std::shared_ptr<vix::router::Router> router_;
-    std::shared_ptr<vix::executor::RuntimeExecutor> executor_;
+    std::shared_ptr<vix::executor::IExecutor> executor_;
     vix::server::HTTPServer server_;
 
     ShutdownCallback shutdown_cb_{};

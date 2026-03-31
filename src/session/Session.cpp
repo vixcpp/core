@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -28,7 +29,6 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include <cerrno>
 
 #include <nlohmann/json.hpp>
 
@@ -149,7 +149,7 @@ namespace vix::session
   Session::Session(std::unique_ptr<tcp_stream> stream,
                    vix::router::Router &router,
                    const vix::config::Config &config,
-                   std::shared_ptr<vix::executor::RuntimeExecutor> executor)
+                   std::shared_ptr<vix::executor::IExecutor> executor)
       : stream_(std::move(stream)),
         router_(router),
         config_(config),
@@ -158,6 +158,10 @@ namespace vix::session
         io_context_(nullptr),
         timer_cancel_()
   {
+    if (!executor_)
+    {
+      throw std::invalid_argument("Session requires a valid executor");
+    }
   }
 
   task<void> Session::run()
@@ -481,6 +485,7 @@ namespace vix::session
 
     co_return;
   }
+
   task<void> Session::send_error(int status, const std::string &msg)
   {
     vix::vhttp::Response res;
