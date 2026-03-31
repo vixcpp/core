@@ -62,9 +62,9 @@ namespace vix::runtime
    * @brief Public runtime facade for lightweight task scheduling.
    *
    * Runtime owns one scheduler and provides a simple API to:
-   * - start and stop execution,
-   * - submit lightweight tasks,
-   * - generate unique task ids.
+   * - start and stop execution
+   * - submit lightweight tasks
+   * - generate unique task ids
    */
   class Runtime
   {
@@ -77,7 +77,10 @@ namespace vix::runtime
     explicit Runtime(const RuntimeConfig &config = RuntimeConfig{})
         : config_(normalize_config(config)),
           scheduler_(config_.workerCount, config_.budget),
-          nextTaskId_(1)
+          nextTaskId_(1),
+          started_(false),
+          submittedTasks_(0),
+          rejectedTasks_(0)
     {
     }
 
@@ -97,17 +100,39 @@ namespace vix::runtime
 
     /**
      * @brief Start the runtime scheduler.
+     *
+     * Idempotent.
      */
     void start()
     {
+      bool expected = false;
+      if (!started_.compare_exchange_strong(expected,
+                                            true,
+                                            std::memory_order_acq_rel,
+                                            std::memory_order_acquire))
+      {
+        return;
+      }
+
       scheduler_.start();
     }
 
     /**
      * @brief Stop the runtime scheduler.
+     *
+     * Idempotent.
      */
     void stop()
     {
+      bool expected = true;
+      if (!started_.compare_exchange_strong(expected,
+                                            false,
+                                            std::memory_order_acq_rel,
+                                            std::memory_order_acquire))
+      {
+        return;
+      }
+
       scheduler_.stop();
     }
 
@@ -119,6 +144,16 @@ namespace vix::runtime
     [[nodiscard]] bool running() const noexcept
     {
       return scheduler_.running();
+    }
+
+    /**
+     * @brief Return whether the runtime has been started.
+     *
+     * @return true if start() has been called successfully.
+     */
+    [[nodiscard]] bool started() const noexcept
+    {
+      return started_.load(std::memory_order_acquire);
     }
 
     /**
@@ -169,8 +204,15 @@ namespace vix::runtime
      */
     [[nodiscard]] bool submit(Task task)
     {
-      if (!task.valid())
+      if (!started())
       {
+        rejectedTasks_.fetch_add(1, std::memory_order_relaxed);
+        return false;
+      }
+
+      if (!task.schedulable())
+      {
+        rejectedTasks_.fetch_add(1, std::memory_order_relaxed);
         return false;
       }
 
@@ -179,13 +221,22 @@ namespace vix::runtime
         task.id = next_task_id();
       }
 
-      return scheduler_.submit(std::move(task));
+      const bool accepted = scheduler_.submit(std::move(task));
+
+      if (accepted)
+      {
+        submittedTasks_.fetch_add(1, std::memory_order_relaxed);
+      }
+      else
+      {
+        rejectedTasks_.fetch_add(1, std::memory_order_relaxed);
+      }
+
+      return accepted;
     }
 
     /**
      * @brief Submit a callable as a runtime task.
-     *
-     * The callable must match TaskFn semantics and return TaskResult.
      *
      * @param fn Task callable.
      * @param affinity Optional worker affinity hint.
@@ -193,6 +244,12 @@ namespace vix::runtime
      */
     [[nodiscard]] bool submit(TaskFn fn, std::uint32_t affinity = 0)
     {
+      if (!fn)
+      {
+        rejectedTasks_.fetch_add(1, std::memory_order_relaxed);
+        return false;
+      }
+
       return submit(Task(next_task_id(), std::move(fn), affinity));
     }
 
@@ -209,23 +266,32 @@ namespace vix::runtime
     }
 
     /**
-     * @brief Access the runtime configuration.
-     *
-     * @return Immutable runtime configuration.
+     * @brief Return runtime configuration.
      */
     [[nodiscard]] const RuntimeConfig &config() const noexcept
     {
       return config_;
     }
 
+    /**
+     * @brief Return number of submitted tasks.
+     */
+    [[nodiscard]] std::uint64_t submitted_tasks() const noexcept
+    {
+      return submittedTasks_.load(std::memory_order_relaxed);
+    }
+
+    /**
+     * @brief Return number of rejected tasks.
+     */
+    [[nodiscard]] std::uint64_t rejected_tasks() const noexcept
+    {
+      return rejectedTasks_.load(std::memory_order_relaxed);
+    }
+
   private:
     /**
      * @brief Normalize runtime configuration.
-     *
-     * If worker count is zero, it is resolved from hardware concurrency.
-     *
-     * @param config Input configuration.
-     * @return Normalized configuration.
      */
     [[nodiscard]] static RuntimeConfig normalize_config(RuntimeConfig config) noexcept
     {
@@ -240,6 +306,9 @@ namespace vix::runtime
         config.workerCount = 1;
       }
 
+      config.budget.quantum =
+          BudgetConfig::normalize_quantum(config.budget.quantum);
+
       return config;
     }
 
@@ -252,6 +321,13 @@ namespace vix::runtime
 
     /** @brief Monotonic task id generator. */
     std::atomic<TaskId> nextTaskId_;
+
+    /** @brief Started flag. */
+    std::atomic<bool> started_;
+
+    /** @brief Metrics. */
+    std::atomic<std::uint64_t> submittedTasks_;
+    std::atomic<std::uint64_t> rejectedTasks_;
   };
 
 } // namespace vix::runtime

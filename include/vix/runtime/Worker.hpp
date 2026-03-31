@@ -42,10 +42,10 @@ namespace vix::runtime
    * @brief Runtime worker executing lightweight tasks on one OS thread.
    *
    * Each worker owns a local run queue and repeatedly:
-   * - pops a local task,
-   * - executes it,
-   * - reschedules yielded tasks,
-   * - or tries to steal work if idle.
+   * - pops a local task
+   * - executes it
+   * - reschedules yielded tasks
+   * - or tries to steal work if idle
    *
    * Lifecycle:
    * - start() launches the worker thread once
@@ -78,7 +78,12 @@ namespace vix::runtime
           running_(false),
           budgetConfig_(budgetConfig),
           stealFn_(),
-          thread_()
+          thread_(),
+          executedTasks_(0),
+          yieldedTasks_(0),
+          failedTasks_(0),
+          stolenTasks_(0),
+          idleCycles_(0)
     {
     }
 
@@ -228,28 +233,92 @@ namespace vix::runtime
       return queue_.try_steal();
     }
 
+    /**
+     * @brief Return the total number of executed tasks.
+     *
+     * @return Number of tasks that entered execution.
+     */
+    [[nodiscard]] std::uint64_t executed_tasks() const noexcept
+    {
+      return executedTasks_.load(std::memory_order_relaxed);
+    }
+
+    /**
+     * @brief Return the total number of yielded tasks.
+     *
+     * @return Number of yielded tasks rescheduled by this worker.
+     */
+    [[nodiscard]] std::uint64_t yielded_tasks() const noexcept
+    {
+      return yieldedTasks_.load(std::memory_order_relaxed);
+    }
+
+    /**
+     * @brief Return the total number of failed tasks.
+     *
+     * @return Number of failed task executions observed by this worker.
+     */
+    [[nodiscard]] std::uint64_t failed_tasks() const noexcept
+    {
+      return failedTasks_.load(std::memory_order_relaxed);
+    }
+
+    /**
+     * @brief Return the total number of stolen tasks executed here.
+     *
+     * @return Number of tasks obtained through stealing.
+     */
+    [[nodiscard]] std::uint64_t stolen_tasks() const noexcept
+    {
+      return stolenTasks_.load(std::memory_order_relaxed);
+    }
+
+    /**
+     * @brief Return the total number of idle cycles.
+     *
+     * @return Number of times the worker observed no work.
+     */
+    [[nodiscard]] std::uint64_t idle_cycles() const noexcept
+    {
+      return idleCycles_.load(std::memory_order_relaxed);
+    }
+
   private:
     /**
      * @brief Main worker loop.
      *
      * The worker prefers local tasks first, then attempts work stealing.
-     * If no work is available, it waits briefly to avoid hot spinning.
+     * If no work is available, it waits briefly with a progressive idle
+     * strategy to reduce both hot spinning and wake-up latency.
      */
     void run_loop()
     {
+      std::uint32_t idleStreak = 0;
+
       while (running())
       {
         std::optional<Task> task = queue_.try_pop();
+        bool stolen = false;
 
         if (!task.has_value() && stealFn_)
         {
           task = stealFn_(id_);
+          stolen = task.has_value();
         }
 
         if (!task.has_value())
         {
-          idle_wait();
+          ++idleStreak;
+          idleCycles_.fetch_add(1, std::memory_order_relaxed);
+          idle_wait(idleStreak);
           continue;
+        }
+
+        idleStreak = 0;
+
+        if (stolen)
+        {
+          stolenTasks_.fetch_add(1, std::memory_order_relaxed);
         }
 
         execute_task(*task);
@@ -271,15 +340,15 @@ namespace vix::runtime
         return;
       }
 
-      if (!task.valid() || task.done())
+      if (!task.schedulable())
       {
         return;
       }
 
       Budget budget(budgetConfig_);
-      budget.reset();
+      executedTasks_.fetch_add(1, std::memory_order_relaxed);
 
-      while (running() && !budget.should_yield())
+      while (running() && budget.available())
       {
         const TaskResult result = task.run();
         budget.consume();
@@ -291,18 +360,20 @@ namespace vix::runtime
 
         if (result == TaskResult::failed)
         {
+          failedTasks_.fetch_add(1, std::memory_order_relaxed);
           return;
         }
 
         if (result == TaskResult::yield)
         {
-          task.state = TaskState::yielded;
+          yieldedTasks_.fetch_add(1, std::memory_order_relaxed);
 
           if (!running())
           {
             return;
           }
 
+          task.mark_ready();
           const bool resubmitted = submit(std::move(task));
           if (!resubmitted)
           {
@@ -320,7 +391,8 @@ namespace vix::runtime
 
       if (!task.done())
       {
-        task.state = TaskState::yielded;
+        yieldedTasks_.fetch_add(1, std::memory_order_relaxed);
+        task.mark_ready();
 
         const bool resubmitted = submit(std::move(task));
         if (!resubmitted)
@@ -331,13 +403,33 @@ namespace vix::runtime
     }
 
     /**
-     * @brief Sleep briefly when the worker has no work to do.
+     * @brief Wait briefly when the worker has no work to do.
      *
-     * V1 uses a tiny sleep to avoid hot spinning.
+     * This uses a progressive strategy:
+     * - first a few cheap yields
+     * - then a very short sleep
+     * - then a slightly longer sleep if idle persists
+     *
+     * This keeps the worker responsive for bursty HTTP workloads while still
+     * avoiding permanent hot spinning.
+     *
+     * @param idleStreak Number of consecutive idle observations.
      */
-    void idle_wait() const
+    void idle_wait(std::uint32_t idleStreak) const
     {
-      std::this_thread::sleep_for(std::chrono::microseconds(50));
+      if (idleStreak <= 16u)
+      {
+        std::this_thread::yield();
+        return;
+      }
+
+      if (idleStreak <= 64u)
+      {
+        std::this_thread::sleep_for(std::chrono::microseconds(5));
+        return;
+      }
+
+      std::this_thread::sleep_for(std::chrono::microseconds(25));
     }
 
   private:
@@ -358,6 +450,21 @@ namespace vix::runtime
 
     /** @brief Underlying OS thread for this worker. */
     std::thread thread_;
+
+    /** @brief Number of tasks executed by this worker. */
+    std::atomic<std::uint64_t> executedTasks_;
+
+    /** @brief Number of yielded tasks observed by this worker. */
+    std::atomic<std::uint64_t> yieldedTasks_;
+
+    /** @brief Number of failed tasks observed by this worker. */
+    std::atomic<std::uint64_t> failedTasks_;
+
+    /** @brief Number of stolen tasks executed by this worker. */
+    std::atomic<std::uint64_t> stolenTasks_;
+
+    /** @brief Number of idle cycles observed by this worker. */
+    std::atomic<std::uint64_t> idleCycles_;
   };
 
 } // namespace vix::runtime

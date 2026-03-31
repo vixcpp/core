@@ -55,15 +55,20 @@ namespace vix::runtime
      * Local tasks are inserted at the front so the owning worker can continue
      * processing recent work with low overhead.
      *
+     * The queue only accepts schedulable tasks.
+     * The state is normalized to @ref TaskState::ready before insertion.
+     *
      * @param task Task to enqueue.
-     * @return true if the task was enqueued, false if invalid.
+     * @return true if the task was enqueued, false otherwise.
      */
     [[nodiscard]] bool push(Task task)
     {
-      if (!task.valid())
+      if (!task.schedulable())
       {
         return false;
       }
+
+      task.mark_ready();
 
       std::lock_guard<std::mutex> lock(mutex_);
       queue_.push_front(std::move(task));
@@ -80,15 +85,7 @@ namespace vix::runtime
     [[nodiscard]] std::optional<Task> try_pop()
     {
       std::lock_guard<std::mutex> lock(mutex_);
-
-      if (queue_.empty())
-      {
-        return std::nullopt;
-      }
-
-      Task task = std::move(queue_.front());
-      queue_.pop_front();
-      return task;
+      return pop_front_locked();
     }
 
     /**
@@ -102,15 +99,45 @@ namespace vix::runtime
     [[nodiscard]] std::optional<Task> try_steal()
     {
       std::lock_guard<std::mutex> lock(mutex_);
+      return pop_back_locked();
+    }
+
+    /**
+     * @brief Return the next local task without removing it.
+     *
+     * This inspects the front of the queue.
+     *
+     * @return The next local task if available, std::nullopt otherwise.
+     */
+    [[nodiscard]] std::optional<Task> front() const
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
 
       if (queue_.empty())
       {
         return std::nullopt;
       }
 
-      Task task = std::move(queue_.back());
-      queue_.pop_back();
-      return task;
+      return queue_.front();
+    }
+
+    /**
+     * @brief Return the next stealable task without removing it.
+     *
+     * This inspects the back of the queue.
+     *
+     * @return The next stealable task if available, std::nullopt otherwise.
+     */
+    [[nodiscard]] std::optional<Task> back() const
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+
+      if (queue_.empty())
+      {
+        return std::nullopt;
+      }
+
+      return queue_.back();
     }
 
     /**
@@ -137,11 +164,54 @@ namespace vix::runtime
 
     /**
      * @brief Remove all tasks from the queue.
+     *
+     * @return Number of tasks removed.
      */
-    void clear()
+    [[nodiscard]] std::size_t clear()
     {
       std::lock_guard<std::mutex> lock(mutex_);
+      const std::size_t count = queue_.size();
       queue_.clear();
+      return count;
+    }
+
+  private:
+    /**
+     * @brief Pop one task from the front.
+     *
+     * Caller must already hold the mutex.
+     *
+     * @return The next task if available.
+     */
+    [[nodiscard]] std::optional<Task> pop_front_locked()
+    {
+      if (queue_.empty())
+      {
+        return std::nullopt;
+      }
+
+      Task task = std::move(queue_.front());
+      queue_.pop_front();
+      return task;
+    }
+
+    /**
+     * @brief Pop one task from the back.
+     *
+     * Caller must already hold the mutex.
+     *
+     * @return The next stolen task if available.
+     */
+    [[nodiscard]] std::optional<Task> pop_back_locked()
+    {
+      if (queue_.empty())
+      {
+        return std::nullopt;
+      }
+
+      Task task = std::move(queue_.back());
+      queue_.pop_back();
+      return task;
     }
 
   private:
