@@ -976,7 +976,7 @@ namespace vix::session
 
     for (auto &[k, v] : head.headers)
     {
-      req.set_header(std::move(k), std::move(v));
+      req.set_header(k, v);
     }
 
     return req;

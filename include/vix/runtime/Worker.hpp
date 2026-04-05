@@ -388,7 +388,10 @@ namespace vix::runtime
       while (running() && budget.available())
       {
         const TaskResult result = task.run();
-        budget.consume();
+        if (!budget.consume())
+        {
+          return;
+        }
 
         if (result == TaskResult::complete)
         {
