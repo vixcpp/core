@@ -642,6 +642,7 @@ namespace vix
     template <typename T>
     static void append_one_(LineBuffer &lb, T &&x) noexcept
     {
+      using Raw = std::remove_reference_t<T>;
       using D = std::decay_t<T>;
 
       if constexpr (std::is_same_v<D, std::string>)
@@ -652,12 +653,13 @@ namespace vix
       {
         lb.push_str(x);
       }
+      else if constexpr (std::is_array_v<Raw> && std::is_same_v<std::remove_extent_t<Raw>, const char>)
+      {
+        lb.push_str(std::string_view(x));
+      }
       else if constexpr (std::is_same_v<D, const char *> || std::is_same_v<D, char *>)
       {
-        if (x)
-          lb.push_str(std::string_view(x));
-        else
-          lb.push_str("null");
+        lb.push_str(x != nullptr ? std::string_view(x) : std::string_view("null"));
       }
       else if constexpr (std::is_same_v<D, bool>)
       {
