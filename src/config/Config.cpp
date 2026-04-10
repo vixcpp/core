@@ -143,6 +143,33 @@ namespace vix::config
     return DEFAULT_DB_PASS;
   }
 
+  void Config::set(const std::string &dottedKey, const nlohmann::json &value)
+  {
+    if (dottedKey.empty())
+    {
+      return;
+    }
+
+    nlohmann::json *node = &rawConfig_;
+    std::size_t start = 0;
+
+    while (start < dottedKey.size())
+    {
+      const std::size_t dot = dottedKey.find('.', start);
+      const std::string key =
+          dottedKey.substr(start, dot == std::string::npos ? std::string::npos : dot - start);
+
+      if (dot == std::string::npos)
+      {
+        (*node)[key] = value;
+        return;
+      }
+
+      node = &((*node)[key]);
+      start = dot + 1;
+    }
+  }
+
   const std::string &Config::getDbHost() const noexcept
   {
     return db_host;

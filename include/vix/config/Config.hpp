@@ -42,6 +42,8 @@ namespace vix::config
     /** @brief Load or reload the configuration file. */
     void loadConfig();
 
+    void set(const std::string &dottedKey, const nlohmann::json &value);
+
 #if VIX_CORE_WITH_MYSQL
     namespace sql
     {
