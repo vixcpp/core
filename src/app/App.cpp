@@ -131,9 +131,7 @@ namespace
       (void)req;
 
 #ifdef VIX_BENCH_MODE
-      res.set_status(vix::vhttp::OK);
-      res.set_header("Content-Type", "text/plain");
-      res.set_body("OK");
+      res.ok().text("OK");
 #else
       res.ok().text("OK");
 #endif
