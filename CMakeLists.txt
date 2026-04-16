@@ -1,5 +1,5 @@
 # ====================================================================
-#  @file CMakeLists.cpp
+#  @file CMakeLists.txt
 #  @author Gaspard Kirira
 #
 #  Copyright 2025, Gaspard Kirira.  All rights reserved.
@@ -35,29 +35,31 @@
 #   - VIX_ENABLE_SANITIZERS : Inherit sanitizers from the parent project
 #
 # Installation/Export:
-#   This module installs its target and headers and contributes to the
-#   top-level export-set `VixTargets`. Consumers can then use:
-#
-#       find_package(Vix CONFIG REQUIRED)
-#       target_link_libraries(app PRIVATE vix::core)
-#
-# Notes:
-#   - This file is designed to be included from a superproject (preferred).
-#   - Avoids per-module export-sets; relies on the umbrella’s `VixTargets`.
-#   - The JSON backend target is selected dynamically (vix::json / vix_json).
-#   - Boost is no longer required here; async/networking is provided by
-#     vix::async.
+#   - Umbrella build exports into: VixTargets
+#   - Standalone build exports into: vix_coreTargets
 # ====================================================================
 
 cmake_minimum_required(VERSION 3.20)
 project(vix_core VERSION 1.6.2 LANGUAGES CXX)
 
 include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 
+# --------------------------------------------------------------------
 # Global settings
+# --------------------------------------------------------------------
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# --------------------------------------------------------------------
+# Export set selection
+# --------------------------------------------------------------------
+if (DEFINED VIX_UMBRELLA_BUILD AND VIX_UMBRELLA_BUILD)
+  set(VIX_CORE_EXPORT_SET VixTargets)
+else()
+  set(VIX_CORE_EXPORT_SET vix_coreTargets)
+endif()
 
 option(VIX_CORE_WITH_OPENSSL "Enable HTTPS/TLS support using OpenSSL" ON)
 option(VIX_CORE_WITH_MYSQL   "Enable MySQL client linkage" OFF)
@@ -69,15 +71,16 @@ set(VIX_CORE_WITH_TEMPLATE "AUTO" CACHE STRING "Link template backend (AUTO|ON|O
 set_property(CACHE VIX_CORE_WITH_TEMPLATE PROPERTY STRINGS AUTO ON OFF)
 
 # Sources discovery
-# If any .cpp exists under src/, we switch to STATIC build mode.
-file(GLOB_RECURSE CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+file(GLOB_RECURSE CORE_SOURCES CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+)
 
 # --------------------------------------------------------------------
 # utils dependency
 # --------------------------------------------------------------------
 if (NOT TARGET vix::utils AND NOT TARGET vix_utils)
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../utils/CMakeLists.txt")
-    message(STATUS "[core] Adding utils from umbrella: ../utils")
+    message(STATUS "[core] Adding utils from sibling: ../utils")
     add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../utils" "utils")
   elseif (VIX_CORE_FETCH_UTILS)
     find_package(vix_utils CONFIG QUIET)
@@ -104,7 +107,7 @@ endif()
 # --------------------------------------------------------------------
 if (NOT TARGET vix::async AND NOT TARGET vix_async)
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../async/CMakeLists.txt")
-    message(STATUS "[core] Adding async from umbrella: ../async")
+    message(STATUS "[core] Adding async from sibling: ../async")
     add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../async" "async")
   elseif (VIX_CORE_FETCH_ASYNC)
     find_package(vix_async CONFIG QUIET)
@@ -136,6 +139,7 @@ function(vix_core_try_link_json onto link_scope)
   if (VIX_CORE_WITH_JSON STREQUAL "OFF")
     message(STATUS "[core] JSON disabled (OFF)")
     target_compile_definitions(${onto} ${link_scope} VIX_CORE_NO_JSON=1)
+    set(VIX_CORE_PACKAGE_WITH_JSON OFF PARENT_SCOPE)
     return()
   endif()
 
@@ -155,6 +159,7 @@ function(vix_core_try_link_json onto link_scope)
   if (_json_found)
     message(STATUS "[core] JSON backend: ${_json_found}")
     target_link_libraries(${onto} ${link_scope} ${_json_found})
+    set(VIX_CORE_PACKAGE_WITH_JSON ON PARENT_SCOPE)
   else()
     if (VIX_CORE_WITH_JSON STREQUAL "ON")
       message(FATAL_ERROR
@@ -163,6 +168,7 @@ function(vix_core_try_link_json onto link_scope)
     else()
       message(STATUS "[core] No JSON backend detected; building without JSON.")
       target_compile_definitions(${onto} ${link_scope} VIX_CORE_NO_JSON=1)
+      set(VIX_CORE_PACKAGE_WITH_JSON OFF PARENT_SCOPE)
     endif()
   endif()
 endfunction()
@@ -171,6 +177,7 @@ function(vix_core_try_link_template onto link_scope)
   if (VIX_CORE_WITH_TEMPLATE STREQUAL "OFF")
     message(STATUS "[core] Template disabled (OFF)")
     target_compile_definitions(${onto} ${link_scope} VIX_CORE_NO_TEMPLATE=1)
+    set(VIX_CORE_PACKAGE_WITH_TEMPLATE OFF PARENT_SCOPE)
     return()
   endif()
 
@@ -191,6 +198,7 @@ function(vix_core_try_link_template onto link_scope)
     message(STATUS "[core] Template backend: ${_template_found}")
     target_link_libraries(${onto} ${link_scope} ${_template_found})
     target_compile_definitions(${onto} ${link_scope} VIX_CORE_HAS_TEMPLATE=1)
+    set(VIX_CORE_PACKAGE_WITH_TEMPLATE ON PARENT_SCOPE)
   else()
     if (VIX_CORE_WITH_TEMPLATE STREQUAL "ON")
       message(FATAL_ERROR
@@ -199,6 +207,7 @@ function(vix_core_try_link_template onto link_scope)
     else()
       message(STATUS "[core] No template backend detected; building without template.")
       target_compile_definitions(${onto} ${link_scope} VIX_CORE_NO_TEMPLATE=1)
+      set(VIX_CORE_PACKAGE_WITH_TEMPLATE OFF PARENT_SCOPE)
     endif()
   endif()
 endfunction()
@@ -208,7 +217,7 @@ endfunction()
 # --------------------------------------------------------------------
 if (NOT TARGET vix::template AND NOT TARGET template)
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../template/CMakeLists.txt")
-    message(STATUS "[core] Adding template from umbrella: ../template")
+    message(STATUS "[core] Adding template from sibling: ../template")
     add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../template" "template")
   elseif (VIX_CORE_FETCH_TEMPLATE)
     find_package(template CONFIG QUIET)
@@ -222,6 +231,11 @@ if (TARGET vix::template)
 elseif (TARGET template)
   set(VIX_TEMPLATE_TARGET template)
 endif()
+
+# Defaults for standalone package config generation
+set(VIX_CORE_PACKAGE_WITH_OPENSSL OFF)
+set(VIX_CORE_PACKAGE_WITH_JSON OFF)
+set(VIX_CORE_PACKAGE_WITH_TEMPLATE OFF)
 
 # ============================== STATIC ===============================
 if (CORE_SOURCES)
@@ -251,23 +265,27 @@ if (CORE_SOURCES)
     if (OpenSSL_FOUND)
       target_compile_definitions(vix_core PUBLIC VIX_CORE_HAS_OPENSSL=1)
       target_link_libraries(vix_core PUBLIC OpenSSL::SSL OpenSSL::Crypto)
+      set(VIX_CORE_PACKAGE_WITH_OPENSSL ON)
     else()
       message(WARNING "OpenSSL requested but not found, building core without TLS")
       target_compile_definitions(vix_core PUBLIC VIX_CORE_HAS_OPENSSL=0)
+      set(VIX_CORE_PACKAGE_WITH_OPENSSL OFF)
     endif()
   else()
     target_compile_definitions(vix_core PUBLIC VIX_CORE_HAS_OPENSSL=0)
+    set(VIX_CORE_PACKAGE_WITH_OPENSSL OFF)
   endif()
 
+  # Build-only helpers must not leak into exported interfaces.
   if (TARGET vix_warnings)
-    message(STATUS "[core] vix_warnings detected (from umbrella)")
-    target_link_libraries(vix_core PUBLIC vix_warnings)
-
-    if (VIX_ENABLE_SANITIZERS AND TARGET vix_sanitizers)
-      target_link_libraries(vix_core INTERFACE vix_sanitizers)
-    endif()
+    message(STATUS "[core] vix_warnings detected")
+    target_link_libraries(vix_core PRIVATE vix_warnings)
   else()
     message(STATUS "[core] vix_warnings not found (building core standalone)")
+  endif()
+
+  if (VIX_ENABLE_SANITIZERS AND TARGET vix_sanitizers)
+    target_link_libraries(vix_core PRIVATE vix_sanitizers)
   endif()
 
   vix_core_try_link_json(vix_core PUBLIC)
@@ -306,15 +324,12 @@ if (CORE_SOURCES)
   )
 
   install(TARGETS vix_core
-    EXPORT VixTargets
+    EXPORT ${VIX_CORE_EXPORT_SET}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   )
-
-  install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h")
 
 # ============================ HEADER-ONLY ============================
 else()
@@ -335,10 +350,6 @@ else()
     ${VIX_ASYNC_TARGET}
   )
 
-  if (VIX_ENABLE_SANITIZERS AND TARGET vix_sanitizers)
-    target_link_libraries(vix_core INTERFACE vix_sanitizers)
-  endif()
-
   vix_core_try_link_json(vix_core INTERFACE)
   vix_core_try_link_template(vix_core INTERFACE)
 
@@ -348,12 +359,53 @@ else()
   )
 
   install(TARGETS vix_core
-    EXPORT VixTargets
+    EXPORT ${VIX_CORE_EXPORT_SET}
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   )
+endif()
 
-  install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h")
+# --------------------------------------------------------------------
+# Install headers
+# --------------------------------------------------------------------
+if (NOT (DEFINED VIX_UMBRELLA_BUILD AND VIX_UMBRELLA_BUILD))
+  install(DIRECTORY include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    FILES_MATCHING
+      PATTERN "*.hpp"
+      PATTERN "*.h"
+  )
+endif()
+
+# --------------------------------------------------------------------
+# Standalone package config/export
+# Only for non-umbrella builds
+# --------------------------------------------------------------------
+if (NOT (DEFINED VIX_UMBRELLA_BUILD AND VIX_UMBRELLA_BUILD))
+
+  configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/vix_coreConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/vix_coreConfig.cmake"
+    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/vix_core"
+  )
+
+  write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/vix_coreConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+  )
+
+  install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/vix_coreConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/vix_coreConfigVersion.cmake"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/vix_core"
+  )
+
+  install(EXPORT vix_coreTargets
+    FILE vix_coreTargets.cmake
+    NAMESPACE vix::
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/vix_core"
+  )
+
 endif()
 
 # --------------------------------------------------------------------
@@ -377,12 +429,13 @@ if (CORE_SOURCES)
 else()
   message(STATUS "Mode: HEADER-ONLY / no sources")
 endif()
-message(STATUS "OpenSSL enabled: ${VIX_CORE_WITH_OPENSSL}")
-message(STATUS "MySQL linkage:   ${VIX_CORE_WITH_MYSQL}")
-message(STATUS "JSON policy:     ${VIX_CORE_WITH_JSON}")
-message(STATUS "Utils target:    ${VIX_UTILS_TARGET}")
-message(STATUS "Async target:    ${VIX_ASYNC_TARGET}")
-message(STATUS "Include dir:     ${CMAKE_CURRENT_SOURCE_DIR}/include (for <vix/...>)")
-message(STATUS "Sanitizers:      ${VIX_ENABLE_SANITIZERS}")
-message(STATUS "Build type:      ${CMAKE_BUILD_TYPE}")
+message(STATUS "Export set:       ${VIX_CORE_EXPORT_SET}")
+message(STATUS "OpenSSL enabled:  ${VIX_CORE_WITH_OPENSSL}")
+message(STATUS "MySQL linkage:    ${VIX_CORE_WITH_MYSQL}")
+message(STATUS "JSON policy:      ${VIX_CORE_WITH_JSON}")
+message(STATUS "Utils target:     ${VIX_UTILS_TARGET}")
+message(STATUS "Async target:     ${VIX_ASYNC_TARGET}")
+message(STATUS "Include dir:      ${CMAKE_CURRENT_SOURCE_DIR}/include (for <vix/...>)")
+message(STATUS "Sanitizers:       ${VIX_ENABLE_SANITIZERS}")
+message(STATUS "Build type:       ${CMAKE_BUILD_TYPE}")
 message(STATUS "------------------------------------------------------")

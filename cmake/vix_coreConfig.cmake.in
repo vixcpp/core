@@ -1,0 +1,22 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+find_dependency(vix_utils CONFIG REQUIRED)
+find_dependency(vix_async CONFIG REQUIRED)
+
+if (@VIX_CORE_PACKAGE_WITH_OPENSSL@)
+  find_dependency(OpenSSL REQUIRED)
+endif()
+
+if (@VIX_CORE_PACKAGE_WITH_JSON@)
+  find_dependency(nlohmann_json CONFIG REQUIRED)
+endif()
+
+if (@VIX_CORE_PACKAGE_WITH_TEMPLATE@)
+  find_dependency(template CONFIG REQUIRED)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/vix_coreTargets.cmake")
+
+check_required_components(vix_core)
