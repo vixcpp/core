@@ -4,6 +4,7 @@ include(CMakeFindDependencyMacro)
 
 find_dependency(vix_utils CONFIG REQUIRED)
 find_dependency(vix_async CONFIG REQUIRED)
+find_dependency(vix_env CONFIG REQUIRED)
 
 if (@VIX_CORE_PACKAGE_WITH_OPENSSL@)
   find_dependency(OpenSSL REQUIRED)

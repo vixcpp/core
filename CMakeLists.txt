@@ -65,6 +65,7 @@ option(VIX_CORE_WITH_OPENSSL "Enable HTTPS/TLS support using OpenSSL" ON)
 option(VIX_CORE_WITH_MYSQL   "Enable MySQL client linkage" OFF)
 option(VIX_CORE_FETCH_UTILS  "Auto-resolve vix::utils if missing" ON)
 option(VIX_CORE_FETCH_ASYNC  "Auto-resolve vix::async if missing" ON)
+option(VIX_CORE_FETCH_ENV    "Auto-resolve vix::env if missing" ON)
 option(VIX_BENCH_MODE        "Enable ultra-minimal /bench route for benchmarking" OFF)
 option(VIX_CORE_FETCH_TEMPLATE "Auto-resolve vix::template if missing" ON)
 set(VIX_CORE_WITH_TEMPLATE "AUTO" CACHE STRING "Link template backend (AUTO|ON|OFF)")
@@ -126,6 +127,33 @@ if (NOT VIX_ASYNC_TARGET)
   message(FATAL_ERROR
     "vix::async not found.\n"
     "Provide ../async in the umbrella build, or install/export the async package."
+  )
+endif()
+
+# --------------------------------------------------------------------
+# env dependency
+# --------------------------------------------------------------------
+if (NOT TARGET vix::env AND NOT TARGET vix_env)
+  if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../env/CMakeLists.txt")
+    message(STATUS "[core] Adding env from sibling: ../env")
+    add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../env" "env")
+  elseif (VIX_CORE_FETCH_ENV)
+    find_package(vix_env CONFIG QUIET)
+    find_package(env CONFIG QUIET)
+  endif()
+endif()
+
+set(VIX_ENV_TARGET "")
+if (TARGET vix::env)
+  set(VIX_ENV_TARGET vix::env)
+elseif (TARGET vix_env)
+  set(VIX_ENV_TARGET vix_env)
+endif()
+
+if (NOT VIX_ENV_TARGET)
+  message(FATAL_ERROR
+    "vix::env not found.\n"
+    "Provide ../env in the umbrella build, or install/export the env package."
   )
 endif()
 
@@ -256,6 +284,7 @@ if (CORE_SOURCES)
     PUBLIC
       ${VIX_UTILS_TARGET}
       ${VIX_ASYNC_TARGET}
+      ${VIX_ENV_TARGET}
   )
 
   # OpenSSL (optional)
@@ -348,6 +377,7 @@ else()
   target_link_libraries(vix_core INTERFACE
     ${VIX_UTILS_TARGET}
     ${VIX_ASYNC_TARGET}
+    ${VIX_ENV_TARGET}
   )
 
   vix_core_try_link_json(vix_core INTERFACE)
@@ -432,6 +462,7 @@ endif()
 message(STATUS "Export set:       ${VIX_CORE_EXPORT_SET}")
 message(STATUS "OpenSSL enabled:  ${VIX_CORE_WITH_OPENSSL}")
 message(STATUS "MySQL linkage:    ${VIX_CORE_WITH_MYSQL}")
+message(STATUS "Env target:       ${VIX_ENV_TARGET}")
 message(STATUS "JSON policy:      ${VIX_CORE_WITH_JSON}")
 message(STATUS "Utils target:     ${VIX_UTILS_TARGET}")
 message(STATUS "Async target:     ${VIX_ASYNC_TARGET}")

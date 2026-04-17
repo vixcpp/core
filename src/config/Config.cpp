@@ -12,15 +12,128 @@
  */
 
 #include <vix/config/Config.hpp>
-#include <vix/utils/Env.hpp>
 
-#include <cstdlib>
-#include <fstream>
+#include <vix/env/EnvFileOptions.hpp>
+#include <vix/env/Get.hpp>
+#include <vix/env/GetBool.hpp>
+#include <vix/env/GetInt.hpp>
+#include <vix/env/LoadIntoProcess.hpp>
+
+#include <algorithm>
+#include <cctype>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 namespace vix::config
 {
+  namespace
+  {
+    [[nodiscard]] std::string trim_copy(std::string value)
+    {
+      auto not_space = [](unsigned char ch)
+      { return !std::isspace(ch); };
+
+      value.erase(
+          value.begin(),
+          std::find_if(value.begin(), value.end(), not_space));
+
+      value.erase(
+          std::find_if(value.rbegin(), value.rend(), not_space).base(),
+          value.end());
+
+      return value;
+    }
+
+    [[nodiscard]] std::string to_upper_ascii(std::string value)
+    {
+      std::transform(
+          value.begin(),
+          value.end(),
+          value.begin(),
+          [](unsigned char c)
+          { return static_cast<char>(std::toupper(c)); });
+
+      return value;
+    }
+
+    [[nodiscard]] std::string normalize_env_name(std::string value)
+    {
+      value = trim_copy(std::move(value));
+
+      if (value.empty() || value == ".env")
+      {
+        return {};
+      }
+
+      if (value.rfind(".env.", 0) == 0)
+      {
+        value.erase(0, 5);
+      }
+
+      return value;
+    }
+
+    [[nodiscard]] std::string dotted_to_env_key(const std::string &dottedKey)
+    {
+      std::string out;
+      out.reserve(dottedKey.size());
+
+      for (const char c : dottedKey)
+      {
+        if (c == '.')
+        {
+          out.push_back('_');
+        }
+        else
+        {
+          out.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
+        }
+      }
+
+      return out;
+    }
+
+    [[nodiscard]] std::string get_env_string(
+        const std::string &envKey,
+        const std::string &defaultValue)
+    {
+      auto value = vix::env::get(envKey);
+      if (!value)
+      {
+        return defaultValue;
+      }
+
+      return value.value();
+    }
+
+    [[nodiscard]] int get_env_int(
+        const std::string &envKey,
+        int defaultValue)
+    {
+      auto value = vix::env::get_int(envKey);
+      if (!value)
+      {
+        return defaultValue;
+      }
+
+      return value.value();
+    }
+
+    [[nodiscard]] bool get_env_bool(
+        const std::string &envKey,
+        bool defaultValue)
+    {
+      auto value = vix::env::get_bool(envKey);
+      if (!value)
+      {
+        return defaultValue;
+      }
+
+      return value.value();
+    }
+  } // namespace
+
   Config::Config(const std::filesystem::path &configPath)
       : configPath_(configPath),
         db_host(DEFAULT_DB_HOST),
@@ -43,7 +156,7 @@ namespace vix::config
   {
     if (configPath_.empty())
     {
-      configPath_ = "config.json";
+      configPath_ = ".env";
     }
 
     loadConfig();
@@ -59,61 +172,57 @@ namespace vix::config
   {
     rawConfig_ = nlohmann::json::object();
 
-    if (!configPath_.empty() && std::filesystem::exists(configPath_))
-    {
-      std::ifstream file(configPath_);
-      if (!file.is_open())
-      {
-        throw std::runtime_error("Failed to open config file: " + configPath_.string());
-      }
+    vix::env::EnvFileOptions env_options{};
+    env_options.base_dir = configPath_.has_parent_path()
+                               ? configPath_.parent_path().string()
+                               : ".";
+    env_options.filename = ".env";
+    env_options.mode = vix::env::EnvFileMode::Layered;
+    env_options.load_base_file = true;
+    env_options.load_local_file = true;
+    env_options.ignore_missing_files = true;
 
-      try
-      {
-        file >> rawConfig_;
-      }
-      catch (const std::exception &e)
-      {
-        throw std::runtime_error(
-            "Failed to parse config file '" + configPath_.string() + "': " + e.what());
-      }
+    const std::string config_filename = configPath_.filename().string();
+    const std::string environment_name = normalize_env_name(config_filename);
+
+    if (!environment_name.empty())
+    {
+      env_options.environment_name = environment_name;
+      env_options.load_environment_file = true;
+      env_options.load_environment_local_file = true;
     }
 
-    db_host = getString("database.default.host", DEFAULT_DB_HOST);
-    db_user = getString("database.default.user", DEFAULT_DB_USER);
-    db_name = getString("database.default.name", DEFAULT_DB_NAME);
-    db_port = getInt("database.default.port", DEFAULT_DB_PORT);
-
+    if (auto err = vix::env::load_layered_into_process(env_options); err)
     {
-      const std::string password_from_config =
-          getString("database.default.password", DEFAULT_DB_PASS);
-
-      if (!password_from_config.empty())
-      {
-        db_pass = password_from_config;
-      }
-      else
-      {
-        db_pass = getDbPasswordFromEnv();
-      }
+      throw std::runtime_error(
+          "Failed to load environment configuration: " +
+          std::string(err.message()));
     }
 
-    server_port = getInt("server.port", DEFAULT_SERVER_PORT);
-    request_timeout = getInt("server.request_timeout", DEFAULT_REQUEST_TIMEOUT);
-    io_threads_ = getInt("server.io_threads", DEFAULT_IO_THREADS);
+    db_host = get_env_string("DATABASE_DEFAULT_HOST", DEFAULT_DB_HOST);
+    db_user = get_env_string("DATABASE_DEFAULT_USER", DEFAULT_DB_USER);
+    db_name = get_env_string("DATABASE_DEFAULT_NAME", DEFAULT_DB_NAME);
+    db_port = get_env_int("DATABASE_DEFAULT_PORT", DEFAULT_DB_PORT);
+
+    db_pass = getDbPasswordFromEnv();
+
+    server_port = get_env_int("SERVER_PORT", DEFAULT_SERVER_PORT);
+    request_timeout = get_env_int("SERVER_REQUEST_TIMEOUT", DEFAULT_REQUEST_TIMEOUT);
+    io_threads_ = get_env_int("SERVER_IO_THREADS", DEFAULT_IO_THREADS);
     session_timeout_sec_ =
-        getInt("server.session_timeout_sec", DEFAULT_SESSION_TIMEOUT_SEC);
-    bench_mode_ = getBool("server.bench_mode", DEFAULT_BENCH_MODE);
+        get_env_int("SERVER_SESSION_TIMEOUT_SEC", DEFAULT_SESSION_TIMEOUT_SEC);
+    bench_mode_ = get_env_bool("SERVER_BENCH_MODE", DEFAULT_BENCH_MODE);
 
-    log_async_ = getBool("logging.async", DEFAULT_LOG_ASYNC);
-    log_queue_max_ = getInt("logging.queue_max", DEFAULT_LOG_QUEUE_MAX);
+    log_async_ = get_env_bool("LOGGING_ASYNC", DEFAULT_LOG_ASYNC);
+    log_queue_max_ = get_env_int("LOGGING_QUEUE_MAX", DEFAULT_LOG_QUEUE_MAX);
     log_drop_on_overflow_ =
-        getBool("logging.drop_on_overflow", DEFAULT_LOG_DROP_ON_OVERFLOW);
+        get_env_bool("LOGGING_DROP_ON_OVERFLOW", DEFAULT_LOG_DROP_ON_OVERFLOW);
 
-    waf_mode_ = getString("waf.mode", DEFAULT_WAF_MODE);
+    waf_mode_ = get_env_string("WAF_MODE", DEFAULT_WAF_MODE);
     waf_max_target_len_ =
-        getInt("waf.max_target_len", DEFAULT_WAF_MAX_TARGET_LEN);
+        get_env_int("WAF_MAX_TARGET_LEN", DEFAULT_WAF_MAX_TARGET_LEN);
     waf_max_body_bytes_ =
-        getInt("waf.max_body_bytes", DEFAULT_WAF_MAX_BODY_BYTES);
+        get_env_int("WAF_MAX_BODY_BYTES", DEFAULT_WAF_MAX_BODY_BYTES);
   }
 
 #if VIX_CORE_WITH_MYSQL
@@ -123,21 +232,26 @@ namespace vix::config
   }
 #endif
 
-  std::string Config::getDbPasswordFromEnv()
+  std::string Config::getDbPasswordFromEnv() const
   {
-    if (const char *value = vix::utils::vix_getenv("VIX_DB_PASSWORD"); value && *value != '\0')
+    if (auto value = vix::env::get("VIX_DB_PASSWORD"); value && !value.value().empty())
     {
-      return std::string(value);
+      return value.value();
     }
 
-    if (const char *value = vix::utils::vix_getenv("DB_PASSWORD"); value && *value != '\0')
+    if (auto value = vix::env::get("DATABASE_DEFAULT_PASSWORD"); value && !value.value().empty())
     {
-      return std::string(value);
+      return value.value();
     }
 
-    if (const char *value = vix::utils::vix_getenv("MYSQL_PASSWORD"); value && *value != '\0')
+    if (auto value = vix::env::get("DB_PASSWORD"); value && !value.value().empty())
     {
-      return std::string(value);
+      return value.value();
+    }
+
+    if (auto value = vix::env::get("MYSQL_PASSWORD"); value && !value.value().empty())
+    {
+      return value.value();
     }
 
     return DEFAULT_DB_PASS;
@@ -203,6 +317,7 @@ namespace vix::config
   void Config::setServerPort(int port)
   {
     server_port = port;
+    set("server.port", port);
   }
 
   const nlohmann::json *Config::findNode(const std::string &dottedKey) const noexcept
@@ -247,49 +362,98 @@ namespace vix::config
 
   bool Config::has(const std::string &dottedKey) const noexcept
   {
-    return findNode(dottedKey) != nullptr;
+    if (findNode(dottedKey) != nullptr)
+    {
+      return true;
+    }
+
+    auto env_value = vix::env::get(dotted_to_env_key(dottedKey));
+    return static_cast<bool>(env_value);
   }
 
   int Config::getInt(const std::string &dottedKey, int defaultValue) const noexcept
   {
     const nlohmann::json *node = findNode(dottedKey);
-    if (!node)
+    if (node)
     {
-      return defaultValue;
+      if (node->is_number_integer())
+      {
+        return node->get<int>();
+      }
+
+      if (node->is_number_unsigned())
+      {
+        return static_cast<int>(node->get<unsigned int>());
+      }
+
+      if (node->is_number_float())
+      {
+        return static_cast<int>(node->get<double>());
+      }
+
+      if (node->is_boolean())
+      {
+        return node->get<bool>() ? 1 : 0;
+      }
+
+      if (node->is_string())
+      {
+        try
+        {
+          const std::string &value = node->get_ref<const std::string &>();
+          std::size_t pos = 0;
+          const int parsed = std::stoi(value, &pos);
+          if (pos == value.size())
+          {
+            return parsed;
+          }
+        }
+        catch (...)
+        {
+        }
+      }
     }
 
-    if (node->is_number_integer())
-    {
-      return node->get<int>();
-    }
-
-    if (node->is_number_unsigned())
-    {
-      return static_cast<int>(node->get<unsigned int>());
-    }
-
-    if (node->is_number_float())
-    {
-      return static_cast<int>(node->get<double>());
-    }
-
-    return defaultValue;
+    return get_env_int(dotted_to_env_key(dottedKey), defaultValue);
   }
 
   bool Config::getBool(const std::string &dottedKey, bool defaultValue) const noexcept
   {
     const nlohmann::json *node = findNode(dottedKey);
-    if (!node)
+    if (node)
     {
-      return defaultValue;
+      if (node->is_boolean())
+      {
+        return node->get<bool>();
+      }
+
+      if (node->is_number_integer())
+      {
+        return node->get<int>() != 0;
+      }
+
+      if (node->is_number_unsigned())
+      {
+        return node->get<unsigned int>() != 0U;
+      }
+
+      if (node->is_string())
+      {
+        const std::string value = to_upper_ascii(node->get<std::string>());
+
+        if (value == "1" || value == "TRUE" || value == "YES" || value == "ON")
+        {
+          return true;
+        }
+
+        if (value == "0" || value == "FALSE" || value == "NO" || value == "OFF")
+        {
+          return false;
+        }
+      }
     }
 
-    if (node->is_boolean())
-    {
-      return node->get<bool>();
-    }
-
-    return defaultValue;
+    return get_env_bool(dotted_to_env_key(dottedKey), defaultValue);
   }
 
   std::string Config::getString(
@@ -297,17 +461,35 @@ namespace vix::config
       const std::string &defaultValue) const noexcept
   {
     const nlohmann::json *node = findNode(dottedKey);
-    if (!node)
+    if (node)
     {
-      return defaultValue;
+      if (node->is_string())
+      {
+        return node->get<std::string>();
+      }
+
+      if (node->is_boolean())
+      {
+        return node->get<bool>() ? "true" : "false";
+      }
+
+      if (node->is_number_integer())
+      {
+        return std::to_string(node->get<int>());
+      }
+
+      if (node->is_number_unsigned())
+      {
+        return std::to_string(node->get<unsigned int>());
+      }
+
+      if (node->is_number_float())
+      {
+        return std::to_string(node->get<double>());
+      }
     }
 
-    if (node->is_string())
-    {
-      return node->get<std::string>();
-    }
-
-    return defaultValue;
+    return get_env_string(dotted_to_env_key(dottedKey), defaultValue);
   }
 
   int Config::getIOThreads() const noexcept

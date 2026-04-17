@@ -54,7 +54,7 @@ namespace vix::config
 #endif
 
     /** @brief Read database password from environment variables. */
-    std::string getDbPasswordFromEnv();
+    std::string getDbPasswordFromEnv() const;
 
     /** @brief Database host. */
     const std::string &getDbHost() const noexcept;
