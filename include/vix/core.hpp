@@ -56,10 +56,10 @@ namespace vix
   using SessionPtr = std::shared_ptr<vix::session::Session>;
 
   /** @brief HTTP request alias. */
-  using Request = vix::vhttp::Request;
+  using Request = vix::http::Request;
 
   /** @brief HTTP response alias. */
-  using Response = vix::vhttp::ResponseWrapper;
+  using Response = vix::http::ResponseWrapper;
 } // namespace vix
 
 #endif // VIX_CORE_HPP

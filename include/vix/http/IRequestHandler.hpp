@@ -14,7 +14,7 @@
 
 #include <vix/async/core/task.hpp>
 
-namespace vix::vhttp
+namespace vix::http
 {
   class Request;
   class Response;
@@ -61,6 +61,6 @@ namespace vix::vhttp
     IRequestHandler &operator=(IRequestHandler &&) noexcept = delete;
   };
 
-} // namespace vix::vhttp
+} // namespace vix::http
 
 #endif // VIX_I_REQUEST_HANDLER_HPP

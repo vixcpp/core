@@ -46,8 +46,8 @@ namespace
   static void install_access_logs(vix::App &app)
   {
     app.use(
-        [](vix::vhttp::Request &req,
-           vix::vhttp::ResponseWrapper &res,
+        [](vix::http::Request &req,
+           vix::http::ResponseWrapper &res,
            vix::App::Next next)
         {
           static const bool kAccessLogs = vix::utils::env_bool("VIX_ACCESS_LOGS", true);
@@ -72,9 +72,9 @@ namespace
           const auto t1 = clock::now();
           const auto ms =
               std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
-          const int status = vix::vhttp::is_valid_status(res.res.status())
+          const int status = vix::http::is_valid_status(res.res.status())
                                  ? res.res.status()
-                                 : vix::vhttp::OK;
+                                 : vix::http::OK;
 
           log().logf(
               vix::utils::Logger::Level::Debug,
@@ -147,7 +147,7 @@ namespace
 
   void register_bench_route(vix::router::Router &router)
   {
-    auto handler = [](vix::vhttp::Request &req, vix::vhttp::ResponseWrapper &res)
+    auto handler = [](vix::http::Request &req, vix::http::ResponseWrapper &res)
     {
       (void)req;
 
@@ -158,7 +158,7 @@ namespace
 #endif
     };
 
-    using HandlerT = vix::vhttp::RequestHandler<decltype(handler)>;
+    using HandlerT = vix::http::RequestHandler<decltype(handler)>;
     auto h = std::make_shared<HandlerT>("/bench", handler);
     router.add_route("GET", "/bench", h);
   }

@@ -20,7 +20,7 @@
 #include <unordered_map>
 #include <utility>
 
-namespace vix::vhttp
+namespace vix::http
 {
   /** @brief Type-safe per-request storage using std::any keyed by std::type_index (useful for middleware data sharing). */
   class RequestState
@@ -103,6 +103,6 @@ namespace vix::vhttp
     std::unordered_map<std::type_index, std::any> data_;
   };
 
-} // namespace vix::vhttp
+} // namespace vix::http
 
 #endif // VIX_REQUEST_STATE_HPP

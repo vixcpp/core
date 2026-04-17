@@ -16,7 +16,7 @@
 #include <string>
 #include <string_view>
 
-namespace vix::vhttp
+namespace vix::http
 {
   /** @brief Common HTTP informational status codes. */
   inline constexpr int CONTINUE = 100;
@@ -222,6 +222,6 @@ namespace vix::vhttp
     return std::to_string(code) + " " + std::string(reason_phrase(code));
   }
 
-} // namespace vix::vhttp
+} // namespace vix::http
 
 #endif // VIX_STATUS_HPP

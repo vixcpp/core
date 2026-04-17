@@ -25,7 +25,7 @@
 #include <vix/http/RequestState.hpp>
 #include <vix/utils/String.hpp>
 
-namespace vix::vhttp
+namespace vix::http
 {
   /**
    * @brief Lightweight native HTTP request object for Vix.
@@ -46,7 +46,7 @@ namespace vix::vhttp
     using HeaderMap = std::unordered_map<std::string, std::string>;
 
     /** @brief Shared pointer type for request-scoped state storage. */
-    using StatePtr = std::shared_ptr<vix::vhttp::RequestState>;
+    using StatePtr = std::shared_ptr<vix::http::RequestState>;
 
     /**
      * @brief Construct an empty request with a default state container.
@@ -55,7 +55,7 @@ namespace vix::vhttp
         : params_(std::make_shared<const ParamMap>()),
           query_cache_(nullptr),
           json_cache_(nullptr),
-          state_(std::make_shared<vix::vhttp::RequestState>())
+          state_(std::make_shared<vix::http::RequestState>())
     {
     }
 
@@ -75,7 +75,7 @@ namespace vix::vhttp
         HeaderMap headers = {},
         std::string body = {},
         ParamMap params = {},
-        StatePtr state = std::make_shared<vix::vhttp::RequestState>())
+        StatePtr state = std::make_shared<vix::http::RequestState>())
         : method_(std::move(method)),
           target_(std::move(target)),
           body_(std::move(body)),
@@ -103,7 +103,7 @@ namespace vix::vhttp
               std::move(headers),
               std::move(body),
               std::move(params),
-              std::make_shared<vix::vhttp::RequestState>())
+              std::make_shared<vix::http::RequestState>())
     {
     }
 
@@ -326,7 +326,7 @@ namespace vix::vhttp
     StatePtr state_ptr() noexcept { return state_; }
 
     /** @brief Return the shared state container pointer as const. */
-    std::shared_ptr<const vix::vhttp::RequestState> state_ptr() const noexcept
+    std::shared_ptr<const vix::http::RequestState> state_ptr() const noexcept
     {
       return state_;
     }
@@ -396,6 +396,6 @@ namespace vix::vhttp
     StatePtr state_;
   };
 
-} // namespace vix::vhttp
+} // namespace vix::http
 
 #endif // VIX_REQUEST_HPP

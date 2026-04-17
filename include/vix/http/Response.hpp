@@ -34,7 +34,7 @@
 #define VIX_CORE_HAS_VIX_JSON 0
 #endif
 
-namespace vix::vhttp
+namespace vix::http
 {
 #if __cpp_concepts
   template <class T>
@@ -538,6 +538,6 @@ namespace vix::vhttp
     bool close_{false};
   };
 
-} // namespace vix::vhttp
+} // namespace vix::http
 
 #endif // VIX_RESPONSE_HPP

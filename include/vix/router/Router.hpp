@@ -51,8 +51,8 @@ namespace vix::router
      * @brief Custom handler called when no route matches a request.
      */
     using NotFoundHandler = std::function<task<void>(
-        const vix::vhttp::Request &,
-        vix::vhttp::Response &)>;
+        const vix::http::Request &,
+        vix::http::Response &)>;
 
     /**
      * @brief Metadata for one registered route (used for docs/OpenAPI and runtime checks).
@@ -89,7 +89,7 @@ namespace vix::router
     void add_route(
         std::string method,
         const std::string &path,
-        std::shared_ptr<vix::vhttp::IRequestHandler> handler)
+        std::shared_ptr<vix::http::IRequestHandler> handler)
     {
       add_route(std::move(method), path, std::move(handler), RouteOptions{}, RouteDoc{});
     }
@@ -100,7 +100,7 @@ namespace vix::router
     void add_route(
         std::string method,
         const std::string &path,
-        std::shared_ptr<vix::vhttp::IRequestHandler> handler,
+        std::shared_ptr<vix::http::IRequestHandler> handler,
         RouteOptions opt)
     {
       add_route(std::move(method), path, std::move(handler), std::move(opt), RouteDoc{});
@@ -112,7 +112,7 @@ namespace vix::router
     void add_route(
         std::string method,
         const std::string &path,
-        std::shared_ptr<vix::vhttp::IRequestHandler> handler,
+        std::shared_ptr<vix::http::IRequestHandler> handler,
         RouteOptions opt,
         RouteDoc doc)
     {
@@ -165,8 +165,8 @@ namespace vix::router
      * Returns true once handled, including 404 responses.
      */
     task<bool> handle_request(
-        const vix::vhttp::Request &req,
-        vix::vhttp::Response &res)
+        const vix::http::Request &req,
+        vix::http::Response &res)
     {
       const std::string method = normalize_method(req.method());
       const bool is_head = (method == "HEAD");
@@ -176,7 +176,7 @@ namespace vix::router
         const std::string target = strip_query(req.target());
         if (!has_route("OPTIONS", target))
         {
-          res.set_status(vix::vhttp::NO_CONTENT);
+          res.set_status(vix::http::NO_CONTENT);
           res.set_body("");
           res.set_header("Connection", "close");
           res.set_should_close(true);
@@ -208,14 +208,14 @@ namespace vix::router
       }
       else
       {
-        res.set_status(vix::vhttp::NOT_FOUND);
+        res.set_status(vix::http::NOT_FOUND);
 
         nlohmann::json j{
             {"error", "Route not found"},
             {"method", method},
             {"path", req.target()}};
 
-        vix::vhttp::Response::json_response(res, j, vix::vhttp::NOT_FOUND);
+        vix::http::Response::json_response(res, j, vix::http::NOT_FOUND);
         res.set_header("Connection", "close");
         res.set_should_close(true);
 
@@ -228,7 +228,7 @@ namespace vix::router
     /**
      * @brief Return true if the route matched by this request is marked as heavy.
      */
-    bool is_heavy(const vix::vhttp::Request &req) const
+    bool is_heavy(const vix::http::Request &req) const
     {
       const RouteNode *node = match_node(req);
       return node ? node->heavy : false;
@@ -351,7 +351,7 @@ namespace vix::router
     {
       using clock = std::chrono::system_clock;
 
-      static std::string cached = vix::vhttp::Response::http_date_now();
+      static std::string cached = vix::http::Response::http_date_now();
       static auto last_tick = clock::now();
       static std::atomic_flag lock = ATOMIC_FLAG_INIT;
 
@@ -367,7 +367,7 @@ namespace vix::router
 
       if (clock::now() - last_tick >= std::chrono::seconds(1))
       {
-        cached = vix::vhttp::Response::http_date_now();
+        cached = vix::http::Response::http_date_now();
         last_tick = clock::now();
       }
 
@@ -415,7 +415,7 @@ namespace vix::router
       return (node && node->has_handler()) ? node : nullptr;
     }
 
-    const RouteNode *match_node(const vix::vhttp::Request &req) const
+    const RouteNode *match_node(const vix::http::Request &req) const
     {
       const std::string target = strip_query(req.target());
       const std::string full_path =
@@ -455,12 +455,12 @@ namespace vix::router
     }
 
     static void finalize_response(
-        const vix::vhttp::Request &req,
-        vix::vhttp::Response &res,
+        const vix::http::Request &req,
+        vix::http::Response &res,
         bool is_head)
     {
-      if (res.status() == vix::vhttp::NO_CONTENT ||
-          res.status() == vix::vhttp::NOT_MODIFIED)
+      if (res.status() == vix::http::NO_CONTENT ||
+          res.status() == vix::http::NOT_MODIFIED)
       {
         res.set_body("");
       }

@@ -40,14 +40,14 @@ namespace vix::view
     return engine_->render(name, context).output;
   }
 
-  vix::vhttp::Response TemplateView::render_response(
+  vix::http::Response TemplateView::render_response(
       const std::string &name,
       const vix::template_::Context &context) const
   {
     auto result = engine_->render(name, context);
 
-    vix::vhttp::Response res;
-    res.set_status(vix::vhttp::OK);
+    vix::http::Response res;
+    res.set_status(vix::http::OK);
     res.set_header("Content-Type", "text/html; charset=utf-8");
     res.set_body(std::move(result.output));
 

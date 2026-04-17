@@ -33,7 +33,7 @@
 #include <vix/template/Context.hpp>
 #include <vix/view/TemplateView.hpp>
 
-namespace vix::vhttp
+namespace vix::http
 {
   using OrderedJson = nlohmann::ordered_json;
 
@@ -261,7 +261,7 @@ namespace vix::vhttp
     /** @brief Return a default message for a numeric status code (e.g. 404 -> "404 Not Found"). */
     static std::string default_status_message(int code)
     {
-      return vix::vhttp::status_to_string(code);
+      return vix::http::status_to_string(code);
     }
 
     /** @brief Set the HTTP status code using an integer in [100..599]. */
@@ -479,7 +479,7 @@ namespace vix::vhttp
       return *this;
     }
 
-    /** @brief Send JSON from any serializable type supported by vix::vhttp::Response::json_response. */
+    /** @brief Send JSON from any serializable type supported by vix::http::Response::json_response. */
     template <typename J>
       requires(!std::is_same_v<std::decay_t<J>, nlohmann::json> &&
                !std::is_same_v<std::decay_t<J>, vix::json::kvs> &&
@@ -577,7 +577,7 @@ namespace vix::vhttp
       return json_ordered(j);
     }
 
-    /** @brief Send JSON from a custom type (must be supported by vix::vhttp::Response::json_response). */
+    /** @brief Send JSON from a custom type (must be supported by vix::http::Response::json_response). */
     template <typename J>
       requires(!std::is_same_v<std::decay_t<J>, nlohmann::json> &&
                !std::is_same_v<std::decay_t<J>, vix::json::kvs> &&
@@ -645,6 +645,6 @@ namespace vix::vhttp
     ResponseWrapper &service_unavailable() { return status(SERVICE_UNAVAILABLE); }
   };
 
-} // namespace vix::vhttp
+} // namespace vix::http
 
 #endif // VIX_RESPONSE_WRAPPER_HPP

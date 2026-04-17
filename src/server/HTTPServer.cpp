@@ -101,10 +101,10 @@ namespace vix::server
     try
     {
       router_->setNotFoundHandler(
-          [](const vix::vhttp::Request &req,
-             vix::vhttp::Response &res) -> vix::async::core::task<void>
+          [](const vix::http::Request &req,
+             vix::http::Response &res) -> vix::async::core::task<void>
           {
-            res.set_status(vix::vhttp::NOT_FOUND);
+            res.set_status(vix::http::NOT_FOUND);
 
             nlohmann::json j{
                 {"error", "Route not found"},
@@ -112,7 +112,7 @@ namespace vix::server
                 {"method", req.method()},
                 {"path", req.target()}};
 
-            vix::vhttp::Response::json_response(res, j, vix::vhttp::NOT_FOUND);
+            vix::http::Response::json_response(res, j, vix::http::NOT_FOUND);
             res.set_header("Connection", "close");
             res.set_should_close(true);
 

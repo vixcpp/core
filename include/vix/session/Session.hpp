@@ -107,21 +107,21 @@ namespace vix::session
     static bool is_normal_disconnect(const std::system_error &e) noexcept;
 
     /** @brief Read and parse the next HTTP request from the socket. */
-    task<std::optional<vix::vhttp::Request>> read_request();
+    task<std::optional<vix::http::Request>> read_request();
 
     /**
      * @brief Dispatch one parsed request to the executor and router.
      *
      * @param req Parsed native Vix HTTP request.
      */
-    task<void> dispatch_request(vix::vhttp::Request req);
+    task<void> dispatch_request(vix::http::Request req);
 
     /**
      * @brief Write a native Vix HTTP response to the client.
      *
      * @param res Response to send.
      */
-    task<void> send_response(vix::vhttp::Response res);
+    task<void> send_response(vix::http::Response res);
 
     /**
      * @brief Send a standardized HTTP error response.
@@ -140,7 +140,7 @@ namespace vix::session
      * @param req Incoming request.
      * @return true if request is accepted, false otherwise.
      */
-    bool waf_check_request(const vix::vhttp::Request &req);
+    bool waf_check_request(const vix::http::Request &req);
 
     /**
      * @brief Read raw bytes until the end of the HTTP header section.
@@ -164,7 +164,7 @@ namespace vix::session
     /**
      * @brief Build a native Vix Request from parsed head + body.
      */
-    vix::vhttp::Request make_request(ParsedRequestHead head, std::string body);
+    vix::http::Request make_request(ParsedRequestHead head, std::string body);
 
     /**
      * @brief Return a lowercase copy of a string.

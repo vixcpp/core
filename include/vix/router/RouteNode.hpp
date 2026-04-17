@@ -36,7 +36,7 @@ namespace vix::router
     std::unordered_map<std::string, std::unique_ptr<RouteNode>> children;
 
     /** @brief Request handler associated with this node (set only for terminal routes). */
-    std::shared_ptr<vix::vhttp::IRequestHandler> handler;
+    std::shared_ptr<vix::http::IRequestHandler> handler;
 
     /** @brief True if this node represents a path parameter segment (e.g. "{id}"). */
     bool isParam{false};
@@ -113,7 +113,7 @@ namespace vix::router
     }
 
     /** @brief Assign a terminal request handler to this node. */
-    void set_handler(std::shared_ptr<vix::vhttp::IRequestHandler> h) noexcept
+    void set_handler(std::shared_ptr<vix::http::IRequestHandler> h) noexcept
     {
       handler = std::move(h);
     }

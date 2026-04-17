@@ -40,7 +40,7 @@
 #endif
 #endif
 
-namespace vix::vhttp
+namespace vix::http
 {
   using vix::async::core::task;
 
@@ -405,6 +405,6 @@ namespace vix::vhttp
     }
   };
 
-} // namespace vix::vhttp
+} // namespace vix::http
 
 #endif // VIX_REQUEST_HANDLER_HPP

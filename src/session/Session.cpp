@@ -357,7 +357,7 @@ namespace vix::session
     return false;
   }
 
-  task<std::optional<vix::vhttp::Request>> Session::read_request()
+  task<std::optional<vix::http::Request>> Session::read_request()
   {
     if (!stream_ || !stream_->is_open())
     {
@@ -402,13 +402,13 @@ namespace vix::session
 
       if (!config_.isBenchMode() && !waf_check_request(req))
       {
-        co_await send_error(vix::vhttp::BAD_REQUEST, "Request blocked (security)");
+        co_await send_error(vix::http::BAD_REQUEST, "Request blocked (security)");
         co_return std::nullopt;
       }
 
       if (req.body().size() > MAX_REQUEST_BODY_SIZE)
       {
-        co_await send_error(vix::vhttp::PAYLOAD_TOO_LARGE, "Request too large");
+        co_await send_error(vix::http::PAYLOAD_TOO_LARGE, "Request too large");
         co_return std::nullopt;
       }
 
@@ -455,13 +455,13 @@ namespace vix::session
 
     if (malformed_request)
     {
-      co_await send_error(vix::vhttp::BAD_REQUEST, "Malformed HTTP request");
+      co_await send_error(vix::http::BAD_REQUEST, "Malformed HTTP request");
     }
 
     co_return std::nullopt;
   }
 
-  task<void> Session::dispatch_request(vix::vhttp::Request req)
+  task<void> Session::dispatch_request(vix::http::Request req)
   {
 #ifdef VIX_BENCH_MODE
     {
@@ -539,7 +539,7 @@ namespace vix::session
     }
 #endif
 
-    vix::vhttp::Response res;
+    vix::http::Response res;
 
     try
     {
@@ -552,9 +552,9 @@ namespace vix::session
                 "[router] exception: {}",
                 ex.what());
 
-      vix::vhttp::Response::error_response(
+      vix::http::Response::error_response(
           res,
-          vix::vhttp::INTERNAL_ERROR,
+          vix::http::INTERNAL_ERROR,
           "Internal server error");
       res.set_should_close(true);
       res.set_header("Connection", "close");
@@ -579,7 +579,7 @@ namespace vix::session
     co_return;
   }
 
-  task<void> Session::send_response(vix::vhttp::Response res)
+  task<void> Session::send_response(vix::http::Response res)
   {
     if (!stream_ || !stream_->is_open())
     {
@@ -656,8 +656,8 @@ namespace vix::session
 
   task<void> Session::send_error(int status, const std::string &msg)
   {
-    vix::vhttp::Response res;
-    vix::vhttp::Response::error_response(res, status, msg);
+    vix::http::Response res;
+    vix::http::Response::error_response(res, status, msg);
     res.set_should_close(true);
     res.set_header("Connection", "close");
     co_await send_response(std::move(res));
@@ -692,7 +692,7 @@ namespace vix::session
     co_return;
   }
 
-  bool Session::waf_check_request(const vix::vhttp::Request &req)
+  bool Session::waf_check_request(const vix::http::Request &req)
   {
 #ifdef VIX_BENCH_MODE
     (void)req;
@@ -970,9 +970,9 @@ namespace vix::session
     co_return body;
   }
 
-  vix::vhttp::Request Session::make_request(ParsedRequestHead head, std::string body)
+  vix::http::Request Session::make_request(ParsedRequestHead head, std::string body)
   {
-    vix::vhttp::Request req;
+    vix::http::Request req;
 
     req.set_method(std::move(head.method));
     req.set_target(std::move(head.target));

@@ -35,7 +35,7 @@ namespace vix::openapi
 {
   namespace detail
   {
-    inline void send_bytes(vix::vhttp::ResponseWrapper &res,
+    inline void send_bytes(vix::http::ResponseWrapper &res,
                            const unsigned char *data,
                            std::size_t len)
     {
@@ -44,9 +44,9 @@ namespace vix::openapi
     }
 
     template <class H>
-    inline std::shared_ptr<vix::vhttp::IRequestHandler> as_handler(std::shared_ptr<H> p)
+    inline std::shared_ptr<vix::http::IRequestHandler> as_handler(std::shared_ptr<H> p)
     {
-      return std::static_pointer_cast<vix::vhttp::IRequestHandler>(std::move(p));
+      return std::static_pointer_cast<vix::http::IRequestHandler>(std::move(p));
     }
 
     inline vix::router::RouteDoc make_docs_doc(std::string summary,
@@ -78,15 +78,15 @@ namespace vix::openapi
                                         std::string title = "Vix API",
                                         std::string version = "0.0.0")
   {
-    using Fn = std::function<void(vix::vhttp::Request &, vix::vhttp::ResponseWrapper &)>;
+    using Fn = std::function<void(vix::http::Request &, vix::http::ResponseWrapper &)>;
 
     // /openapi.json
     {
-      auto h = std::make_shared<vix::vhttp::RequestHandler<Fn>>(
+      auto h = std::make_shared<vix::http::RequestHandler<Fn>>(
           "/openapi.json",
           [&router, t = std::move(title), v = std::move(version)](
-              vix::vhttp::Request &,
-              vix::vhttp::ResponseWrapper &res)
+              vix::http::Request &,
+              vix::http::ResponseWrapper &res)
           {
             auto j = vix::openapi::build_from_router(router, t, v);
             res.type("application/json; charset=utf-8");
@@ -110,9 +110,9 @@ namespace vix::openapi
 
     // /docs/swagger-ui.css
     {
-      auto h = std::make_shared<vix::vhttp::RequestHandler<Fn>>(
+      auto h = std::make_shared<vix::http::RequestHandler<Fn>>(
           "/docs/swagger-ui.css",
-          [](vix::vhttp::Request &, vix::vhttp::ResponseWrapper &res)
+          [](vix::http::Request &, vix::http::ResponseWrapper &res)
           {
             res.type("text/css; charset=utf-8");
             res.header("Cache-Control", "public, max-age=31536000, immutable");
@@ -137,9 +137,9 @@ namespace vix::openapi
 
     // /docs/swagger-ui-bundle.js
     {
-      auto h = std::make_shared<vix::vhttp::RequestHandler<Fn>>(
+      auto h = std::make_shared<vix::http::RequestHandler<Fn>>(
           "/docs/swagger-ui-bundle.js",
-          [](vix::vhttp::Request &, vix::vhttp::ResponseWrapper &res)
+          [](vix::http::Request &, vix::http::ResponseWrapper &res)
           {
             res.type("application/javascript; charset=utf-8");
             res.header("Cache-Control", "public, max-age=31536000, immutable");
@@ -163,7 +163,7 @@ namespace vix::openapi
     }
 
     // HTML handler reused for /docs, /docs/, /docs/index.html
-    auto serve_docs_html = [](vix::vhttp::Request &, vix::vhttp::ResponseWrapper &res)
+    auto serve_docs_html = [](vix::http::Request &, vix::http::ResponseWrapper &res)
     {
       res.type("text/html; charset=utf-8");
       res.header("Cache-Control", "no-store");
@@ -173,7 +173,7 @@ namespace vix::openapi
 
     // /docs
     {
-      auto h = std::make_shared<vix::vhttp::RequestHandler<Fn>>("/docs", serve_docs_html);
+      auto h = std::make_shared<vix::http::RequestHandler<Fn>>("/docs", serve_docs_html);
 
       auto doc = detail::make_docs_doc(
           "Interactive API docs",
@@ -190,7 +190,7 @@ namespace vix::openapi
 
     // /docs/  (no redirect)
     {
-      auto h = std::make_shared<vix::vhttp::RequestHandler<Fn>>("/docs/", serve_docs_html);
+      auto h = std::make_shared<vix::http::RequestHandler<Fn>>("/docs/", serve_docs_html);
 
       auto doc = detail::make_docs_doc(
           "Interactive API docs (slash)",
@@ -207,7 +207,7 @@ namespace vix::openapi
 
     // /docs/index.html (optional convenience)
     {
-      auto h = std::make_shared<vix::vhttp::RequestHandler<Fn>>("/docs/index.html", serve_docs_html);
+      auto h = std::make_shared<vix::http::RequestHandler<Fn>>("/docs/index.html", serve_docs_html);
 
       auto doc = detail::make_docs_doc(
           "Interactive API docs (index)",

@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.0.0] - 2026-03-24
 
 - Removed Boost.Beast completely
-- Introduced native HTTP layer (vix::vhttp)
+- Introduced native HTTP layer (vix::http)
 - New Request / Response / ResponseWrapper API
 - Async-first architecture powered by vix::async
 - Middleware system updated to new model

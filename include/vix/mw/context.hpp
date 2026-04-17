@@ -64,8 +64,8 @@ namespace vix::mw
     std::unordered_map<std::type_index, std::shared_ptr<void>> data_{};
   };
 
-  using Request = vix::vhttp::Request;
-  using Response = vix::vhttp::ResponseWrapper;
+  using Request = vix::http::Request;
+  using Response = vix::http::ResponseWrapper;
 
   /**
    * @brief Request/response context passed through middleware pipelines.

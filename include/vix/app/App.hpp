@@ -91,7 +91,7 @@ namespace vix
      * @brief Middleware signature used by the application.
      */
     using Middleware =
-        std::function<void(vix::vhttp::Request &, vix::vhttp::ResponseWrapper &, Next)>;
+        std::function<void(vix::http::Request &, vix::http::ResponseWrapper &, Next)>;
 
     /**
      * @brief Signature of the injected static files handler.
@@ -687,8 +687,8 @@ namespace vix
     void protect_exact(std::string path, Middleware mw)
     {
       std::string match = normalize_prefix(std::move(path));
-      use(match, [mw = std::move(mw), match](vix::vhttp::Request &req,
-                                             vix::vhttp::ResponseWrapper &res,
+      use(match, [mw = std::move(mw), match](vix::http::Request &req,
+                                             vix::http::ResponseWrapper &res,
                                              Next next) mutable
           {
             if (req.path() == match)
@@ -730,7 +730,7 @@ namespace vix
 
     template <class H>
     static constexpr bool is_facade_handler_v =
-        std::is_invocable_v<H &, vix::vhttp::Request &, vix::vhttp::ResponseWrapper &>;
+        std::is_invocable_v<H &, vix::http::Request &, vix::http::ResponseWrapper &>;
 
     /**
      * @brief Registers a route using default route options.
@@ -750,7 +750,7 @@ namespace vix
      * @brief Registers a route with explicit route options.
      *
      * Supported handlers are:
-     * - (vix::vhttp::Request&, vix::vhttp::ResponseWrapper&)
+     * - (vix::http::Request&, vix::http::ResponseWrapper&)
      *
      * @tparam Handler Route handler type.
      * @param method HTTP method.
@@ -768,14 +768,14 @@ namespace vix
         log().throwError("Router is not initialized in App");
 
       static_assert(is_facade_handler_v<Handler>,
-                    "Invalid handler: expected (vix::vhttp::Request&, ResponseWrapper&)");
+                    "Invalid handler: expected (vix::http::Request&, ResponseWrapper&)");
 
       auto chain = collect_middlewares_for_(path);
       auto final = std::move(handler);
 
       auto wrapped = [chain = std::move(chain), final = std::move(final)](
-                         vix::vhttp::Request &req,
-                         vix::vhttp::ResponseWrapper &res) mutable
+                         vix::http::Request &req,
+                         vix::http::ResponseWrapper &res) mutable
       {
         std::function<void()> final_handler = [&]()
         {
@@ -785,7 +785,7 @@ namespace vix
                    !res.res.has_header("Content-Length");
           };
 
-          using Ret = std::invoke_result_t<decltype(final), vix::vhttp::Request &, vix::vhttp::ResponseWrapper &>;
+          using Ret = std::invoke_result_t<decltype(final), vix::http::Request &, vix::http::ResponseWrapper &>;
 
           if constexpr (std::is_void_v<Ret>)
           {
@@ -802,7 +802,7 @@ namespace vix
         run_middleware_chain_(chain, 0, req, res, final_handler);
       };
 
-      using Adapter = vix::vhttp::RequestHandler<decltype(wrapped)>;
+      using Adapter = vix::http::RequestHandler<decltype(wrapped)>;
       auto request_handler = std::make_shared<Adapter>(
           path,
           std::move(wrapped),
@@ -845,8 +845,8 @@ namespace vix
     static inline void run_middleware_chain_(
         const std::vector<Middleware> &chain,
         std::size_t i,
-        vix::vhttp::Request &req,
-        vix::vhttp::ResponseWrapper &res,
+        vix::http::Request &req,
+        vix::http::ResponseWrapper &res,
         std::function<void()> final_handler)
     {
       if (i >= chain.size())
@@ -899,8 +899,8 @@ namespace vix
       auto chain = collect_middlewares_for_(path);
 
       auto wrapped = [chain = std::move(chain)](
-                         vix::vhttp::Request &req,
-                         vix::vhttp::ResponseWrapper &res) mutable
+                         vix::http::Request &req,
+                         vix::http::ResponseWrapper &res) mutable
       {
         std::function<void()> final_handler = [&]()
         {
@@ -917,7 +917,7 @@ namespace vix
         run_middleware_chain_(chain, 0, req, res, final_handler);
       };
 
-      using Adapter = vix::vhttp::RequestHandler<decltype(wrapped)>;
+      using Adapter = vix::http::RequestHandler<decltype(wrapped)>;
       auto request_handler = std::make_shared<Adapter>(
           path,
           std::move(wrapped),

@@ -67,7 +67,7 @@ namespace vix::view
      * @param context Runtime rendering context.
      * @return HTTP response containing rendered HTML.
      */
-    [[nodiscard]] vix::vhttp::Response render_response(
+    [[nodiscard]] vix::http::Response render_response(
         const std::string &name,
         const vix::template_::Context &context) const;
 
