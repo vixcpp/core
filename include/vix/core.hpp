@@ -49,6 +49,9 @@ namespace vix
    */
   namespace tmpl = vix::template_;
 
+  /** @brief Public App alias. */
+  using App = vix::App;
+
   /** @brief Shared pointer to App. */
   using AppPtr = std::shared_ptr<App>;
 
@@ -59,6 +62,7 @@ namespace vix
   using Request = vix::http::Request;
 
   /** @brief HTTP response alias. */
+  using Response = vix::http::ResponseWrapper;
   using Response = vix::http::ResponseWrapper;
 } // namespace vix
 

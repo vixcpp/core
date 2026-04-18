@@ -52,7 +52,7 @@ namespace vix
    *
    * @return Logger& Global logger singleton.
    */
-  inline Logger &log()
+  inline Logger &logger() noexcept
   {
     return Logger::getInstance();
   }
@@ -765,7 +765,7 @@ namespace vix
                    vix::router::RouteOptions opt)
     {
       if (!router_)
-        log().throwError("Router is not initialized in App");
+        logger().throwError("Router is not initialized in App");
 
       static_assert(is_facade_handler_v<Handler>,
                     "Invalid handler: expected (vix::http::Request&, ResponseWrapper&)");
@@ -925,6 +925,88 @@ namespace vix
 
       router_->add_route("OPTIONS", path, request_handler, vix::router::RouteOptions{});
     }
+
+    /**
+     * @brief Describes a mounted static directory.
+     *
+     * This structure represents a static files mount registered via
+     * App::static_dir(). Each mount defines how a portion of the URL
+     * space is mapped to a filesystem directory.
+     *
+     * Fields:
+     * - root: Filesystem root directory containing static assets.
+     * - mount: URL prefix where files are exposed (e.g. "/assets").
+     * - index_file: Default file served when a directory is requested.
+     * - add_cache_control: Whether to automatically add a Cache-Control header.
+     * - cache_control: Value of the Cache-Control header when enabled.
+     * - fallthrough: If true, request continues to next handler when file not found.
+     *
+     * Example:
+     * @code
+     * app.static_dir("public", "/assets");
+     * // GET /assets/style.css -> public/style.css
+     * @endcode
+     */
+    struct StaticMount
+    {
+      std::filesystem::path root;
+      std::string mount;
+      std::string index_file;
+      bool add_cache_control{true};
+      std::string cache_control{"public, max-age=3600"};
+      bool fallthrough{true};
+    };
+
+    /**
+     * @brief List of registered static directory mounts.
+     *
+     * This container stores all static directories configured via
+     * App::static_dir(). It is used internally during request handling
+     * to resolve static file requests when no explicit route matches.
+     */
+    std::vector<StaticMount> static_mounts_;
+
+    /**
+     * @brief Attempts to serve a static file from any registered mount.
+     *
+     * This function iterates over all static mounts and tries to resolve
+     * the incoming request path to a file on disk. It is typically invoked
+     * as a fallback when no route matches.
+     *
+     * @param req Incoming HTTP request.
+     * @param res HTTP response wrapper used to send the file.
+     * @return true if a static file was successfully served, false otherwise.
+     */
+    bool try_static_file_(vix::http::Request &req, vix::http::ResponseWrapper &res);
+
+    /**
+     * @brief Attempts to serve a static file from a specific mount.
+     *
+     * This function resolves the request path relative to a given mount,
+     * performs validation (path traversal, existence, type), and serves
+     * the file if found.
+     *
+     * Behavior:
+     * - Supports GET and HEAD requests.
+     * - Resolves directory requests using index_file.
+     * - Optionally applies Cache-Control headers.
+     * - Honors fallthrough behavior when file is missing.
+     *
+     * @param m Static mount configuration.
+     * @param req Incoming HTTP request.
+     * @param res HTTP response wrapper used to send the file.
+     * @return true if the request was handled (file served or error sent),
+     *         false if the request should fall through to other handlers.
+     */
+    bool serve_static_from_mount_(const StaticMount &m,
+                                  vix::http::Request &req,
+                                  vix::http::ResponseWrapper &res);
+
+    /**
+     * @brief Configure the router's not-found handler with static file fallback support.
+     * Installs a fallback that serves static files before returning the default 404 response.
+     */
+    void setup_not_found_handler_();
 
   private:
     vix::config::Config config_;

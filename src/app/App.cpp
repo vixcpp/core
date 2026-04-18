@@ -228,6 +228,8 @@ namespace vix
         log().throwError("Failed to get Router from HTTPServer");
       }
 
+      setup_not_found_handler_();
+
       if (vix::utils::env_bool("VIX_DOCS", true))
       {
         vix::openapi::register_openapi_and_docs(*router_, "Vix API", "1.33.0");
@@ -285,6 +287,8 @@ namespace vix
         log().throwError("Failed to get Router from HTTPServer");
       }
 
+      setup_not_found_handler_();
+
       if (vix::utils::env_bool("VIX_DOCS", true))
       {
         vix::openapi::register_openapi_and_docs(*router_, "Vix API", "0.0.0");
@@ -297,6 +301,37 @@ namespace vix
     {
       log().throwError("Failed to initialize App: {}", e.what());
     }
+  }
+
+  void App::setup_not_found_handler_()
+  {
+    router_->setNotFoundHandler(
+        [this](const vix::http::Request &req,
+               vix::http::Response &res) -> vix::async::core::task<void>
+        {
+          vix::http::ResponseWrapper resw(res, template_view_.get());
+
+          // Static fallback
+          if (this->try_static_file_(const_cast<vix::http::Request &>(req), resw))
+          {
+            co_return;
+          }
+
+          // Default 404
+          res.set_status(vix::http::NOT_FOUND);
+
+          nlohmann::json j{
+              {"error", "Route not found"},
+              {"hint", "Check path, method, or API version"},
+              {"method", req.method()},
+              {"path", req.target()}};
+
+          vix::http::Response::json_response(res, j, vix::http::NOT_FOUND);
+          res.set_header("Connection", "close");
+          res.set_should_close(true);
+
+          co_return;
+        });
   }
 
   App &App::templates(const std::string &directory)
@@ -534,7 +569,7 @@ namespace vix
   bool App::match_middleware_prefix_(const std::string &prefix,
                                      const std::string &path) const
   {
-    if (prefix.empty())
+    if (prefix.empty() || prefix == "/")
     {
       return true;
     }
@@ -599,25 +634,88 @@ namespace vix
                        std::string cache_control,
                        bool fallthrough)
   {
-    auto &h = static_handler_ref();
-    if (!h)
+    static_mounts_.push_back(StaticMount{
+        std::move(root),
+        normalize_prefix(std::move(mount)),
+        std::move(index_file),
+        add_cache_control,
+        std::move(cache_control),
+        fallthrough});
+  }
+
+  bool App::serve_static_from_mount_(const StaticMount &m,
+                                     vix::http::Request &req,
+                                     vix::http::ResponseWrapper &res)
+  {
+    const auto &method = req.method();
+    if (!(method == "GET" || method == "HEAD"))
+      return false;
+
+    const std::string path = req.path();
+    if (!match_middleware_prefix_(m.mount, path))
+      return false;
+
+    std::string rel;
+
+    if (m.mount == "/")
     {
-      log().throwError("App::static_dir() requires vix::middleware module (static handler not registered)");
-      return;
+      rel = path;
+    }
+    else
+    {
+      rel = path.substr(m.mount.size());
     }
 
-    const bool ok = h(*this,
-                      root,
-                      mount,
-                      index_file,
-                      add_cache_control,
-                      cache_control,
-                      fallthrough);
+    if (!rel.empty() && rel.front() == '/')
+      rel.erase(rel.begin());
 
-    if (!ok)
+    if (rel.empty())
+      rel = m.index_file;
+
+    if (rel.find("..") != std::string::npos)
     {
-      log().throwError("App::static_dir() failed (static handler returned false)");
+      res.status(400).text("Bad path");
+      return true;
     }
+
+    std::filesystem::path full = m.root / rel;
+
+    std::error_code ec;
+    if (std::filesystem::is_directory(full, ec))
+      full /= m.index_file;
+
+    if (!std::filesystem::exists(full, ec) || !std::filesystem::is_regular_file(full, ec))
+    {
+      if (m.fallthrough)
+        return false;
+
+      res.status(404).text("Not Found");
+      return true;
+    }
+
+    if (m.add_cache_control)
+      res.header("Cache-Control", m.cache_control);
+
+    if (method == "HEAD")
+    {
+      res.file(full);
+      res.res.set_body("");
+      return true;
+    }
+
+    res.file(full);
+    return true;
+  }
+
+  bool App::try_static_file_(vix::http::Request &req, vix::http::ResponseWrapper &res)
+  {
+    for (const auto &m : static_mounts_)
+    {
+      if (serve_static_from_mount_(m, req, res))
+        return true;
+    }
+
+    return false;
   }
 
 } // namespace vix

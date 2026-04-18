@@ -1,51 +1,38 @@
 /**
  *
- * @file vix.hpp
- * @author Gaspard Kirira
+ *  @file vix.hpp
+ *  @author Gaspard Kirira
  *
- * Copyright 2025, Gaspard Kirira. All rights reserved.
- * https://github.com/vixcpp/vix
- * Use of this source code is governed by a MIT license that can be found in the License file.
+ *  @brief Unified public entry point for Vix.
  *
- * Vix.cpp
+ *  This header aggregates the main Vix modules into a single include.
+ *  It does not perform any runtime initialization.
+ *
+ *  Usage:
+ *    #include <vix.hpp>
+ *
+ *  Copyright 2025, Gaspard Kirira.
+ *  All rights reserved.
+ *  https://github.com/vixcpp/vix
+ *
+ *  Use of this source code is governed by a MIT license
+ *  that can be found in the License file.
+ *
+ *  Vix.cpp
  *
  */
 #ifndef VIX_VIX_HPP
 #define VIX_VIX_HPP
 
 #include <vix/core.hpp>
-#include <vix/json/json.hpp>
 
-/**
- * @brief Umbrella header for Vix.
- */
-
-#if defined(VIX_HAS_MIDDLEWARE)
-#include <vix/app/App.hpp>
-#include <vix/middleware/module_init.hpp>
-
-namespace vix::detail
-{
-
-  /**
-   * @brief Register middleware modules when using the umbrella header.
-   */
-  inline void register_modules_for_umbrella()
-  {
-    vix::App::set_module_init(&vix_middleware_module_init);
-  }
-
-  /**
-   * @brief Automatic module registration helper.
-   */
-  struct UmbrellaAutoInit
-  {
-    UmbrellaAutoInit() { register_modules_for_umbrella(); }
-  };
-
-  inline UmbrellaAutoInit g_umbrella_auto_init{};
-
-} // namespace vix::detail
-#endif
+// Common public umbrella headers
+#include <vix/json.hpp>
+#include <vix/utils.hpp>
+#include <vix/log.hpp>
+#include <vix/env.hpp>
+#include <vix/fs.hpp>
+#include <vix/path.hpp>
+#include <vix/time.hpp>
 
 #endif // VIX_VIX_HPP
