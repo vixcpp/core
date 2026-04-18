@@ -26,7 +26,6 @@
 #define VIX_VIX_HPP
 
 #include <vix/core.hpp>
-#include <vix/json.hpp>
-#include <vix/utils.hpp>
+#include <vix/json/json.hpp>
 
 #endif // VIX_VIX_HPP
