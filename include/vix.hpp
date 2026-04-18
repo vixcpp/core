@@ -3,9 +3,10 @@
  *  @file vix.hpp
  *  @author Gaspard Kirira
  *
- *  @brief Unified public entry point for Vix.
+ *  @brief Umbrella aggregator header for Vix.
  *
- *  This header aggregates the main Vix modules into a single include.
+ *  This header aggregates the main umbrella entry headers exposed with core.
+ *  It is only an aggregator and does not define a separate API layer.
  *  It does not perform any runtime initialization.
  *
  *  Usage:
@@ -25,14 +26,7 @@
 #define VIX_VIX_HPP
 
 #include <vix/core.hpp>
-
-// Common public umbrella headers
 #include <vix/json.hpp>
 #include <vix/utils.hpp>
-#include <vix/log.hpp>
-#include <vix/env.hpp>
-#include <vix/fs.hpp>
-#include <vix/path.hpp>
-#include <vix/time.hpp>
 
 #endif // VIX_VIX_HPP
