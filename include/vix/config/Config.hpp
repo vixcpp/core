@@ -36,9 +36,6 @@ namespace vix::config
     Config(const Config &) = delete;
     Config &operator=(const Config &) = delete;
 
-    /** @brief Get the singleton instance (lazy-initialized). */
-    static Config &getInstance(const std::filesystem::path &configPath = "");
-
     /** @brief Load or reload the configuration file. */
     void loadConfig();
 

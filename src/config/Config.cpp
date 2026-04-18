@@ -24,6 +24,9 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <iostream>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace vix::config
 {
@@ -132,6 +135,32 @@ namespace vix::config
 
       return value.value();
     }
+
+    static int get_env_int_with_warning(
+        const std::string &envKey,
+        int defaultValue)
+    {
+      static std::unordered_set<std::string> warned;
+
+      auto value = vix::env::get_int(envKey);
+
+      if (!value)
+      {
+        auto silent = vix::env::get_bool("VIX_ENV_SILENT");
+        const bool isSilent = silent ? silent.value() : false;
+
+        if (!isSilent && warned.insert(envKey).second)
+        {
+          std::cerr << "i " << envKey
+                    << " not set. Using default: "
+                    << defaultValue << "\n";
+        }
+
+        return defaultValue;
+      }
+
+      return value.value();
+    }
   } // namespace
 
   Config::Config(const std::filesystem::path &configPath)
@@ -160,12 +189,6 @@ namespace vix::config
     }
 
     loadConfig();
-  }
-
-  Config &Config::getInstance(const std::filesystem::path &configPath)
-  {
-    static Config instance(configPath);
-    return instance;
   }
 
   void Config::loadConfig()
@@ -206,7 +229,8 @@ namespace vix::config
 
     db_pass = getDbPasswordFromEnv();
 
-    server_port = get_env_int("SERVER_PORT", DEFAULT_SERVER_PORT);
+    server_port = get_env_int_with_warning("SERVER_PORT", DEFAULT_SERVER_PORT);
+
     request_timeout = get_env_int("SERVER_REQUEST_TIMEOUT", DEFAULT_REQUEST_TIMEOUT);
     io_threads_ = get_env_int("SERVER_IO_THREADS", DEFAULT_IO_THREADS);
     session_timeout_sec_ =
