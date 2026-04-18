@@ -308,13 +308,17 @@ if (CORE_SOURCES)
   # Build-only helpers must not leak into exported interfaces.
   if (TARGET vix_warnings)
     message(STATUS "[core] vix_warnings detected")
-    target_link_libraries(vix_core PRIVATE vix_warnings)
+    target_link_libraries(vix_core PRIVATE
+      $<BUILD_INTERFACE:vix_warnings>
+    )
   else()
     message(STATUS "[core] vix_warnings not found (building core standalone)")
   endif()
 
   if (VIX_ENABLE_SANITIZERS AND TARGET vix_sanitizers)
-    target_link_libraries(vix_core PRIVATE vix_sanitizers)
+    target_link_libraries(vix_core PRIVATE
+      $<BUILD_INTERFACE:vix_sanitizers>
+    )
   endif()
 
   vix_core_try_link_json(vix_core PUBLIC)
