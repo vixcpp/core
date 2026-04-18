@@ -13,7 +13,6 @@
  */
 #include <vix/app/App.hpp>
 
-#include <vix/experimental/ThreadPoolExecutor.hpp>
 #include <vix/openapi/register_docs.hpp>
 #include <vix/router/Router.hpp>
 #include <vix/utils/Env.hpp>
@@ -125,24 +124,13 @@ namespace
     return static_cast<std::size_t>(hc);
   }
 
-  std::shared_ptr<vix::executor::IExecutor> make_default_executor()
+  std::shared_ptr<vix::executor::RuntimeExecutor> make_default_executor()
   {
-    const std::size_t threads = compute_executor_threads();
-    const std::size_t max_threads = threads;
-    constexpr int default_priority = 0;
+    const auto threads = static_cast<std::uint32_t>(compute_executor_threads());
 
-    std::unique_ptr<vix::executor::IExecutor> exec =
-        vix::experimental::make_threadpool_executor(
-            threads,
-            max_threads,
-            default_priority);
-
-    if (!exec)
-    {
-      throw std::runtime_error("failed to create default thread pool executor");
-    }
-
-    return std::shared_ptr<vix::executor::IExecutor>(std::move(exec));
+    auto exec = std::make_shared<vix::executor::RuntimeExecutor>(threads);
+    exec->start();
+    return exec;
   }
 
   void register_bench_route(vix::router::Router &router)
@@ -244,7 +232,7 @@ namespace vix
     }
   }
 
-  App::App(std::shared_ptr<vix::executor::IExecutor> executor)
+  App::App(std::shared_ptr<vix::executor::RuntimeExecutor> executor)
       : config_(),
         router_(nullptr),
         executor_(std::move(executor)),
@@ -254,6 +242,8 @@ namespace vix
     {
       log().throwError("App: executor cannot be null");
     }
+
+    executor_->start();
 
     log().setPattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
     log().setLevel(parse_log_level_from_env());

@@ -26,7 +26,7 @@
 #include <vector>
 
 #include <vix/config/Config.hpp>
-#include <vix/executor/IExecutor.hpp>
+#include <vix/executor/RuntimeExecutor.hpp>
 #include <vix/http/RequestHandler.hpp>
 #include <vix/http/ResponseWrapper.hpp>
 #include <vix/router/Router.hpp>
@@ -120,7 +120,7 @@ namespace vix
      *
      * @param executor Shared executor used by the application.
      */
-    explicit App(std::shared_ptr<vix::executor::IExecutor> executor);
+    explicit App(std::shared_ptr<vix::executor::RuntimeExecutor> executor);
 
     /**
      * @brief Destroys the application and releases owned resources.
@@ -318,11 +318,11 @@ namespace vix
     }
 
     /**
-     * @brief Returns the executor used by the application.
+     * @brief Returns the runtime executor used by the application.
      *
-     * @return vix::executor::IExecutor& Executor.
+     * @return vix::executor::RuntimeExecutor& Executor.
      */
-    vix::executor::IExecutor &executor() noexcept
+    vix::executor::RuntimeExecutor &executor() noexcept
     {
       return *executor_;
     }
@@ -1011,7 +1011,7 @@ namespace vix
   private:
     vix::config::Config config_;
     std::shared_ptr<vix::router::Router> router_;
-    std::shared_ptr<vix::executor::IExecutor> executor_;
+    std::shared_ptr<vix::executor::RuntimeExecutor> executor_;
     vix::server::HTTPServer server_;
 
     ShutdownCallback shutdown_cb_{};

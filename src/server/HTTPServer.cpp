@@ -75,8 +75,9 @@ namespace vix::server
     }
   } // namespace
 
-  HTTPServer::HTTPServer(vix::config::Config &config,
-                         std::shared_ptr<vix::executor::IExecutor> executor)
+  HTTPServer::HTTPServer(
+      vix::config::Config &config,
+      std::shared_ptr<vix::executor::RuntimeExecutor> executor)
       : config_(config),
         io_context_(std::make_shared<vix::async::core::io_context>()),
         listener_(nullptr),

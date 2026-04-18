@@ -187,7 +187,7 @@ namespace vix::session
   Session::Session(std::unique_ptr<tcp_stream> stream,
                    vix::router::Router &router,
                    const vix::config::Config &config,
-                   std::shared_ptr<vix::executor::IExecutor> executor)
+                   std::shared_ptr<vix::executor::RuntimeExecutor> executor)
       : stream_(std::move(stream)),
         router_(router),
         config_(config),

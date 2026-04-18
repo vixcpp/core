@@ -27,7 +27,7 @@
 #include <vix/async/core/task.hpp>
 #include <vix/async/net/tcp.hpp>
 #include <vix/config/Config.hpp>
-#include <vix/executor/IExecutor.hpp>
+#include <vix/executor/RuntimeExecutor.hpp>
 #include <vix/router/Router.hpp>
 
 namespace vix::server
@@ -59,7 +59,6 @@ namespace vix::server
    *
    * This server does not depend on Boost.Asio or Boost.Beast.
    * Networking is provided by vix::async::net and application execution is
-   * delegated through vix::executor::IExecutor.
    */
   class HTTPServer
   {
@@ -74,7 +73,7 @@ namespace vix::server
      */
     explicit HTTPServer(
         vix::config::Config &config,
-        std::shared_ptr<vix::executor::IExecutor> executor);
+        std::shared_ptr<vix::executor::RuntimeExecutor> executor);
 
     HTTPServer(const HTTPServer &) = delete;
     HTTPServer &operator=(const HTTPServer &) = delete;
@@ -196,7 +195,7 @@ namespace vix::server
      *
      * @return Shared executor instance.
      */
-    [[nodiscard]] std::shared_ptr<vix::executor::IExecutor> executor() const noexcept
+    std::shared_ptr<vix::executor::RuntimeExecutor> executor() const noexcept
     {
       return executor_;
     }
@@ -312,7 +311,7 @@ namespace vix::server
     /**
      * @brief Generic executor used for application work.
      */
-    std::shared_ptr<vix::executor::IExecutor> executor_;
+    std::shared_ptr<vix::executor::RuntimeExecutor> executor_;
 
     /**
      * @brief Threads running the native async I/O context.
