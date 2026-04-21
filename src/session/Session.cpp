@@ -296,12 +296,7 @@ namespace vix::session
 
         if (!maybe_req.has_value())
         {
-          if (!stream_ || !stream_->is_open())
-          {
-            break;
-          }
-
-          continue;
+          break;
         }
 
         co_await dispatch_request(std::move(*maybe_req));
