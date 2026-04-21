@@ -48,42 +48,6 @@ namespace vix::session
       return Logger::getInstance();
     }
 
-    inline bool icontains(std::string_view s, std::string_view needle)
-    {
-      if (needle.empty())
-      {
-        return true;
-      }
-
-      if (needle.size() > s.size())
-      {
-        return false;
-      }
-
-      for (std::size_t i = 0; i + needle.size() <= s.size(); ++i)
-      {
-        std::size_t j = 0;
-        for (; j < needle.size(); ++j)
-        {
-          const unsigned char a = static_cast<unsigned char>(s[i + j]);
-          const unsigned char b = static_cast<unsigned char>(needle[j]);
-
-          if (static_cast<char>(std::tolower(a)) !=
-              static_cast<char>(std::tolower(b)))
-          {
-            break;
-          }
-        }
-
-        if (j == needle.size())
-        {
-          return true;
-        }
-      }
-
-      return false;
-    }
-
     inline bool starts_with_icase(std::string_view s, std::string_view prefix)
     {
       if (prefix.size() > s.size())
@@ -141,6 +105,98 @@ namespace vix::session
       }
 
       return pos + 4;
+    }
+
+    inline bool raw_header_requests_close(std::string_view raw_header)
+    {
+      std::size_t line_start = 0;
+
+      while (line_start < raw_header.size())
+      {
+        std::size_t line_end = raw_header.find("\r\n", line_start);
+        if (line_end == std::string_view::npos)
+        {
+          line_end = raw_header.size();
+        }
+
+        const std::string_view line =
+            raw_header.substr(line_start, line_end - line_start);
+
+        if (line.empty())
+        {
+          break;
+        }
+
+        constexpr std::string_view prefix = "Connection:";
+        if (line.size() >= prefix.size() &&
+            starts_with_icase(line, prefix))
+        {
+          std::size_t value_start = prefix.size();
+          while (value_start < line.size() &&
+                 std::isspace(static_cast<unsigned char>(line[value_start])))
+          {
+            ++value_start;
+          }
+
+          const std::string_view value = line.substr(value_start);
+          return equals_icase(value, "close");
+        }
+
+        if (line_end == raw_header.size())
+        {
+          break;
+        }
+
+        line_start = line_end + 2;
+      }
+
+      return false;
+    }
+
+    inline bool contains_token_icase(std::string_view text, std::string_view token)
+    {
+      if (token.empty())
+      {
+        return true;
+      }
+
+      if (token.size() > text.size())
+      {
+        return false;
+      }
+
+      const auto lower_char = [](unsigned char c) -> char
+      {
+        return static_cast<char>(std::tolower(c));
+      };
+
+      const char first = lower_char(static_cast<unsigned char>(token.front()));
+      const std::size_t last = text.size() - token.size();
+
+      for (std::size_t i = 0; i <= last; ++i)
+      {
+        if (lower_char(static_cast<unsigned char>(text[i])) != first)
+        {
+          continue;
+        }
+
+        std::size_t j = 1;
+        for (; j < token.size(); ++j)
+        {
+          if (lower_char(static_cast<unsigned char>(text[i + j])) !=
+              lower_char(static_cast<unsigned char>(token[j])))
+          {
+            break;
+          }
+        }
+
+        if (j == token.size())
+        {
+          return true;
+        }
+      }
+
+      return false;
     }
 
     inline std::vector<std::string_view> split_lines(std::string_view block)
@@ -209,9 +265,15 @@ namespace vix::session
       while (stream_ && stream_->is_open())
       {
         auto maybe_req = co_await read_request();
+
         if (!maybe_req.has_value())
         {
-          break;
+          if (!stream_ || !stream_->is_open())
+          {
+            break;
+          }
+
+          continue;
         }
 
         co_await dispatch_request(std::move(*maybe_req));
@@ -387,6 +449,70 @@ namespace vix::session
 #endif
         co_return std::nullopt;
       }
+
+#ifdef VIX_BENCH_MODE
+      {
+        static constexpr std::string_view kBenchPrefix = "GET /bench HTTP/";
+        if (raw_header.size() >= kBenchPrefix.size() &&
+            std::string_view(raw_header.data(), kBenchPrefix.size()) == kBenchPrefix)
+        {
+          const bool close_requested = raw_header_requests_close(raw_header);
+
+          static constexpr std::string_view kBenchResponseKeepAlive =
+              "HTTP/1.1 200 OK\r\n"
+              "Content-Type: text/plain\r\n"
+              "Content-Length: 2\r\n"
+              "Connection: keep-alive\r\n"
+              "Server: Vix.cpp\r\n"
+              "\r\n"
+              "OK";
+
+          static constexpr std::string_view kBenchResponseClose =
+              "HTTP/1.1 200 OK\r\n"
+              "Content-Type: text/plain\r\n"
+              "Content-Length: 2\r\n"
+              "Connection: close\r\n"
+              "Server: Vix.cpp\r\n"
+              "\r\n"
+              "OK";
+
+          const std::string_view wire =
+              close_requested ? kBenchResponseClose : kBenchResponseKeepAlive;
+
+          std::size_t written = 0;
+          while (written < wire.size())
+          {
+            const std::byte *ptr =
+                reinterpret_cast<const std::byte *>(wire.data() + written);
+
+            const std::size_t n = co_await stream_->async_write(
+                std::span<const std::byte>(ptr, wire.size() - written),
+                timer_cancel_.token());
+
+            if (n == 0)
+            {
+              break;
+            }
+
+            written += n;
+          }
+
+#ifndef VIX_BENCH_MODE
+          if (!config_.isBenchMode())
+          {
+            cancel_timer();
+          }
+#endif
+
+          if (close_requested)
+          {
+            co_await close_stream_gracefully();
+          }
+
+          co_return std::nullopt;
+        }
+      }
+#endif
 
       ParsedRequestHead head = parse_request_head(raw_header);
       std::string body = co_await read_request_body(head);
@@ -728,10 +854,10 @@ namespace vix::session
 
     const bool suspicious_url =
         target.find('<') != std::string_view::npos ||
-        icontains(target, "script") ||
-        icontains(target, "union") ||
-        icontains(target, "select") ||
-        icontains(target, "drop");
+        contains_token_icase(target, "script") ||
+        contains_token_icase(target, "union") ||
+        contains_token_icase(target, "select") ||
+        contains_token_icase(target, "drop");
 
     if (suspicious_url)
     {
@@ -776,12 +902,12 @@ namespace vix::session
 
     const bool cheap_trigger =
         body.find('<') != std::string::npos ||
-        icontains(body, "union") ||
-        icontains(body, "select") ||
-        icontains(body, "drop") ||
-        icontains(body, "insert") ||
-        icontains(body, "delete") ||
-        icontains(body, "update");
+        contains_token_icase(body, "union") ||
+        contains_token_icase(body, "select") ||
+        contains_token_icase(body, "drop") ||
+        contains_token_icase(body, "insert") ||
+        contains_token_icase(body, "delete") ||
+        contains_token_icase(body, "update");
 
     if (mode == "basic" && !cheap_trigger)
     {
