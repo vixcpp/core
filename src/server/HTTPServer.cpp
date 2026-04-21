@@ -194,7 +194,13 @@ namespace vix::server
 
   std::size_t HTTPServer::calculate_io_thread_count()
   {
-    return 1;
+    auto hc = std::thread::hardware_concurrency();
+    if (hc == 0)
+    {
+      hc = 4;
+    }
+
+    return static_cast<std::size_t>(hc);
   }
 
   void HTTPServer::start_io_threads()
@@ -431,53 +437,39 @@ namespace vix::server
 
   void HTTPServer::stop_async()
   {
-    log().log(Logger::Level::Error, "[trace] HTTPServer::stop_async enter");
-
     const bool already_stopping =
         stop_requested_.exchange(true, std::memory_order_acq_rel);
 
     if (already_stopping)
     {
-      log().log(Logger::Level::Error, "[trace] HTTPServer::stop_async already stopping");
       return;
     }
 
-    log().log(Logger::Level::Error, "[trace] HTTPServer::stop_async notify metrics");
     metrics_cv_.notify_all();
 
     try
     {
-      log().log(Logger::Level::Error, "[trace] HTTPServer::stop_async before listener close");
       if (listener_)
       {
         listener_->close();
       }
-      log().log(Logger::Level::Error, "[trace] HTTPServer::stop_async after listener close");
     }
     catch (...)
     {
-      log().log(Logger::Level::Error, "[trace] HTTPServer::stop_async listener close threw");
     }
 
     if (io_context_)
     {
-      log().log(Logger::Level::Error, "[trace] HTTPServer::stop_async before io_context stop");
       io_context_->stop();
-      log().log(Logger::Level::Error, "[trace] HTTPServer::stop_async after io_context stop");
     }
-
-    log().log(Logger::Level::Error, "[trace] HTTPServer::stop_async leave");
   }
 
   void HTTPServer::join_threads()
   {
-    log().log(Logger::Level::Error, "[trace] HTTPServer::join_threads enter");
-
     std::lock_guard<std::mutex> lock(join_mutex_);
 
     if (threads_joined_.load(std::memory_order_acquire))
     {
-      log().log(Logger::Level::Error, "[trace] HTTPServer::join_threads already joined");
       return;
     }
 
@@ -495,9 +487,7 @@ namespace vix::server
       }
       else
       {
-        log().log(Logger::Level::Error, "[trace] HTTPServer::join_threads before metrics join");
         metrics_thread_.join();
-        log().log(Logger::Level::Error, "[trace] HTTPServer::join_threads after metrics join");
       }
     }
 
@@ -518,30 +508,20 @@ namespace vix::server
         continue;
       }
 
-      log().log(Logger::Level::Error,
-                "[trace] HTTPServer::join_threads before io join {}",
-                static_cast<unsigned long long>(i));
       io_threads_[i].join();
-      log().log(Logger::Level::Error,
-                "[trace] HTTPServer::join_threads after io join {}",
-                static_cast<unsigned long long>(i));
     }
 
     io_threads_.clear();
 
     if (!deferred_completion && io_context_)
     {
-      log().log(Logger::Level::Error, "[trace] HTTPServer::join_threads before io_context shutdown");
       io_context_->shutdown();
-      log().log(Logger::Level::Error, "[trace] HTTPServer::join_threads after io_context shutdown");
     }
 
     if (!deferred_completion)
     {
       threads_joined_.store(true, std::memory_order_release);
     }
-
-    log().log(Logger::Level::Error, "[trace] HTTPServer::join_threads leave");
   }
 
   void HTTPServer::stop_blocking()

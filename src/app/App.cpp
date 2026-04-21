@@ -117,12 +117,16 @@ namespace
 
   std::size_t compute_executor_threads()
   {
-    return 1;
+    auto hc = std::thread::hardware_concurrency();
+    if (hc == 0)
+      hc = 4;
+
+    return static_cast<std::size_t>(hc);
   }
 
   std::shared_ptr<vix::executor::RuntimeExecutor> make_default_executor()
   {
-    constexpr std::uint32_t threads = 1u;
+    const auto threads = static_cast<std::uint32_t>(compute_executor_threads());
 
     auto exec = std::make_shared<vix::executor::RuntimeExecutor>(threads);
     exec->start();
@@ -495,8 +499,6 @@ namespace vix
 
   void App::close()
   {
-    log().log(Logger::Level::Error, "[trace] App::close enter");
-
     bool expected = false;
     if (!closed_.compare_exchange_strong(
             expected,
@@ -504,53 +506,37 @@ namespace vix
             std::memory_order_acq_rel,
             std::memory_order_acquire))
     {
-      log().log(Logger::Level::Error, "[trace] App::close already closed");
       return;
     }
 
     if (!started_.load(std::memory_order_relaxed))
     {
-      log().log(Logger::Level::Error, "[trace] App::close not started");
       return;
     }
 
-    log().log(Logger::Level::Error, "[trace] App::close set stop_requested");
     stop_requested_.store(true, std::memory_order_relaxed);
-
-    log().log(Logger::Level::Error, "[trace] App::close notify stop_cv");
     stop_cv_.notify_one();
 
     if (shutdown_cb_)
     {
-      log().log(Logger::Level::Error, "[trace] App::close before shutdown_cb");
       try
       {
         shutdown_cb_();
       }
       catch (...)
       {
-        log().log(Logger::Level::Error, "[trace] App::close shutdown_cb threw");
       }
-      log().log(Logger::Level::Error, "[trace] App::close after shutdown_cb");
     }
 
-    log().log(Logger::Level::Error, "[trace] App::close before server_.stop_async");
     server_.stop_async();
-    log().log(Logger::Level::Error, "[trace] App::close after server_.stop_async");
-
-    log().log(Logger::Level::Error, "[trace] App::close before server_.stop_blocking");
     server_.stop_blocking();
-    log().log(Logger::Level::Error, "[trace] App::close after server_.stop_blocking");
 
     if (server_thread_.joinable())
     {
-      log().log(Logger::Level::Error, "[trace] App::close before server_thread_.join");
       server_thread_.join();
-      log().log(Logger::Level::Error, "[trace] App::close after server_thread_.join");
     }
 
     started_.store(false, std::memory_order_relaxed);
-    log().log(Logger::Level::Error, "[trace] App::close leave");
   }
 
   void App::run(int port)
