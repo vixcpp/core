@@ -214,6 +214,13 @@ namespace vix::http
       headers_ = std::move(headers);
     }
 
+    [[nodiscard]] Request with_params(ParamMap params) const
+    {
+      Request copy = *this;
+      copy.params_ = std::make_shared<const ParamMap>(std::move(params));
+      return copy;
+    }
+
     /**
      * @brief Return a header value or an empty string if missing.
      *

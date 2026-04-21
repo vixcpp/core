@@ -51,11 +51,6 @@ namespace vix::server
     {
       return Logger::getInstance();
     }
-
-    void set_affinity(std::size_t thread_index)
-    {
-      (void)thread_index;
-    }
   } // namespace
 
   HTTPServer::HTTPServer(

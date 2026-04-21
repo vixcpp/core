@@ -91,6 +91,32 @@ namespace vix::session
       return true;
     }
 
+    task<bool> write_all(
+        tcp_stream &stream,
+        std::string_view data,
+        vix::async::core::cancel_token token)
+    {
+      std::size_t written = 0;
+
+      while (written < data.size())
+      {
+        const std::byte *ptr =
+            reinterpret_cast<const std::byte *>(data.data() + written);
+
+        const std::size_t n = co_await stream.async_write(
+            std::span<const std::byte>(ptr, data.size() - written),
+            token);
+
+        if (n == 0)
+        {
+          co_return false;
+        }
+
+        written += n;
+      }
+
+      co_return true;
+    }
     inline bool is_close_connection(std::string_view value)
     {
       return equals_icase(value, "close");
@@ -107,6 +133,7 @@ namespace vix::session
       return pos + 4;
     }
 
+#ifdef VIX_BENCH_MODE
     inline bool raw_header_requests_close(std::string_view raw_header)
     {
       std::size_t line_start = 0;
@@ -153,6 +180,17 @@ namespace vix::session
       return false;
     }
 
+    inline std::string_view strip_query_view(std::string_view target)
+    {
+      const auto q = target.find('?');
+      if (q == std::string_view::npos)
+      {
+        return target;
+      }
+
+      return target.substr(0, q);
+    }
+#endif
     inline bool contains_token_icase(std::string_view text, std::string_view token)
     {
       if (token.empty())
@@ -220,16 +258,6 @@ namespace vix::session
       return out;
     }
 
-    inline std::string_view strip_query_view(std::string_view target)
-    {
-      const auto q = target.find('?');
-      if (q == std::string_view::npos)
-      {
-        return target;
-      }
-
-      return target.substr(0, q);
-    }
   } // namespace
 
   const std::regex Session::XSS_PATTERN(
@@ -724,24 +752,82 @@ namespace vix::session
 
     try
     {
-      std::string wire = res.to_http_string();
-
-      std::size_t written = 0;
-      while (written < wire.size())
+      if (!res.has_header("Server"))
       {
-        const std::byte *ptr =
-            reinterpret_cast<const std::byte *>(wire.data() + written);
+        res.set_header("Server", "Vix.cpp");
+      }
 
-        const std::size_t n = co_await stream_->async_write(
-            std::span<const std::byte>(ptr, wire.size() - written),
-            timer_cancel_.token());
+      if (!res.has_header("Date"))
+      {
+        res.set_header("Date", vix::http::Response::http_date_now());
+      }
 
-        if (n == 0)
+      if (!res.has_header("Content-Length"))
+      {
+        res.set_header("Content-Length", std::to_string(res.body().size()));
+      }
+
+      if (!res.has_header("Connection"))
+      {
+        res.set_header("Connection", res.should_close() ? "close" : "keep-alive");
+      }
+
+      std::string header_block;
+      header_block.reserve(256 + res.headers().size() * 32);
+
+      header_block += res.version();
+      header_block += ' ';
+      header_block += std::to_string(res.status());
+      header_block += ' ';
+
+      if (!res.reason().empty())
+      {
+        header_block += res.reason();
+      }
+      else
+      {
+        header_block += vix::http::reason_phrase(res.status());
+      }
+
+      header_block += "\r\n";
+
+      for (const auto &[name, value] : res.headers())
+      {
+        header_block += name;
+        header_block += ": ";
+        header_block += value;
+        header_block += "\r\n";
+      }
+
+      header_block += "\r\n";
+
+      const std::string &body = res.body();
+      const auto token = timer_cancel_.token();
+
+      constexpr std::size_t SMALL_RESPONSE_THRESHOLD = 1024;
+
+      if (body.size() <= SMALL_RESPONSE_THRESHOLD)
+      {
+        std::string wire;
+        wire.reserve(header_block.size() + body.size());
+        wire += header_block;
+        wire += body;
+
+        const bool ok = co_await write_all(*stream_, wire, token);
+        if (!ok)
         {
-          break;
+          must_close = true;
         }
+      }
+      else
+      {
+        const bool header_ok = co_await write_all(*stream_, header_block, token);
+        const bool body_ok = header_ok ? co_await write_all(*stream_, body, token) : false;
 
-        written += n;
+        if (!header_ok || !body_ok)
+        {
+          must_close = true;
+        }
       }
 
 #ifndef VIX_BENCH_MODE

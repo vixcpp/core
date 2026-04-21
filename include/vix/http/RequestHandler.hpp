@@ -237,17 +237,7 @@ namespace vix::http
       ResponseWrapper wrapped{res, template_view_};
 
       auto params = extract_params_from_path(route_pattern_, incoming_req.path());
-      auto state = incoming_req.state_ptr()
-                       ? std::const_pointer_cast<RequestState>(incoming_req.state_ptr())
-                       : std::make_shared<RequestState>();
-
-      Request req(
-          incoming_req.method(),
-          incoming_req.target(),
-          incoming_req.headers(),
-          incoming_req.body(),
-          std::move(params),
-          std::move(state));
+      Request req = incoming_req.with_params(std::move(params));
 
       try
       {
