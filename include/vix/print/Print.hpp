@@ -86,10 +86,40 @@ namespace vix
     bool raw_strings = true;
   };
 
+  struct options
+  {
+    std::string sep = " ";
+    std::string end = "\n";
+    std::ostream *file = &std::cout;
+    bool flush = false;
+
+    bool raw_strings = true;
+    std::size_t max_items = 256;
+    bool compact = true;
+    std::string indent = "  ";
+    bool show_type = false;
+    bool color = false;
+  };
+
   /// @brief Thread-local default config (modifiable by user).
   inline print_config &default_config() noexcept
   {
     static thread_local print_config cfg;
+    return cfg;
+  }
+
+  [[nodiscard]] inline print_config to_print_config(const options &opts)
+  {
+    print_config cfg = default_config();
+    cfg.separator = opts.sep;
+    cfg.end = opts.end;
+    cfg.out = opts.file;
+    cfg.raw_strings = opts.raw_strings;
+    cfg.max_items = opts.max_items;
+    cfg.compact = opts.compact;
+    cfg.indent_str = opts.indent;
+    cfg.show_type = opts.show_type;
+    cfg.color = opts.color;
     return cfg;
   }
 
@@ -894,6 +924,18 @@ namespace vix
   }
 
   template <typename... Args>
+  void print(const options &opts, const Args &...args)
+  {
+    print_config cfg = to_print_config(opts);
+    detail::print_impl(cfg, args...);
+
+    if (opts.flush && opts.file != nullptr)
+    {
+      opts.file->flush();
+    }
+  }
+
+  template <typename... Args>
   void print_py(const Args &...args)
   {
     print_config cfg = default_config();
@@ -909,9 +951,7 @@ namespace vix
   template <typename... Args>
   void print_to(std::ostream &os, const Args &...args)
   {
-    print_config cfg = default_config();
-    cfg.out = &os;
-    detail::print_impl(cfg, args...);
+    print(options{.file = &os}, args...);
   }
 
   /**
@@ -921,9 +961,7 @@ namespace vix
   template <typename... Args>
   void eprint(const Args &...args)
   {
-    print_config cfg = default_config();
-    cfg.out = &std::cerr;
-    detail::print_impl(cfg, args...);
+    print(options{.file = &std::cerr}, args...);
   }
 
   /**
@@ -933,9 +971,7 @@ namespace vix
   template <typename... Args>
   void print_inline(const Args &...args)
   {
-    print_config cfg = default_config();
-    cfg.end = "";
-    detail::print_impl(cfg, args...);
+    print(options{.end = ""}, args...);
   }
 
   /**
