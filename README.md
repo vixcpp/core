@@ -1,240 +1,189 @@
-# Vix Core
+# Core — Vix.cpp
 
-Fast HTTP runtime • Router • Request/Response • JSON helpers • Production-ready primitives
+Build real backends in C++.
+One runtime. One system. No glue.
 
-`core` is the foundation of **Vix.cpp**.
-It provides the HTTP runtime primitives used across the ecosystem:
+## What is this?
 
-* `vix::App` — the main HTTP application
-* routing (`get/post/...`) with path params
-* `Request` / `Response` wrappers
-* JSON helpers (`vix::json`) for fast structured responses
-* query params, headers, body access
-* predictable status codes + early return patterns
+The Vix core module is the foundation of the runtime.
 
-If Vix.cpp is a runtime, **core is its execution engine for HTTP**.
+It provides:
 
----
+- HTTP server
+- routing system
+- request / response model
+- async execution
+- configuration system (.env)
+- OpenAPI generation
+- offline API documentation (Swagger UI)
 
-## Quick start
+Everything you need to build APIs. Nothing extra.
 
-Run the showcase example:
+## Why this exists
+
+Most C++ backends are built with:
+
+- multiple libraries
+- inconsistent abstractions
+- manual wiring
+- fragile integrations
+
+Vix core gives you a coherent backend system:
+
+- one router
+- one request model
+- one runtime
+- one config system
+
+No fragmentation.
+
+## Install
 
 ```bash
-vix run examples/vix_routes_showcase.cpp
+curl -fsSL https://vixcpp.com/install.sh | bash
 ```
-
-Then hit a few endpoints:
-
-```bash
-curl -i http://127.0.0.1:8080/
-curl -i http://127.0.0.1:8080/health
-curl -i http://127.0.0.1:8080/users/42
-curl -i "http://127.0.0.1:8080/search?q=vix&page=2&limit=5"
-curl -i http://127.0.0.1:8080/headers
-curl -i http://127.0.0.1:8080/status/404
-```
-
----
 
 ## Minimal HTTP server
 
 ```cpp
 #include <vix.hpp>
 
-using namespace vix;
-
 int main()
 {
-  App app;
+  auto exec = std::make_shared<vix::executor::RuntimeExecutor>();
 
-  app.get("/", [](Request&, Response& res) {
-    res.json({"message", "Hello, Vix!"});
+  vix::App app{exec};
+
+  app.get("/", [](auto&, auto& res) {
+    res.json({
+      "message", "Hello from Vix",
+      "framework", "Vix.cpp"
+    });
   });
 
   app.run(8080);
 }
 ```
 
----
-
-## Routing model
-
-Vix routes are designed to be:
-
-* **simple** to read
-* **copy/paste friendly** for real projects
-* explicit about status codes and early returns
-
-### Basic routes
+## Request / Response model
 
 ```cpp
-app.get("/hello", [](const Request&, Response&) {
-  return vix::json::o("message", "Hello", "id", 20);
-});
-
-app.get("/txt", [](const Request&, Response&) {
-  return "Hello world";
-});
-```
-
-### Status codes
-
-```cpp
-app.get("/status/{code}", [](Request& req, Response& res) {
-  const int code = /* parse */ 200;
-  res.status(code).json({
-    "status", code,
-    "ok", (code >= 200 && code < 300)
-  });
-});
-```
-
-### Path params
-
-```cpp
-app.get("/users/{id}", [](Request& req, Response& res) {
-  const std::string id = req.param("id", "0");
-
-  if (id == "0") {
-    res.status(404).json({"error", "User not found", "id", id});
-    return;
-  }
-
-  res.json({"id", id, "vip", (id == "42")});
-});
-```
-
-### Query params
-
-```cpp
-app.get("/search", [](Request& req, Response& res) {
-  const std::string q = req.query_value("q", "");
-  const std::string page = req.query_value("page", "1");
-  const std::string limit = req.query_value("limit", "10");
-
+app.get("/hello/{name}", [](vix::Request& req, vix::Response& res) {
   res.json({
-    "q", q,
-    "page", page,
-    "limit", limit
+    "message", "Hello " + req.param("name")
   });
 });
 ```
 
-### Headers
+- `req.param()` → path params
+- `req.query()` → query string
+- `res.json()` → JSON response
+- `res.text()` → text response
+- `res.file()` → static files
+
+## Async model
+
+Handlers are async-ready:
 
 ```cpp
-app.get("/headers", [](Request& req, Response& res) {
-  res.json({
-    "host", req.header("Host"),
-    "user_agent", req.header("User-Agent"),
-    "accept", req.header("Accept")
-  });
-});
+vix::async::core::task<void> handle_request(
+    const Request& req,
+    Response& res);
 ```
 
----
+No blocking required.
+The runtime handles scheduling.
 
-## Request body + JSON parsing
-
-Core exposes the raw body and JSON parsing helpers.
+## Configuration (.env)
 
 ```cpp
-app.get("/echo/body", [](Request& req, Response& res) {
-  const std::string body = req.body();
-  res.json({"bytes", (long long)body.size(), "body", body});
-});
+vix::config::Config cfg{".env"};
 
-app.get("/echo/json", [](Request& req, Response& res) {
-  const auto& j = req.json();
-  res.json(j);
-});
+int port = cfg.getServerPort();
+bool async = cfg.getLogAsync();
 ```
 
-For defensive field access, the showcase demonstrates patterns like:
+No JSON. No parsing boilerplate.
 
-* check `is_object()`
-* check `contains()` + type
-* return defaults on missing fields
-
----
-
-## Mixed behaviors (send + return)
-
-Vix supports both:
-
-* explicit response (`res.send`, `res.json`)
-* return-value auto-send (string or JSON object)
-
-If you **already sent** a response explicitly, the returned value is ignored.
+## OpenAPI (built-in)
 
 ```cpp
-app.get("/mix", [](Request&, Response& res) {
-  res.status(201).send("Created");
-  return vix::json::o("ignored", true);
-});
+auto spec = vix::openapi::build_from_router(router);
 ```
 
-This makes it easy to write handlers in a style similar to Node/FastAPI:
+- no annotations required
+- stable operationId
+- full JSON output
 
-* short happy path
-* early return on errors
+## Offline API documentation
 
----
-
-## Showcase example
-
-The recommended living reference for the public API style is:
-
-* `examples/vix_routes_showcase.cpp`
-
-It includes:
-
-* simple routes
-* JSON responses (flat + nested)
-* status codes
-* path params (`/users/{id}`)
-* query params (`?page=1&limit=20`)
-* headers
-* request body + JSON parsing
-* mixed behaviors (send + return)
-* many copy/paste route patterns
-
----
-
-## How core fits in the umbrella
-
-* `core` powers the HTTP runtime (`vix::App`, routing, request/response)
-* `middleware` attaches on top of core (security, parsers, auth, cache)
-* `websocket` can run standalone or alongside HTTP
-* `p2p_http` uses core to expose P2P control endpoints
-
----
-
-## Directory layout
-
-Typical layout:
-
-```
-modules/core/
-│
-├─ include/vix/
-│  ├─ http/...
-│  ├─ router/...
-│  ├─ server/...
-│  ├─ session/...
-│  ├─ config/...
-│  ├─ utils/...
-│  └─ vix.hpp            # umbrella include for HTTP runtime
-│
-└─ examples/
-   └─ vix_routes_showcase.cpp
+```cpp
+vix::openapi::register_openapi_and_docs(router);
 ```
 
----
+This adds:
+
+- GET /openapi.json
+- GET /docs
+- GET /docs/index.html
+- GET /docs/swagger-ui.css
+- GET /docs/swagger-ui-bundle.js
+
+All assets are embedded and served locally.
+
+## Example
+
+Open:
+
+```
+http://localhost:8080/docs
+```
+
+You get:
+
+- interactive API UI
+- live requests
+- no internet required
+
+## Design philosophy
+
+Core is designed for:
+
+- clarity over abstraction
+- explicit over magic
+- runtime consistency
+- production readiness
+
+No hidden layers.
+No implicit behavior.
+
+## What you can build
+
+- REST APIs
+- microservices
+- backend platforms
+- internal tools
+- realtime systems (with websocket module)
+
+## Examples
+
+```
+examples/http/
+examples/websocket/
+```
+
+## Key idea
+
+Vix core is not a framework layer.
+It is the runtime foundation.
+
+Everything else builds on top of it.
+
+## Learn more
+
+Learn more about the Vix runtime in the documentation.
 
 ## License
 
-MIT — same as Vix.cpp
+MIT License.
 
-Repository: [https://github.com/vixcpp/vix](https://github.com/vixcpp/vix)
