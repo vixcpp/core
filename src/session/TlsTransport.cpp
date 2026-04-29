@@ -20,6 +20,7 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <string_view>
 #include <utility>
 
 #if VIX_CORE_HAS_OPENSSL
@@ -110,6 +111,44 @@ namespace vix::session
     [[nodiscard]] std::runtime_error make_ssl_error(const std::string &message)
     {
       return std::runtime_error(message + ": " + openssl_error_string());
+    }
+
+    [[nodiscard]] bool openssl_error_contains(std::string_view needle)
+    {
+      const unsigned long err = ERR_peek_error();
+
+      if (err == 0)
+      {
+        return false;
+      }
+
+      char buffer[256]{};
+      ERR_error_string_n(err, buffer, sizeof(buffer));
+
+      const std::string message{buffer};
+      return message.find(needle) != std::string::npos;
+    }
+
+    [[nodiscard]] bool is_tls_peer_closed_error(int ssl_error)
+    {
+      if (ssl_error == SSL_ERROR_ZERO_RETURN)
+      {
+        return true;
+      }
+
+      if (ssl_error == SSL_ERROR_SYSCALL && errno == 0)
+      {
+        return true;
+      }
+
+      if (ssl_error == SSL_ERROR_SSL &&
+          openssl_error_contains("unexpected eof while reading"))
+      {
+        ERR_clear_error();
+        return true;
+      }
+
+      return false;
     }
 
     void ensure_openssl_initialized()
@@ -330,7 +369,7 @@ namespace vix::session
 
     const int ssl_error = SSL_get_error(impl_->ssl, n);
 
-    if (ssl_error == SSL_ERROR_ZERO_RETURN)
+    if (is_tls_peer_closed_error(ssl_error))
     {
       co_return 0;
     }
@@ -376,7 +415,7 @@ namespace vix::session
 
     const int ssl_error = SSL_get_error(impl_->ssl, n);
 
-    if (ssl_error == SSL_ERROR_ZERO_RETURN)
+    if (is_tls_peer_closed_error(ssl_error))
     {
       co_return 0;
     }

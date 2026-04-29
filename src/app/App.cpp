@@ -415,14 +415,18 @@ namespace vix
     stop_requested_.store(false, std::memory_order_relaxed);
     config_.setServerPort(port);
 
+#ifdef SIGPIPE
+    std::signal(SIGPIPE, SIG_IGN);
+#endif
+
     std::signal(SIGINT, handle_stop_signal);
+
 #ifdef SIGTERM
     std::signal(SIGTERM, handle_stop_signal);
 #endif
 
     server_thread_ = std::thread([this]()
                                  { server_.run(); });
-
     int bound = 0;
     for (int i = 0; i < 200; ++i)
     {
