@@ -11,7 +11,9 @@
  * Vix.cpp
  *
  */
+
 #include <vix/session/Session.hpp>
+#include <vix/session/PlainTransport.hpp>
 
 #include <algorithm>
 #include <array>
@@ -59,6 +61,7 @@ namespace vix::session
       {
         const unsigned char a = static_cast<unsigned char>(s[i]);
         const unsigned char b = static_cast<unsigned char>(prefix[i]);
+
         if (static_cast<char>(std::tolower(a)) !=
             static_cast<char>(std::tolower(b)))
         {
@@ -92,7 +95,7 @@ namespace vix::session
     }
 
     task<bool> write_all(
-        tcp_stream &stream,
+        Transport &transport,
         std::string_view data,
         vix::async::core::cancel_token token)
     {
@@ -103,7 +106,7 @@ namespace vix::session
         const std::byte *ptr =
             reinterpret_cast<const std::byte *>(data.data() + written);
 
-        const std::size_t n = co_await stream.async_write(
+        const std::size_t n = co_await transport.async_write(
             std::span<const std::byte>(ptr, data.size() - written),
             token);
 
@@ -117,6 +120,7 @@ namespace vix::session
 
       co_return true;
     }
+
     inline bool is_close_connection(std::string_view value)
     {
       return equals_icase(value, "close");
@@ -155,10 +159,10 @@ namespace vix::session
         }
 
         constexpr std::string_view prefix = "Connection:";
-        if (line.size() >= prefix.size() &&
-            starts_with_icase(line, prefix))
+        if (line.size() >= prefix.size() && starts_with_icase(line, prefix))
         {
           std::size_t value_start = prefix.size();
+
           while (value_start < line.size() &&
                  std::isspace(static_cast<unsigned char>(line[value_start])))
           {
@@ -191,6 +195,7 @@ namespace vix::session
       return target.substr(0, q);
     }
 #endif
+
     inline bool contains_token_icase(std::string_view text, std::string_view token)
     {
       if (token.empty())
@@ -219,6 +224,7 @@ namespace vix::session
         }
 
         std::size_t j = 1;
+
         for (; j < token.size(); ++j)
         {
           if (lower_char(static_cast<unsigned char>(text[i + j])) !=
@@ -245,6 +251,7 @@ namespace vix::session
       while (start < block.size())
       {
         std::size_t end = block.find("\r\n", start);
+
         if (end == std::string_view::npos)
         {
           out.emplace_back(block.substr(start));
@@ -268,11 +275,25 @@ namespace vix::session
       R"((\bUNION\b|\bSELECT\b|\bINSERT\b|\bDELETE\b|\bUPDATE\b|\bDROP\b))",
       std::regex::icase);
 
-  Session::Session(std::unique_ptr<tcp_stream> stream,
-                   vix::router::Router &router,
-                   const vix::config::Config &config,
-                   std::shared_ptr<vix::executor::RuntimeExecutor> executor)
-      : stream_(std::move(stream)),
+  Session::Session(
+      std::unique_ptr<tcp_stream> stream,
+      vix::router::Router &router,
+      const vix::config::Config &config,
+      std::shared_ptr<vix::executor::RuntimeExecutor> executor)
+      : Session(
+            std::make_unique<PlainTransport>(std::move(stream)),
+            router,
+            config,
+            std::move(executor))
+  {
+  }
+
+  Session::Session(
+      std::unique_ptr<Transport> transport,
+      vix::router::Router &router,
+      const vix::config::Config &config,
+      std::shared_ptr<vix::executor::RuntimeExecutor> executor)
+      : transport_(std::move(transport)),
         router_(router),
         config_(config),
         executor_(std::move(executor)),
@@ -280,6 +301,11 @@ namespace vix::session
         io_context_(nullptr),
         timer_cancel_()
   {
+    if (!transport_)
+    {
+      throw std::invalid_argument("Session requires a valid transport");
+    }
+
     if (!executor_)
     {
       throw std::invalid_argument("Session requires a valid executor");
@@ -290,7 +316,7 @@ namespace vix::session
   {
     try
     {
-      while (stream_ && stream_->is_open())
+      while (transport_ && transport_->is_open())
       {
         auto maybe_req = co_await read_request();
 
@@ -301,7 +327,7 @@ namespace vix::session
 
         co_await dispatch_request(std::move(*maybe_req));
 
-        if (!stream_ || !stream_->is_open())
+        if (!transport_ || !transport_->is_open())
         {
           break;
         }
@@ -309,9 +335,10 @@ namespace vix::session
     }
     catch (const std::exception &e)
     {
-      log().log(Logger::Level::Error,
-                "[session] fatal session error: {}",
-                e.what());
+      log().log(
+          Logger::Level::Error,
+          "[session] fatal session error: {}",
+          e.what());
     }
 
     co_await close_stream_gracefully();
@@ -346,6 +373,7 @@ namespace vix::session
           try
           {
             auto self = weak_self.lock();
+
             if (!self || !self->io_context_)
             {
               co_return;
@@ -354,6 +382,7 @@ namespace vix::session
             co_await self->io_context_->timers().sleep_for(timeout, ct);
 
             self = weak_self.lock();
+
             if (!self)
             {
               co_return;
@@ -433,6 +462,7 @@ namespace vix::session
 #endif
 
     const std::string msg = to_lower(e.what());
+
     if (msg.find("end of file") != std::string::npos ||
         msg.find("eof") != std::string::npos)
     {
@@ -444,7 +474,7 @@ namespace vix::session
 
   task<std::optional<vix::http::Request>> Session::read_request()
   {
-    if (!stream_ || !stream_->is_open())
+    if (!transport_ || !transport_->is_open())
     {
       co_return std::nullopt;
     }
@@ -462,6 +492,7 @@ namespace vix::session
     try
     {
       const std::string raw_header = co_await read_header_block();
+
       if (raw_header.empty())
       {
 #ifndef VIX_BENCH_MODE
@@ -472,70 +503,6 @@ namespace vix::session
 #endif
         co_return std::nullopt;
       }
-
-#ifdef VIX_BENCH_MODE
-      {
-        static constexpr std::string_view kBenchPrefix = "GET /bench HTTP/";
-        if (raw_header.size() >= kBenchPrefix.size() &&
-            std::string_view(raw_header.data(), kBenchPrefix.size()) == kBenchPrefix)
-        {
-          const bool close_requested = raw_header_requests_close(raw_header);
-
-          static constexpr std::string_view kBenchResponseKeepAlive =
-              "HTTP/1.1 200 OK\r\n"
-              "Content-Type: text/plain\r\n"
-              "Content-Length: 2\r\n"
-              "Connection: keep-alive\r\n"
-              "Server: Vix.cpp\r\n"
-              "\r\n"
-              "OK";
-
-          static constexpr std::string_view kBenchResponseClose =
-              "HTTP/1.1 200 OK\r\n"
-              "Content-Type: text/plain\r\n"
-              "Content-Length: 2\r\n"
-              "Connection: close\r\n"
-              "Server: Vix.cpp\r\n"
-              "\r\n"
-              "OK";
-
-          const std::string_view wire =
-              close_requested ? kBenchResponseClose : kBenchResponseKeepAlive;
-
-          std::size_t written = 0;
-          while (written < wire.size())
-          {
-            const std::byte *ptr =
-                reinterpret_cast<const std::byte *>(wire.data() + written);
-
-            const std::size_t n = co_await stream_->async_write(
-                std::span<const std::byte>(ptr, wire.size() - written),
-                timer_cancel_.token());
-
-            if (n == 0)
-            {
-              break;
-            }
-
-            written += n;
-          }
-
-#ifndef VIX_BENCH_MODE
-          if (!config_.isBenchMode())
-          {
-            cancel_timer();
-          }
-#endif
-
-          if (close_requested)
-          {
-            co_await close_stream_gracefully();
-          }
-
-          co_return std::nullopt;
-        }
-      }
-#endif
 
       ParsedRequestHead head = parse_request_head(raw_header);
       std::string body = co_await read_request_body(head);
@@ -574,15 +541,18 @@ namespace vix::session
 
       if (is_normal_disconnect(e))
       {
-        log().log(Logger::Level::Debug,
-                  "[session] client disconnected: {}",
-                  e.what());
+        log().log(
+            Logger::Level::Debug,
+            "[session] client disconnected: {}",
+            e.what());
+
         co_return std::nullopt;
       }
 
-      log().log(Logger::Level::Error,
-                "[session] read/system error: {}",
-                e.what());
+      log().log(
+          Logger::Level::Error,
+          "[session] read/system error: {}",
+          e.what());
 
       co_return std::nullopt;
     }
@@ -595,9 +565,10 @@ namespace vix::session
       }
 #endif
 
-      log().log(Logger::Level::Error,
-                "[session] request parse error: {}",
-                e.what());
+      log().log(
+          Logger::Level::Error,
+          "[session] request parse error: {}",
+          e.what());
 
       malformed_request = true;
     }
@@ -619,7 +590,6 @@ namespace vix::session
 
       if (equals_icase(method, "GET") && target == "/bench")
       {
-        static constexpr std::string_view kBenchBody = "OK";
         static constexpr std::string_view kBenchResponse =
             "HTTP/1.1 200 OK\r\n"
             "Content-Type: text/plain\r\n"
@@ -628,32 +598,6 @@ namespace vix::session
             "Server: Vix.cpp\r\n"
             "\r\n"
             "OK";
-
-        const std::string conn = req.header("Connection");
-        const bool close_requested = !conn.empty() && is_close_connection(conn);
-
-        if (!close_requested)
-        {
-          std::size_t written = 0;
-          while (written < kBenchResponse.size())
-          {
-            const std::byte *ptr =
-                reinterpret_cast<const std::byte *>(kBenchResponse.data() + written);
-
-            const std::size_t n = co_await stream_->async_write(
-                std::span<const std::byte>(ptr, kBenchResponse.size() - written),
-                timer_cancel_.token());
-
-            if (n == 0)
-            {
-              break;
-            }
-
-            written += n;
-          }
-
-          co_return;
-        }
 
         static constexpr std::string_view kBenchResponseClose =
             "HTTP/1.1 200 OK\r\n"
@@ -664,25 +608,19 @@ namespace vix::session
             "\r\n"
             "OK";
 
-        std::size_t written = 0;
-        while (written < kBenchResponseClose.size())
+        const std::string conn = req.header("Connection");
+        const bool close_requested = !conn.empty() && is_close_connection(conn);
+
+        const std::string_view wire =
+            close_requested ? kBenchResponseClose : kBenchResponse;
+
+        const bool ok = co_await write_all(*transport_, wire, timer_cancel_.token());
+
+        if (!ok || close_requested)
         {
-          const std::byte *ptr =
-              reinterpret_cast<const std::byte *>(kBenchResponseClose.data() + written);
-
-          const std::size_t n = co_await stream_->async_write(
-              std::span<const std::byte>(ptr, kBenchResponseClose.size() - written),
-              timer_cancel_.token());
-
-          if (n == 0)
-          {
-            break;
-          }
-
-          written += n;
+          co_await close_stream_gracefully();
         }
 
-        co_await close_stream_gracefully();
         co_return;
       }
     }
@@ -697,19 +635,22 @@ namespace vix::session
     }
     catch (const std::exception &ex)
     {
-      log().log(Logger::Level::Error,
-                "[router] exception: {}",
-                ex.what());
+      log().log(
+          Logger::Level::Error,
+          "[router] exception: {}",
+          ex.what());
 
       vix::http::Response::error_response(
           res,
           vix::http::INTERNAL_ERROR,
           "Internal server error");
+
       res.set_should_close(true);
       res.set_header("Connection", "close");
     }
 
     const std::string conn = req.header("Connection");
+
     if (!res.has_header("Connection"))
     {
       if (!conn.empty())
@@ -730,7 +671,7 @@ namespace vix::session
 
   task<void> Session::send_response(vix::http::Response res)
   {
-    if (!stream_ || !stream_->is_open())
+    if (!transport_ || !transport_->is_open())
     {
       co_return;
     }
@@ -808,7 +749,8 @@ namespace vix::session
         wire += header_block;
         wire += body;
 
-        const bool ok = co_await write_all(*stream_, wire, token);
+        const bool ok = co_await write_all(*transport_, wire, token);
+
         if (!ok)
         {
           must_close = true;
@@ -816,8 +758,9 @@ namespace vix::session
       }
       else
       {
-        const bool header_ok = co_await write_all(*stream_, header_block, token);
-        const bool body_ok = header_ok ? co_await write_all(*stream_, body, token) : false;
+        const bool header_ok = co_await write_all(*transport_, header_block, token);
+        const bool body_ok =
+            header_ok ? co_await write_all(*transport_, body, token) : false;
 
         if (!header_ok || !body_ok)
         {
@@ -846,9 +789,10 @@ namespace vix::session
       }
 #endif
 
-      log().log(Logger::Level::Error,
-                "[session] write error: {}",
-                e.what());
+      log().log(
+          Logger::Level::Error,
+          "[session] write error: {}",
+          e.what());
 
       must_close = true;
     }
@@ -867,6 +811,7 @@ namespace vix::session
     vix::http::Response::error_response(res, status, msg);
     res.set_should_close(true);
     res.set_header("Connection", "close");
+
     co_await send_response(std::move(res));
     co_return;
   }
@@ -880,16 +825,16 @@ namespace vix::session
     }
 #endif
 
-    if (!stream_)
+    if (!transport_)
     {
       co_return;
     }
 
     try
     {
-      if (stream_->is_open())
+      if (transport_->is_open())
       {
-        stream_->close();
+        transport_->close();
       }
     }
     catch (...)
@@ -945,6 +890,7 @@ namespace vix::session
       try
       {
         const std::string t(target);
+
         if (std::regex_search(t, XSS_PATTERN))
         {
           return false;
@@ -1023,6 +969,7 @@ namespace vix::session
     while (true)
     {
       const auto pos = find_header_terminator(read_buffer_);
+
       if (pos != std::string::npos)
       {
         std::string header = read_buffer_.substr(0, pos);
@@ -1036,7 +983,8 @@ namespace vix::session
       }
 
       std::array<std::byte, 8192> chunk{};
-      const std::size_t n = co_await stream_->async_read(
+
+      const std::size_t n = co_await transport_->async_read(
           std::span<std::byte>(chunk.data(), chunk.size()),
           timer_cancel_.token());
 
@@ -1056,13 +1004,14 @@ namespace vix::session
     ParsedRequestHead head{};
 
     std::string_view block{raw_header};
-    if (block.size() >= 4 &&
-        block.substr(block.size() - 4) == "\r\n\r\n")
+
+    if (block.size() >= 4 && block.substr(block.size() - 4) == "\r\n\r\n")
     {
       block.remove_suffix(4);
     }
 
     const auto lines = split_lines(block);
+
     if (lines.empty())
     {
       throw std::runtime_error("empty request head");
@@ -1072,12 +1021,14 @@ namespace vix::session
       const std::string_view request_line = lines.front();
 
       const std::size_t sp1 = request_line.find(' ');
+
       if (sp1 == std::string_view::npos)
       {
         throw std::runtime_error("invalid request line");
       }
 
       const std::size_t sp2 = request_line.find(' ', sp1 + 1);
+
       if (sp2 == std::string_view::npos)
       {
         throw std::runtime_error("invalid request line");
@@ -1101,12 +1052,14 @@ namespace vix::session
     for (std::size_t i = 1; i < lines.size(); ++i)
     {
       const std::string_view line = lines[i];
+
       if (line.empty())
       {
         continue;
       }
 
       const std::size_t colon = line.find(':');
+
       if (colon == std::string_view::npos)
       {
         throw std::runtime_error("malformed header");
@@ -1124,6 +1077,7 @@ namespace vix::session
     }
 
     const auto it = head.headers.find("Content-Length");
+
     if (it != head.headers.end())
     {
       head.content_length = parse_content_length(it->second);
@@ -1158,11 +1112,12 @@ namespace vix::session
     while (body.size() < head.content_length)
     {
       std::array<std::byte, 8192> chunk{};
+
       const std::size_t need = std::min<std::size_t>(
           chunk.size(),
           head.content_length - body.size());
 
-      const std::size_t n = co_await stream_->async_read(
+      const std::size_t n = co_await transport_->async_read(
           std::span<std::byte>(chunk.data(), need),
           timer_cancel_.token());
 
@@ -1200,7 +1155,9 @@ namespace vix::session
         s.end(),
         s.begin(),
         [](unsigned char c)
-        { return static_cast<char>(std::tolower(c)); });
+        {
+          return static_cast<char>(std::tolower(c));
+        });
 
     return s;
   }
@@ -1208,7 +1165,9 @@ namespace vix::session
   std::string Session::trim(std::string s)
   {
     auto not_space = [](unsigned char c)
-    { return !std::isspace(c); };
+    {
+      return !std::isspace(c);
+    };
 
     while (!s.empty() && !not_space(static_cast<unsigned char>(s.front())))
     {
@@ -1231,10 +1190,12 @@ namespace vix::session
     }
 
     unsigned long long parsed = 0;
+
     try
     {
       std::size_t pos = 0;
       parsed = std::stoull(value, &pos, 10);
+
       if (pos != value.size())
       {
         throw std::runtime_error("invalid Content-Length");
@@ -1266,7 +1227,8 @@ namespace vix::session
   bool Session::compute_keep_alive(const ParsedRequestHead &head)
   {
     auto it = head.headers.find("Connection");
-    const std::string conn = (it == head.headers.end()) ? std::string{} : to_lower(it->second);
+    const std::string conn =
+        (it == head.headers.end()) ? std::string{} : to_lower(it->second);
 
     if (starts_with_icase(head.version, "HTTP/1.0"))
     {

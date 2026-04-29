@@ -392,6 +392,12 @@ namespace vix
              } });
   }
 
+  void App::listen(const vix::config::Config &cfg, ListenCallback on_listen)
+  {
+    config_ = cfg;
+    listen(config_.getServerPort(), std::move(on_listen));
+  }
+
   void App::listen(int port, ListenCallback on_listen)
   {
     using clock = std::chrono::steady_clock;
@@ -449,7 +455,7 @@ namespace vix
       info.mode = vix::utils::RuntimeBanner::mode_from_env();
     }
 
-    info.scheme = "http";
+    info.scheme = config_.isTlsEnabled() ? "https" : "http";
     info.host = "localhost";
     info.port = (bound != 0) ? bound : config_.getServerPort();
     info.base_path = "/";
@@ -542,6 +548,13 @@ namespace vix
   void App::run(int port)
   {
     listen(port);
+    wait();
+    close();
+  }
+
+  void App::run(const vix::config::Config &cfg)
+  {
+    listen(cfg);
     wait();
     close();
   }

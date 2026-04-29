@@ -17,6 +17,7 @@
 #include <string>
 #include <filesystem>
 #include <nlohmann/json.hpp>
+#include <vix/server/TlsConfig.hpp>
 
 namespace vix::config
 {
@@ -33,8 +34,10 @@ namespace vix::config
     /** @brief Construct a configuration with an optional config file path. */
     explicit Config(const std::filesystem::path &configPath = "");
 
-    Config(const Config &) = delete;
-    Config &operator=(const Config &) = delete;
+    Config(const Config &) = default;
+    Config &operator=(const Config &) = default;
+    Config(Config &&) noexcept = default;
+    Config &operator=(Config &&) noexcept = default;
 
     /** @brief Load or reload the configuration file. */
     void loadConfig();
@@ -115,6 +118,18 @@ namespace vix::config
     /** @brief Session timeout in seconds. */
     int getSessionTimeoutSec() const noexcept;
 
+    /** @brief Whether TLS/HTTPS is enabled for the HTTP server. */
+    bool isTlsEnabled() const noexcept;
+
+    /** @brief TLS certificate file path. */
+    const std::string &getTlsCertFile() const noexcept;
+
+    /** @brief TLS private key file path. */
+    const std::string &getTlsKeyFile() const noexcept;
+
+    /** @brief Complete TLS configuration for the HTTP server. */
+    vix::server::TlsConfig getTlsConfig() const;
+
   private:
     static constexpr const char *DEFAULT_DB_HOST = "localhost";
     static constexpr const char *DEFAULT_DB_USER = "root";
@@ -156,6 +171,14 @@ namespace vix::config
 
     static constexpr bool DEFAULT_BENCH_MODE = false;
     bool bench_mode_;
+
+    static constexpr bool DEFAULT_TLS_ENABLED = false;
+    static constexpr const char *DEFAULT_TLS_CERT_FILE = "";
+    static constexpr const char *DEFAULT_TLS_KEY_FILE = "";
+
+    bool tls_enabled_;
+    std::string tls_cert_file_;
+    std::string tls_key_file_;
   };
 
 } // namespace vix::config

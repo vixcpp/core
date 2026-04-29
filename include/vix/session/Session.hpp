@@ -28,6 +28,7 @@
 #include <vix/async/core/timer.hpp>
 #include <vix/async/net/tcp.hpp>
 #include <vix/config/Config.hpp>
+#include <vix/session/Transport.hpp>
 #include <vix/executor/RuntimeExecutor.hpp>
 #include <vix/http/Request.hpp>
 #include <vix/http/Response.hpp>
@@ -60,7 +61,7 @@ namespace vix::session
    * @brief One client connection session.
    *
    * This native Vix session:
-   * - reads raw bytes from a Vix tcp_stream
+   * - reads raw bytes from a Vix session transport
    * - parses HTTP/1.1 requests
    * - applies basic request validation / WAF checks
    * - dispatches to the router
@@ -79,6 +80,23 @@ namespace vix::session
      */
     explicit Session(
         std::unique_ptr<tcp_stream> stream,
+        vix::router::Router &router,
+        const vix::config::Config &config,
+        std::shared_ptr<vix::executor::RuntimeExecutor> executor);
+
+    /**
+     * @brief Create a session bound to a generic transport.
+     *
+     * This constructor allows the HTTP parser/session logic to run over either
+     * plain TCP or TLS without duplicating request parsing and response writing.
+     *
+     * @param transport Connected transport implementation.
+     * @param router Router used to dispatch the HTTP request.
+     * @param config Server configuration.
+     * @param executor Executor used for handler execution.
+     */
+    explicit Session(
+        std::unique_ptr<Transport> transport,
         vix::router::Router &router,
         const vix::config::Config &config,
         std::shared_ptr<vix::executor::RuntimeExecutor> executor);
@@ -193,7 +211,7 @@ namespace vix::session
     static bool compute_keep_alive(const ParsedRequestHead &head);
 
   private:
-    std::unique_ptr<tcp_stream> stream_;
+    std::unique_ptr<Transport> transport_;
     vix::router::Router &router_;
     const vix::config::Config &config_;
     std::shared_ptr<vix::executor::RuntimeExecutor> executor_;

@@ -181,7 +181,10 @@ namespace vix::config
         waf_max_target_len_(DEFAULT_WAF_MAX_TARGET_LEN),
         waf_max_body_bytes_(DEFAULT_WAF_MAX_BODY_BYTES),
         session_timeout_sec_(DEFAULT_SESSION_TIMEOUT_SEC),
-        bench_mode_(DEFAULT_BENCH_MODE)
+        bench_mode_(DEFAULT_BENCH_MODE),
+        tls_enabled_(DEFAULT_TLS_ENABLED),
+        tls_cert_file_(DEFAULT_TLS_CERT_FILE),
+        tls_key_file_(DEFAULT_TLS_KEY_FILE)
   {
     if (configPath_.empty())
     {
@@ -236,6 +239,10 @@ namespace vix::config
     session_timeout_sec_ =
         get_env_int("SERVER_SESSION_TIMEOUT_SEC", DEFAULT_SESSION_TIMEOUT_SEC);
     bench_mode_ = get_env_bool("SERVER_BENCH_MODE", DEFAULT_BENCH_MODE);
+
+    tls_enabled_ = get_env_bool("SERVER_TLS_ENABLED", DEFAULT_TLS_ENABLED);
+    tls_cert_file_ = get_env_string("SERVER_TLS_CERT_FILE", DEFAULT_TLS_CERT_FILE);
+    tls_key_file_ = get_env_string("SERVER_TLS_KEY_FILE", DEFAULT_TLS_KEY_FILE);
 
     log_async_ = get_env_bool("LOGGING_ASYNC", DEFAULT_LOG_ASYNC);
     log_queue_max_ = get_env_int("LOGGING_QUEUE_MAX", DEFAULT_LOG_QUEUE_MAX);
@@ -563,6 +570,30 @@ namespace vix::config
   int Config::getSessionTimeoutSec() const noexcept
   {
     return session_timeout_sec_;
+  }
+
+  bool Config::isTlsEnabled() const noexcept
+  {
+    return tls_enabled_;
+  }
+
+  const std::string &Config::getTlsCertFile() const noexcept
+  {
+    return tls_cert_file_;
+  }
+
+  const std::string &Config::getTlsKeyFile() const noexcept
+  {
+    return tls_key_file_;
+  }
+
+  vix::server::TlsConfig Config::getTlsConfig() const
+  {
+    vix::server::TlsConfig cfg{};
+    cfg.enabled = tls_enabled_;
+    cfg.cert_file = tls_cert_file_;
+    cfg.key_file = tls_key_file_;
+    return cfg;
   }
 
 } // namespace vix::config

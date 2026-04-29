@@ -140,12 +140,34 @@ namespace vix
     void run(int port = 8080);
 
     /**
+     * @brief Starts the server using an explicit configuration and blocks until shutdown.
+     *
+     * The provided configuration is copied into the application configuration
+     * before the HTTP server starts. This allows TLS, port, WAF, timeout and
+     * other server options to come from a specific Config instance.
+     *
+     * @param cfg Application/server configuration.
+     */
+    void run(const vix::config::Config &cfg);
+
+    /**
      * @brief Starts listening asynchronously.
      *
      * @param port Listening port.
      * @param on_listen Optional callback executed once the server is listening.
      */
     void listen(int port = 8080, ListenCallback on_listen = {});
+
+    /**
+     * @brief Starts listening asynchronously using an explicit configuration.
+     *
+     * The provided configuration is copied into the application configuration
+     * before the HTTP server starts.
+     *
+     * @param cfg Application/server configuration.
+     * @param on_listen Optional callback executed once the server is listening.
+     */
+    void listen(const vix::config::Config &cfg, ListenCallback on_listen = {});
 
     /**
      * @brief Waits for the running server to terminate.

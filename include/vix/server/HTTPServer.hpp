@@ -29,6 +29,7 @@
 #include <vix/config/Config.hpp>
 #include <vix/executor/RuntimeExecutor.hpp>
 #include <vix/router/Router.hpp>
+#include <vix/server/TlsConfig.hpp>
 
 namespace vix::server
 {
@@ -362,6 +363,16 @@ namespace vix::server
      * @brief Startup timestamp used for uptime and monitoring purposes.
      */
     std::chrono::steady_clock::time_point startup_t0_;
+
+    /**
+     * @brief Return the TLS configuration used by the server.
+     */
+    [[nodiscard]] TlsConfig tls_config() const;
+
+    /**
+     * @brief Return true when accepted connections must use TLS.
+     */
+    [[nodiscard]] bool tls_enabled() const;
   };
 
 } // namespace vix::server

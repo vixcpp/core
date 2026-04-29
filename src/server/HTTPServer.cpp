@@ -32,6 +32,7 @@
 #include <vix/http/Response.hpp>
 #include <vix/json/build.hpp>
 #include <vix/session/Session.hpp>
+#include <vix/session/TlsSession.hpp>
 #include <vix/utils/Logger.hpp>
 #include <vix/utils/ServerPrettyLogs.hpp>
 
@@ -129,6 +130,16 @@ namespace vix::server
     ep.host = "0.0.0.0";
     ep.port = static_cast<std::uint16_t>(config_.getServerPort());
     return ep;
+  }
+
+  TlsConfig HTTPServer::tls_config() const
+  {
+    return config_.getTlsConfig();
+  }
+
+  bool HTTPServer::tls_enabled() const
+  {
+    return tls_config().is_valid();
   }
 
   task<void> HTTPServer::init_listener(unsigned short port)
@@ -364,6 +375,18 @@ namespace vix::server
 
     try
     {
+      if (tls_enabled())
+      {
+        auto session = std::make_shared<vix::session::TlsSession>(
+            std::move(stream),
+            *router_,
+            config_,
+            executor_);
+
+        co_await session->run();
+        co_return;
+      }
+
       auto session = std::make_shared<vix::session::Session>(
           std::move(stream),
           *router_,
