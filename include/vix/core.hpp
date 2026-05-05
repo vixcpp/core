@@ -63,7 +63,6 @@ namespace vix
 
   /** @brief HTTP response alias. */
   using Response = vix::http::ResponseWrapper;
-  using Response = vix::http::ResponseWrapper;
 } // namespace vix
 
 #endif // VIX_CORE_HPP
