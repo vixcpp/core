@@ -16,7 +16,8 @@
 #include <memory>
 #include <string>
 #include <filesystem>
-#include <nlohmann/json.hpp>
+
+#include <vix/json/json.hpp>
 #include <vix/server/TlsConfig.hpp>
 
 namespace vix::config
@@ -42,7 +43,7 @@ namespace vix::config
     /** @brief Load or reload the configuration file. */
     void loadConfig();
 
-    void set(const std::string &dottedKey, const nlohmann::json &value);
+    void set(const std::string &dottedKey, const vix::json::Json &value);
 
 #if VIX_CORE_WITH_MYSQL
     namespace sql
@@ -148,8 +149,8 @@ namespace vix::config
     int db_port;
     int server_port;
     int request_timeout;
-    nlohmann::json rawConfig_;
-    const nlohmann::json *findNode(const std::string &dottedKey) const noexcept;
+    vix::json::Json rawConfig_;
+    const vix::json::Json *findNode(const std::string &dottedKey) const noexcept;
     static constexpr int DEFAULT_IO_THREADS = 0; // 0 => auto
     static constexpr bool DEFAULT_LOG_ASYNC = true;
     static constexpr int DEFAULT_LOG_QUEUE_MAX = 20000;

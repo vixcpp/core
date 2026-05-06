@@ -23,8 +23,6 @@
 #include <utility>
 #include <vector>
 
-#include <nlohmann/json.hpp>
-
 #include <vix/async/core/task.hpp>
 #include <vix/http/IRequestHandler.hpp>
 #include <vix/http/Request.hpp>
@@ -32,6 +30,7 @@
 #include <vix/http/Response.hpp>
 #include <vix/http/ResponseWrapper.hpp>
 #include <vix/http/Status.hpp>
+#include <vix/json/json.hpp>
 #include <vix/utils/Logger.hpp>
 
 #ifdef _WIN32
@@ -279,10 +278,11 @@ namespace vix::http
         res.set_body(make_dev_error_html(
             "RangeError", e.what(), route_pattern_, req.method(), req.path()));
 #else
-        nlohmann::json j{
+        vix::json::Json j{
             {"error", "Internal Server Error"},
             {"hint", "Invalid status code passed by handler. See server logs."},
             {"code", "E_INVALID_STATUS"}};
+
         Response::json_response(res, j, INTERNAL_ERROR);
 #endif
         finalize_response(req, res);

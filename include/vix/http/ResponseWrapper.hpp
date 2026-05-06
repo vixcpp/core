@@ -24,21 +24,23 @@
 #include <utility>
 #include <variant>
 #include <memory>
-
-#include <nlohmann/json.hpp>
+#include <cstdint>
 
 #include <vix/http/Response.hpp>
 #include <vix/http/Status.hpp>
 #include <vix/json/Simple.hpp>
+#include <vix/json/json.hpp>
+#include <nlohmann/json.hpp>
 #include <vix/template/Context.hpp>
 #include <vix/view/TemplateView.hpp>
 
 namespace vix::http
 {
-  using OrderedJson = nlohmann::ordered_json;
+  using OrderedJson = vix::json::OrderedJson;
 
-  inline nlohmann::json token_to_nlohmann(const vix::json::token &t);
-  inline nlohmann::json kvs_to_nlohmann(const vix::json::kvs &list);
+  inline vix::json::Json token_to_json(const vix::json::token &t);
+  inline vix::json::Json kvs_to_json(const vix::json::kvs &list);
+  inline vix::json::Json array_to_json(const vix::json::array_t &arr);
 
   /** @brief Write an ordered JSON response into a native Vix response with the given status. */
   inline void ordered_json_response(
@@ -48,13 +50,12 @@ namespace vix::http
   {
     res.set_status(normalize_status(status_code));
     res.set_header("Content-Type", "application/json; charset=utf-8");
-    res.set_body(j.dump());
+    res.set_body(vix::json::dumps_compact(j));
   }
 
-  /** @brief Convert a vix::json token into nlohmann::json. */
-  inline nlohmann::json token_to_nlohmann(const vix::json::token &t)
+  inline vix::json::Json token_to_json(const vix::json::token &t)
   {
-    nlohmann::json j = nullptr;
+    vix::json::Json j = nullptr;
 
     std::visit(
         [&](auto &&val)
@@ -66,7 +67,7 @@ namespace vix::http
             j = nullptr;
           }
           else if constexpr (std::is_same_v<T, bool> ||
-                             std::is_same_v<T, long long> ||
+                             std::is_same_v<T, std::int64_t> ||
                              std::is_same_v<T, double> ||
                              std::is_same_v<T, std::string>)
           {
@@ -80,11 +81,7 @@ namespace vix::http
               return;
             }
 
-            j = nlohmann::json::array();
-            for (const auto &el : val->elems)
-            {
-              j.push_back(token_to_nlohmann(el));
-            }
+            j = array_to_json(*val);
           }
           else if constexpr (std::is_same_v<T, std::shared_ptr<vix::json::kvs>>)
           {
@@ -94,7 +91,7 @@ namespace vix::http
               return;
             }
 
-            j = kvs_to_nlohmann(*val);
+            j = kvs_to_json(*val);
           }
           else
           {
@@ -106,26 +103,48 @@ namespace vix::http
     return j;
   }
 
-  /** @brief Convert a vix::json key-value list into an object-like nlohmann::json value. */
-  inline nlohmann::json kvs_to_nlohmann(const vix::json::kvs &list)
+  inline vix::json::Json array_to_json(const vix::json::array_t &arr)
   {
-    nlohmann::json obj = nlohmann::json::object();
-    const auto &a = list.flat;
-    const size_t n = a.size() - (a.size() % 2);
+    vix::json::Json j = vix::json::Json::array();
 
-    for (size_t i = 0; i < n; i += 2)
+    for (const auto &item : arr.elems)
     {
-      const auto &k = a[i].v;
-      const auto &v = a[i + 1];
+      j.push_back(token_to_json(item));
+    }
 
-      if (!std::holds_alternative<std::string>(k))
+    return j;
+  }
+
+  inline vix::json::Json kvs_to_json(const vix::json::kvs &list)
+  {
+    vix::json::Json obj = vix::json::Json::object();
+
+    const auto &items = list.flat;
+    const std::size_t n = items.size() - (items.size() % 2);
+
+    for (std::size_t i = 0; i < n; i += 2)
+    {
+      const auto &key_token = items[i];
+      const auto &value_token = items[i + 1];
+
+      const std::string *key = key_token.as_string();
+      if (!key)
         continue;
 
-      const std::string &key = std::get<std::string>(k);
-      obj[key] = token_to_nlohmann(v);
+      obj[*key] = token_to_json(value_token);
     }
 
     return obj;
+  }
+
+  inline nlohmann::json token_to_nlohmann(const vix::json::token &t)
+  {
+    return token_to_json(t);
+  }
+
+  inline nlohmann::json kvs_to_nlohmann(const vix::json::kvs &list)
+  {
+    return kvs_to_json(list);
   }
 
   /** @brief Lightweight response helper that sets status/headers and sends text, JSON, redirects, or static files. */
@@ -429,7 +448,7 @@ namespace vix::http
     }
 
     /** @brief Send JSON using nlohmann::json with an auto Content-Type if missing. */
-    ResponseWrapper &json(const nlohmann::json &j)
+    ResponseWrapper &json(const vix::json::Json &j)
     {
       ensure_status();
 
@@ -450,8 +469,17 @@ namespace vix::http
     /** @brief Send JSON from a vix::json key-value list. */
     ResponseWrapper &json(const vix::json::kvs &kv)
     {
-      auto j = kvs_to_nlohmann(kv);
-      return json(j);
+      return json(kvs_to_json(kv));
+    }
+
+    ResponseWrapper &json(const vix::json::token &t)
+    {
+      return json(token_to_json(t));
+    }
+
+    ResponseWrapper &json(const vix::json::array_t &arr)
+    {
+      return json(array_to_json(arr));
     }
 
     /** @brief Send JSON from an initializer list of vix::json tokens (key/value pairs). */
@@ -481,10 +509,12 @@ namespace vix::http
 
     /** @brief Send JSON from any serializable type supported by vix::http::Response::json_response. */
     template <typename J>
-      requires(!std::is_same_v<std::decay_t<J>, nlohmann::json> &&
+      requires(!std::is_same_v<std::decay_t<J>, vix::json::Json> &&
+               !std::is_same_v<std::decay_t<J>, vix::json::OrderedJson> &&
                !std::is_same_v<std::decay_t<J>, vix::json::kvs> &&
-               !std::is_same_v<std::decay_t<J>, std::initializer_list<vix::json::token>> &&
-               !std::is_same_v<std::decay_t<J>, OrderedJson>)
+               !std::is_same_v<std::decay_t<J>, vix::json::array_t> &&
+               !std::is_same_v<std::decay_t<J>, vix::json::token> &&
+               !std::is_same_v<std::decay_t<J>, std::initializer_list<vix::json::token>>)
     ResponseWrapper &json(const J &data)
     {
       ensure_status();
@@ -554,9 +584,19 @@ namespace vix::http
     }
 
     /** @brief Send JSON (alias for json()). */
-    ResponseWrapper &send(const nlohmann::json &j)
+    ResponseWrapper &send(const vix::json::Json &j)
     {
       return json(j);
+    }
+
+    ResponseWrapper &send(const vix::json::token &t)
+    {
+      return json(t);
+    }
+
+    ResponseWrapper &send(const vix::json::array_t &arr)
+    {
+      return json(arr);
     }
 
     /** @brief Send JSON from vix::json key-value list. */
@@ -579,10 +619,12 @@ namespace vix::http
 
     /** @brief Send JSON from a custom type (must be supported by vix::http::Response::json_response). */
     template <typename J>
-      requires(!std::is_same_v<std::decay_t<J>, nlohmann::json> &&
+      requires(!std::is_same_v<std::decay_t<J>, vix::json::Json> &&
+               !std::is_same_v<std::decay_t<J>, vix::json::OrderedJson> &&
                !std::is_same_v<std::decay_t<J>, vix::json::kvs> &&
+               !std::is_same_v<std::decay_t<J>, vix::json::array_t> &&
+               !std::is_same_v<std::decay_t<J>, vix::json::token> &&
                !std::is_same_v<std::decay_t<J>, std::initializer_list<vix::json::token>> &&
-               !std::is_same_v<std::decay_t<J>, OrderedJson> &&
                !std::is_convertible_v<J, std::string_view>)
     ResponseWrapper &send(const J &data)
     {

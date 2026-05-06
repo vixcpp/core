@@ -22,53 +22,19 @@
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
-
-#include <nlohmann/json.hpp>
-
 #include <vix/http/Status.hpp>
-
-#if __has_include(<vix/json/json.hpp>)
 #include <vix/json/json.hpp>
-#define VIX_CORE_HAS_VIX_JSON 1
-#else
-#define VIX_CORE_HAS_VIX_JSON 0
-#endif
 
 namespace vix::http
 {
-#if __cpp_concepts
   template <class T>
-  concept HasDump = requires(const T &x) { x.dump(); };
-
-  template <class T>
-  concept SupportedJson =
-      std::is_same_v<std::decay_t<T>, nlohmann::json> ||
-#if VIX_CORE_HAS_VIX_JSON
-      std::is_same_v<std::decay_t<T>, vix::json::Json> ||
-#endif
-      HasDump<T>;
-#else
-  template <class, class = void>
-  struct has_dump : std::false_type
-  {
-  };
-
-  template <class T>
-  struct has_dump<T, std::void_t<decltype(std::declval<const T &>().dump())>> : std::true_type
-  {
-  };
-
-  template <class T>
-  struct is_supported_json
-      : std::bool_constant<
-            std::is_same_v<std::decay_t<T>, nlohmann::json>
-#if VIX_CORE_HAS_VIX_JSON
-            || std::is_same_v<std::decay_t<T>, vix::json::Json>
-#endif
-            || has_dump<T>::value>
-  {
-  };
-#endif
+  concept JsonSerializable =
+      requires(const T &value) {
+        vix::json::Json(value);
+      } ||
+      requires(const T &value) {
+        value.dump();
+      };
 
   /**
    * @brief Minimal native HTTP response object for Vix.
@@ -244,23 +210,17 @@ namespace vix::http
     template <class J>
     static std::string to_json_string(const J &j)
     {
-#if __cpp_concepts
-      static_assert(SupportedJson<J>,
-                    "Response::to_json_string(): J must be nlohmann::json, vix::json::Json, or expose .dump()");
-#else
-      static_assert(is_supported_json<J>::value,
-                    "Response::to_json_string(): J must be nlohmann::json, vix::json::Json, or expose .dump()");
-#endif
-
-#if VIX_CORE_HAS_VIX_JSON
       if constexpr (std::is_same_v<std::decay_t<J>, vix::json::Json>)
       {
-        return vix::json::dumps(j);
+        return vix::json::dumps_compact(j);
       }
-      else
-#endif
+      else if constexpr (requires { j.dump(); })
       {
         return j.dump();
+      }
+      else
+      {
+        return vix::json::dumps_compact(vix::json::Json(j));
       }
     }
 
@@ -319,7 +279,8 @@ namespace vix::http
         res.set_header("Content-Type", std::string(content_type));
       }
 
-      res.set_body(nlohmann::json{{"message", message}}.dump());
+      res.set_body(vix::json::dumps_compact(
+          vix::json::Json{{"message", std::string(message)}}));
       res.apply_default_headers();
     }
 
@@ -345,14 +306,10 @@ namespace vix::http
         Response &res,
         std::string_view message = "No Content")
     {
+      (void)message;
+
       res.set_status(204);
-
-      if (!res.has_header("Content-Type"))
-      {
-        res.set_header("Content-Type", "application/json; charset=utf-8");
-      }
-
-      res.set_body(nlohmann::json{{"message", message}}.dump());
+      res.set_body("");
       res.apply_default_headers();
     }
 
@@ -369,19 +326,16 @@ namespace vix::http
         res.set_header("Content-Type", "application/json; charset=utf-8");
       }
 
-      res.set_body(
-          nlohmann::json{
-              {"message", std::string("Redirecting to ") + std::string(location)}}
-              .dump());
+      res.set_body(vix::json::dumps_compact(
+          vix::json::Json{
+              {"message", std::string("Redirecting to ") + std::string(location)}}));
 
       res.apply_default_headers();
     }
 
     /** @brief Send a JSON response with the given status. */
     template <class J>
-#if __cpp_concepts
-      requires SupportedJson<J>
-#endif
+      requires JsonSerializable<J>
     static void json_response(
         Response &res,
         const J &data,

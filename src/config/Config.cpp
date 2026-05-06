@@ -172,7 +172,7 @@ namespace vix::config
         db_port(DEFAULT_DB_PORT),
         server_port(DEFAULT_SERVER_PORT),
         request_timeout(DEFAULT_REQUEST_TIMEOUT),
-        rawConfig_(nlohmann::json::object()),
+        rawConfig_(vix::json::Json::object()),
         io_threads_(DEFAULT_IO_THREADS),
         log_async_(DEFAULT_LOG_ASYNC),
         log_queue_max_(DEFAULT_LOG_QUEUE_MAX),
@@ -196,7 +196,7 @@ namespace vix::config
 
   void Config::loadConfig()
   {
-    rawConfig_ = nlohmann::json::object();
+    rawConfig_ = vix::json::Json::object();
 
     vix::env::EnvFileOptions env_options{};
     env_options.base_dir = configPath_.has_parent_path()
@@ -288,14 +288,14 @@ namespace vix::config
     return DEFAULT_DB_PASS;
   }
 
-  void Config::set(const std::string &dottedKey, const nlohmann::json &value)
+  void Config::set(const std::string &dottedKey, const vix::json::Json &value)
   {
     if (dottedKey.empty())
     {
       return;
     }
 
-    nlohmann::json *node = &rawConfig_;
+    vix::json::Json *node = &rawConfig_;
     std::size_t start = 0;
 
     while (start < dottedKey.size())
@@ -351,14 +351,14 @@ namespace vix::config
     set("server.port", port);
   }
 
-  const nlohmann::json *Config::findNode(const std::string &dottedKey) const noexcept
+  const vix::json::Json *Config::findNode(const std::string &dottedKey) const noexcept
   {
     if (dottedKey.empty())
     {
       return nullptr;
     }
 
-    const nlohmann::json *node = &rawConfig_;
+    const vix::json::Json *node = &rawConfig_;
     std::size_t start = 0;
 
     while (start < dottedKey.size())
@@ -390,7 +390,6 @@ namespace vix::config
 
     return node;
   }
-
   bool Config::has(const std::string &dottedKey) const noexcept
   {
     if (findNode(dottedKey) != nullptr)
@@ -404,7 +403,7 @@ namespace vix::config
 
   int Config::getInt(const std::string &dottedKey, int defaultValue) const noexcept
   {
-    const nlohmann::json *node = findNode(dottedKey);
+    const vix::json::Json *node = findNode(dottedKey);
     if (node)
     {
       if (node->is_number_integer())
@@ -450,7 +449,7 @@ namespace vix::config
 
   bool Config::getBool(const std::string &dottedKey, bool defaultValue) const noexcept
   {
-    const nlohmann::json *node = findNode(dottedKey);
+    const vix::json::Json *node = findNode(dottedKey);
     if (node)
     {
       if (node->is_boolean())
@@ -491,7 +490,7 @@ namespace vix::config
       const std::string &dottedKey,
       const std::string &defaultValue) const noexcept
   {
-    const nlohmann::json *node = findNode(dottedKey);
+    const vix::json::Json *node = findNode(dottedKey);
     if (node)
     {
       if (node->is_string())

@@ -20,7 +20,7 @@
 #include <utility>
 #include <vector>
 
-#include <nlohmann/json.hpp>
+#include <vix/json/json.hpp>
 
 #include <vix/http/RequestState.hpp>
 #include <vix/utils/String.hpp>
@@ -252,7 +252,7 @@ namespace vix::http
     }
 
     /** @brief Parse and return the body as JSON, computed lazily. */
-    const nlohmann::json &json() const
+    const vix::json::Json &json() const
     {
       ensure_json_cache();
       return *json_cache_;
@@ -381,12 +381,13 @@ namespace vix::http
 
       if (body_.empty())
       {
-        json_cache_ = std::make_shared<const nlohmann::json>(nlohmann::json{});
+        json_cache_ = std::make_shared<const vix::json::Json>(
+            vix::json::Json{});
       }
       else
       {
-        json_cache_ = std::make_shared<const nlohmann::json>(
-            nlohmann::json::parse(body_, nullptr, true, true));
+        json_cache_ = std::make_shared<const vix::json::Json>(
+            vix::json::Json::parse(body_, nullptr, true, true));
       }
     }
 
@@ -399,7 +400,7 @@ namespace vix::http
     HeaderMap headers_;
     std::shared_ptr<const ParamMap> params_;
     mutable std::shared_ptr<const QueryMap> query_cache_;
-    mutable std::shared_ptr<const nlohmann::json> json_cache_;
+    mutable std::shared_ptr<const vix::json::Json> json_cache_;
     StatePtr state_;
   };
 
