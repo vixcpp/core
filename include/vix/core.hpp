@@ -23,7 +23,6 @@
 #include <vix/console.hpp>
 #include <vix/app/App.hpp>
 #include <vix/server/HTTPServer.hpp>
-#include <vix/threadpool/ThreadPool.hpp>
 #include <vix/router/Router.hpp>
 #include <vix/http/IRequestHandler.hpp>
 #include <vix/http/RequestHandler.hpp>
