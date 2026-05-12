@@ -63,235 +63,399 @@ namespace vix::openapi
    * - /docs/swagger-ui.css
    * - /docs/swagger-ui-bundle.js
    *
-   * Important:
-   * - Works for BOTH /docs and /docs/ thanks to <base href="/docs/">
+   * Design: matches vixcpp.com / registry.vixcpp.com
+   * - Background:  #0e0e10
+   * - Accent:      #22c55e
+   * - Font:        system-ui + JetBrains Mono
+   * - Topbar:      same SVG logo as RegistryBrowse
+   *
+   * Works for BOTH /docs and /docs/ thanks to <base href="/docs/">
    */
   inline std::string swagger_ui_html(std::string openapi_url = "/openapi.json")
   {
     openapi_url = detail::normalize_openapi_url(std::move(openapi_url));
 
-    std::string html;
-    html.reserve(18000);
+    std::string h;
+    h.reserve(22000);
 
-    html += "<!doctype html>";
-    html += "<html>";
-    html += "<head>";
-    html += "<meta charset=\"utf-8\">";
-    html += "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">";
-    html += "<title>Vix Docs</title>";
+    // ── HTML head ──
+    h += "<!doctype html>"
+         "<html lang=\"en\">"
+         "<head>"
+         "<meta charset=\"utf-8\">"
+         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+         "<title>Vix API Docs</title>"
+         "<base href=\"/docs/\">"
+         "<link rel=\"stylesheet\" href=\"swagger-ui.css\">";
 
-    // Stable base so relative assets resolve to /docs/*
-    html += "<base href=\"/docs/\">";
+    // ── CSS ──
+    h += "<style>";
 
-    // Offline swagger assets served by Vix
-    html += "<link rel=\"stylesheet\" href=\"swagger-ui.css\">";
+    // Tokens
+    h += ":root{"
+         "--bg:#0e0e10;"
+         "--bg-soft:#161618;"
+         "--bg-card:rgba(255,255,255,.03);"
+         "--border:rgba(255,255,255,.08);"
+         "--divider:rgba(255,255,255,.06);"
+         "--accent:#22c55e;"
+         "--accent-s:rgba(34,197,94,.12);"
+         "--accent-b:rgba(34,197,94,.25);"
+         "--text:rgba(240,240,242,.92);"
+         "--muted:rgba(240,240,242,.55);"
+         "--muted2:rgba(240,240,242,.28);"
+         "--mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;"
+         "--sans:system-ui,-apple-system,sans-serif;"
+         "}";
 
-    html += "<style>";
+    // Page
+    h += "html,body{height:100%;margin:0;padding:0;background:var(--bg);color:var(--text);"
+         "font-family:var(--sans);-webkit-font-smoothing:antialiased}"
+         "a{color:var(--accent);text-decoration:none}"
+         "a:hover{filter:brightness(1.08)}";
 
-    // vixcpp.com theme tokens
-    html += ":root{";
-    html += "--bg:#011e1c;";
-    html += "--bg-alt:#022724;";
-    html += "--bg-elevated:#03312d;";
-    html += "--accent:#1ee6a3;";
-    html += "--accent-dark:#0ca377;";
-    html += "--accent-soft:rgba(30,230,163,0.16);";
-    html += "--text:#ffffff;";
-    html += "--muted:#cbd5e1;";
-    html += "--border:#09433f;";
-    html += "--radius-lg:20px;";
-    html += "--radius-md:14px;";
-    html += "--shadow-soft:0 22px 45px rgba(0,0,0,0.6);";
-    html += "--sans:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;";
-    html += "--mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;";
-    html += "}";
+    // ── Vix topbar ──
+    h += ".vix-topbar{"
+         "position:sticky;top:0;z-index:100;"
+         "background:rgba(14,14,16,.9);"
+         "backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);"
+         "border-bottom:1px solid var(--divider)"
+         "}";
 
-    // Page base
-    html += "html,body{height:100%;margin:0;padding:0;background:var(--bg);color:var(--text)}";
-    html += "body{font-family:var(--sans)}";
-    html += "a{color:var(--accent)}";
+    h += ".vix-topbar-inner{"
+         "max-width:1280px;margin:0 auto;padding:0 1.5rem;"
+         "height:52px;"
+         "display:grid;grid-template-columns:180px 1fr auto;"
+         "gap:16px;align-items:center"
+         "}";
 
-    // Vix header
-    html += ".vix-top{position:sticky;top:0;z-index:100;";
-    html += "background:linear-gradient(180deg,var(--bg-elevated),var(--bg));";
-    html += "border-bottom:1px solid var(--border)}";
-    html += ".vix-top-inner{max-width:1120px;margin:0 auto;padding:14px 16px;";
-    html += "display:flex;align-items:center;justify-content:space-between;gap:12px}";
-    html += ".vix-brand{display:flex;align-items:center;gap:10px;min-width:0}";
-    html += ".vix-dot{width:10px;height:10px;border-radius:999px;background:var(--accent);";
-    html += "box-shadow:0 0 0 6px var(--accent-soft)}";
-    html += ".vix-title{font-weight:800;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}";
-    html += ".vix-sub{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}";
-    html += ".vix-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}";
-    html += ".vix-pill{display:inline-flex;align-items:center;gap:8px;";
-    html += "padding:8px 10px;border-radius:999px;border:1px solid var(--border);";
-    html += "background:rgba(3,49,45,.55);color:var(--muted);font-size:12px}";
-    html += ".vix-pill b{color:var(--text);font-weight:700}";
-    html += ".vix-pill code{font-family:var(--mono);font-size:12px;color:var(--text)}";
-    html += ".vix-pill .vix-loading{opacity:.85}";
-    html += ".vix-link{display:inline-flex;align-items:center;gap:6px;text-decoration:none}";
-    html += ".vix-link:hover{filter:brightness(1.05)}";
+    // Brand (logo + text)
+    h += ".vix-brand{display:inline-flex;align-items:center;gap:7px;text-decoration:none}"
+         ".vix-brand-mark{width:22px;height:22px}"
+         ".vix-brand-name{font-size:.95rem;font-weight:800;color:var(--accent);letter-spacing:-.3px}"
+         ".vix-brand-dim{font-size:.88rem;font-weight:400;color:var(--muted2)}";
 
-    // Swagger layout wrapper
-    html += ".swagger-ui .wrapper{max-width:1120px;margin:0 auto;padding:16px}";
-    html += "#swagger-ui{min-height:100%}";
+    // Topbar pills / meta
+    h += ".vix-meta{display:flex;align-items:center;gap:12px;min-width:0}";
 
-    // Hide Swagger topbar and Swagger generated info header (double header)
-    html += ".swagger-ui .topbar{display:none !important}";
-    html += ".swagger-ui .information-container{display:none !important}";
-    html += ".swagger-ui .info{display:none !important}";
-    html += ".swagger-ui .wrapper{padding-top:10px}";
+    h += ".vix-pill{"
+         "display:inline-flex;align-items:center;gap:7px;"
+         "padding:5px 11px;border-radius:999px;"
+         "border:1px solid var(--border);"
+         "background:var(--bg-card);"
+         "font-size:.75rem;font-weight:600;color:var(--muted);"
+         "white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+         "}";
 
-    // Panels / cards
-    html += ".swagger-ui .scheme-container{";
-    html += "background:rgba(3,49,45,.55);border:1px solid var(--border);";
-    html += "border-radius:var(--radius-lg);box-shadow:var(--shadow-soft)}";
+    h += ".vix-pill b{color:var(--text);font-weight:700}"
+         ".vix-pill code{font-family:var(--mono);font-size:.72rem;color:var(--text)}";
 
-    html += ".swagger-ui .opblock{";
-    html += "border:1px solid var(--border);border-radius:var(--radius-lg);";
-    html += "box-shadow:var(--shadow-soft);overflow:hidden}";
-    html += ".swagger-ui .opblock .opblock-summary{border-bottom:1px solid var(--border)}";
-    html += ".swagger-ui .opblock .opblock-summary-description{color:var(--muted)}";
+    // Topbar right
+    h += ".vix-topbar-right{display:flex;align-items:center;gap:10px;flex-shrink:0}";
+
+    h += ".vix-spec-link{"
+         "display:inline-flex;align-items:center;gap:5px;"
+         "padding:5px 12px;border-radius:7px;"
+         "font-size:.78rem;font-weight:600;"
+         "font-family:var(--mono);"
+         "background:var(--accent-s);color:var(--accent);"
+         "border:1px solid var(--accent-b);"
+         "text-decoration:none"
+         "}"
+         ".vix-spec-link:hover{background:rgba(34,197,94,.18)}";
+
+    h += ".vix-ver-pill{"
+         "display:inline-flex;align-items:center;"
+         "padding:5px 10px;border-radius:999px;"
+         "font-size:.72rem;font-weight:700;"
+         "border:1px solid var(--border);"
+         "background:var(--bg-card);color:var(--muted)"
+         "}";
+
+    // ── Swagger overrides ──
+    h += ".swagger-ui .wrapper{max-width:1280px;margin:0 auto;padding:20px 1.5rem}"
+         "#swagger-ui{min-height:100%}";
+
+    // Hide Swagger's own header + info (we have our own)
+    h += ".swagger-ui .topbar{display:none !important}"
+         ".swagger-ui .information-container{display:none !important}"
+         ".swagger-ui .info{display:none !important}"
+         ".swagger-ui .wrapper{padding-top:12px}";
+
+    // Global text fix — Swagger defaults are low-contrast
+    h += ".swagger-ui,.swagger-ui *{color:var(--text)}"
+         ".swagger-ui .markdown p,"
+         ".swagger-ui .markdown li,"
+         ".swagger-ui .opblock-description-wrapper p,"
+         ".swagger-ui .opblock-external-docs-wrapper p,"
+         ".swagger-ui .opblock-title_normal,"
+         ".swagger-ui .tab li{color:var(--muted) !important}"
+         ".swagger-ui a,.swagger-ui a:visited{color:var(--accent) !important}";
+
+    // Scheme container
+    h += ".swagger-ui .scheme-container{"
+         "background:var(--bg-card);"
+         "border:1px solid var(--border);"
+         "border-radius:10px;"
+         "box-shadow:none"
+         "}";
+
+    // Operation blocks
+    h += ".swagger-ui .opblock{"
+         "border:1px solid var(--border);"
+         "border-radius:10px;"
+         "box-shadow:0 2px 8px rgba(0,0,0,.25);"
+         "overflow:hidden;margin-bottom:12px"
+         "}"
+         ".swagger-ui .opblock .opblock-summary{"
+         "border-bottom:1px solid var(--divider);"
+         "padding:10px 14px"
+         "}"
+         ".swagger-ui .opblock .opblock-summary-description{color:var(--muted)}";
+
+    // Method badges — match Vix green palette
+    h += ".swagger-ui .opblock.opblock-get .opblock-summary-method{"
+         "background:#22c55e;color:#052e16;font-weight:700;border-radius:6px"
+         "}"
+         ".swagger-ui .opblock.opblock-post .opblock-summary-method{"
+         "background:#3b82f6;color:#fff;font-weight:700;border-radius:6px"
+         "}"
+         ".swagger-ui .opblock.opblock-put .opblock-summary-method{"
+         "background:#f59e0b;color:#1c1917;font-weight:700;border-radius:6px"
+         "}"
+         ".swagger-ui .opblock.opblock-delete .opblock-summary-method{"
+         "background:#ef4444;color:#fff;font-weight:700;border-radius:6px"
+         "}"
+         ".swagger-ui .opblock.opblock-patch .opblock-summary-method{"
+         "background:#8b5cf6;color:#fff;font-weight:700;border-radius:6px"
+         "}";
+
+    // Expand/collapse backgrounds
+    h += ".swagger-ui .opblock.opblock-get{background:rgba(34,197,94,.04);border-color:rgba(34,197,94,.18)}"
+         ".swagger-ui .opblock.opblock-post{background:rgba(59,130,246,.04);border-color:rgba(59,130,246,.18)}"
+         ".swagger-ui .opblock.opblock-put{background:rgba(245,158,11,.04);border-color:rgba(245,158,11,.18)}"
+         ".swagger-ui .opblock.opblock-delete{background:rgba(239,68,68,.04);border-color:rgba(239,68,68,.18)}"
+         ".swagger-ui .opblock.opblock-patch{background:rgba(139,92,246,.04);border-color:rgba(139,92,246,.18)}";
+
+    // Path text
+    h += ".swagger-ui .opblock-summary-path{"
+         "color:var(--text) !important;"
+         "font-family:var(--mono);font-size:.82rem;font-weight:600"
+         "}";
 
     // Buttons
-    html += ".swagger-ui .btn{border-radius:12px;border:1px solid var(--border);box-shadow:none}";
-    html += ".swagger-ui .btn.execute,.swagger-ui .btn.authorize{";
-    html += "background:var(--accent);border-color:var(--accent);color:#001412;font-weight:800}";
-    html += ".swagger-ui .btn.execute:hover,.swagger-ui .btn.authorize:hover{filter:brightness(1.03)}";
+    h += ".swagger-ui .btn{"
+         "border-radius:7px;border:1px solid var(--border);box-shadow:none;"
+         "font-weight:600;font-size:.82rem"
+         "}"
+         ".swagger-ui .btn.execute,.swagger-ui .btn.authorize{"
+         "background:var(--accent);border-color:var(--accent);color:#052e16;font-weight:700"
+         "}"
+         ".swagger-ui .btn.execute:hover,.swagger-ui .btn.authorize:hover{"
+         "background:#4ade80"
+         "}";
 
     // Inputs
-    html += ".swagger-ui input[type=text],.swagger-ui input[type=password],.swagger-ui textarea{";
-    html += "background:rgba(3,49,45,.55);border:1px solid var(--border);";
-    html += "border-radius:12px;color:var(--text)}";
-    html += ".swagger-ui label{color:var(--muted)}";
+    h += ".swagger-ui input[type=text],"
+         ".swagger-ui input[type=password],"
+         ".swagger-ui textarea{"
+         "background:var(--bg-soft);"
+         "border:1px solid var(--border);"
+         "border-radius:8px;"
+         "color:var(--text);"
+         "font-family:var(--mono);font-size:.82rem;"
+         "padding:8px 10px"
+         "}"
+         ".swagger-ui input:focus,.swagger-ui textarea:focus{"
+         "border-color:var(--accent);outline:none;"
+         "box-shadow:0 0 0 3px var(--accent-s)"
+         "}"
+         ".swagger-ui label{color:var(--muted)}";
 
     // Code blocks
-    html += ".swagger-ui pre,.swagger-ui code{font-family:var(--mono)}";
-    html += ".swagger-ui .highlight-code{background:rgba(3,49,45,.55);";
-    html += "border:1px solid var(--border);border-radius:var(--radius-md)}";
-    html += ".swagger-ui .microlight{color:var(--text)}";
+    h += ".swagger-ui pre,.swagger-ui code{font-family:var(--mono);font-size:.82rem}"
+         ".swagger-ui .highlight-code{"
+         "background:var(--bg-soft);"
+         "border:1px solid var(--border);border-radius:8px"
+         "}"
+         ".swagger-ui .microlight{color:var(--text)}";
 
     // Tables
-    html += ".swagger-ui table thead tr th{color:var(--muted);border-bottom:1px solid var(--border)}";
-    html += ".swagger-ui table tbody tr td{color:var(--text);border-bottom:1px solid var(--border)}";
+    h += ".swagger-ui table thead tr th{"
+         "color:var(--muted);border-bottom:1px solid var(--border);"
+         "font-size:.75rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase"
+         "}"
+         ".swagger-ui table tbody tr td{"
+         "color:var(--text);border-bottom:1px solid var(--divider)"
+         "}";
 
-    // Fix low contrast defaults (#3b4151 etc.)
-    html += ".swagger-ui, .swagger-ui *{color:var(--text)}";
-    html += ".swagger-ui .opblock-summary-path,"
-            ".swagger-ui .opblock-summary-description,"
-            ".swagger-ui .parameter__name,"
-            ".swagger-ui .parameter__type,"
-            ".swagger-ui .response-col_status,"
-            ".swagger-ui .responses-inner h4,"
-            ".swagger-ui .responses-inner h5,"
-            ".swagger-ui .model-title{color:var(--text) !important}";
-    html += ".swagger-ui .markdown p,"
-            ".swagger-ui .markdown li,"
-            ".swagger-ui .tab li,"
-            ".swagger-ui .opblock-description-wrapper p,"
-            ".swagger-ui .opblock-external-docs-wrapper p,"
-            ".swagger-ui .opblock-title_normal{color:var(--muted) !important}";
+    // Parameters
+    h += ".swagger-ui .opblock-summary-path,"
+         ".swagger-ui .opblock-summary-description,"
+         ".swagger-ui .parameter__name,"
+         ".swagger-ui .parameter__type,"
+         ".swagger-ui .response-col_status,"
+         ".swagger-ui .responses-inner h4,"
+         ".swagger-ui .responses-inner h5,"
+         ".swagger-ui .model-title{color:var(--text) !important}";
 
-    html += ".swagger-ui a,.swagger-ui a:visited{color:var(--accent) !important}";
-    html += ".swagger-ui a:hover{color:var(--accent) !important;filter:brightness(1.05)}";
+    // Models / schemas
+    h += ".swagger-ui .model-box{"
+         "background:var(--bg-soft);"
+         "border:1px solid var(--border);border-radius:8px;"
+         "padding:12px"
+         "}";
 
-    // Control arrow (expand/collapse)
-    html += ".swagger-ui .opblock-summary-control svg{fill:var(--muted) !important}";
-    html += ".swagger-ui .opblock-summary-control svg:hover{fill:var(--text) !important}";
-    html += ".swagger-ui .arrow{fill:var(--muted) !important}";
-    html += ".swagger-ui .opblock-title span{";
-    html += "color:var(--muted) !important;";
-    html += "}";
+    // Tags section
+    h += ".swagger-ui .opblock-tag{"
+         "border-bottom:1px solid var(--divider);"
+         "font-weight:700;font-size:.9rem;letter-spacing:-.01em"
+         "}"
+         ".swagger-ui .opblock-tag:hover{background:var(--bg-card)}";
 
-    html += "</style>";
+    // Arrows / expand controls
+    h += ".swagger-ui .opblock-summary-control svg{fill:var(--muted) !important}"
+         ".swagger-ui .opblock-summary-control svg:hover{fill:var(--text) !important}"
+         ".swagger-ui .arrow{fill:var(--muted) !important}"
+         ".swagger-ui .expand-operation svg{fill:var(--muted) !important}";
 
-    html += "</head>";
-    html += "<body>";
+    // Try-it-out area
+    h += ".swagger-ui .try-out__btn{"
+         "border-radius:7px;border:1px solid var(--border);"
+         "background:var(--bg-card);color:var(--text);"
+         "font-size:.78rem;font-weight:600"
+         "}"
+         ".swagger-ui .try-out__btn:hover{"
+         "border-color:var(--accent-b);background:var(--accent-s)"
+         "}";
 
-    // Vix header (dynamic title/version from OpenAPI JSON)
-    html += "<header class=\"vix-top\">";
-    html += "<div class=\"vix-top-inner\">";
-    html += "<div class=\"vix-brand\">";
-    html += "<span class=\"vix-dot\"></span>";
-    html += "<div style=\"min-width:0\">";
-    html += "<div class=\"vix-title\" id=\"vix-docs-title\">Vix API</div>";
-    html += "<div class=\"vix-sub\" id=\"vix-docs-sub\"><span class=\"vix-loading\">Loading OpenAPI...</span></div>";
-    html += "</div>";
-    html += "</div>";
-    html += "<div class=\"vix-actions\">";
-    html += "<span class=\"vix-pill\"><b>Spec</b>"
-            "<a class=\"vix-link\" id=\"vix-openapi-link\" href=\"/openapi.json\" target=\"_blank\" rel=\"noopener\">"
-            "<code id=\"vix-openapi-path\">/openapi.json</code>"
-            "</a></span>";
-    html += "<span class=\"vix-pill\"><b>Version</b><span id=\"vix-openapi-version\">-</span></span>";
-    html += "</div>";
-    html += "</div>";
-    html += "</header>";
+    // Response body
+    h += ".swagger-ui .responses-wrapper .response-col_description{"
+         "color:var(--muted) !important"
+         "}";
 
-    html += "<div id=\"swagger-ui\"></div>";
+    // Scrollbars
+    h += ".swagger-ui pre::-webkit-scrollbar{height:6px;width:6px}"
+         ".swagger-ui pre::-webkit-scrollbar-thumb{background:rgba(34,197,94,.25);border-radius:999px}"
+         ".swagger-ui pre::-webkit-scrollbar-track{background:transparent}";
 
-    html += "<script src=\"swagger-ui-bundle.js\"></script>";
-    html += "<script>";
-    html += "(function(){";
+    // Responsive
+    h += "@media(max-width:640px){"
+         ".vix-topbar-inner{grid-template-columns:auto 1fr;height:auto;padding:8px 1rem;gap:8px}"
+         ".vix-meta{grid-column:1/-1;overflow-x:auto}"
+         ".vix-topbar-right{display:none}"
+         ".swagger-ui .wrapper{padding:12px 1rem}"
+         "}";
 
-    html += "var OPENAPI_URL='";
-    detail::append_js_escaped(html, openapi_url);
-    html += "';";
+    h += "</style>";
 
-    html += "function setText(id, value){";
-    html += "var el=document.getElementById(id);";
-    html += "if(el) el.textContent=value;";
-    html += "}";
+    h += "</head>";
+    h += "<body>";
 
-    html += "function loadInfo(){";
-    html += "setText('vix-openapi-path', OPENAPI_URL);";
-    html += "var a=document.getElementById('vix-openapi-link');";
-    html += "if(a) a.setAttribute('href', OPENAPI_URL);";
+    // ── Topbar HTML ──
+    h += "<header class=\"vix-topbar\">"
+         "<div class=\"vix-topbar-inner\">";
 
-    html += "fetch(OPENAPI_URL, {cache:'no-store'})";
-    html += ".then(function(r){ if(!r.ok) throw new Error('openapi fetch failed: '+r.status); return r.json(); })";
-    html += ".then(function(j){";
-    html += "var title=(j&&j.info&&j.info.title)?String(j.info.title):'Vix API';";
-    html += "var version=(j&&j.info&&j.info.version)?String(j.info.version):'-';";
-    html += "setText('vix-docs-title', title);";
-    html += "setText('vix-openapi-version', version);";
-    html += "setText('vix-docs-sub', 'OpenAPI 3.0.3');";
-    html += "})";
-    html += ".catch(function(e){";
-    html += "setText('vix-docs-sub', 'OpenAPI not available');";
-    html += "console.error(e);";
-    html += "});";
-    html += "}";
+    // Brand with SVG logo (same as RegistryBrowse)
+    h += "<a class=\"vix-brand\" href=\"/\" aria-label=\"Home\">"
+         "<svg class=\"vix-brand-mark\" viewBox=\"0 0 36 36\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">"
+         "<defs>"
+         "<linearGradient id=\"dl\" x1=\"5\" y1=\"6\" x2=\"18\" y2=\"30\" gradientUnits=\"userSpaceOnUse\">"
+         "<stop offset=\"0%\" stop-color=\"#d4fcd4\"/>"
+         "<stop offset=\"55%\" stop-color=\"#4ade80\"/>"
+         "<stop offset=\"100%\" stop-color=\"#22c55e\"/>"
+         "</linearGradient>"
+         "<linearGradient id=\"dr\" x1=\"31\" y1=\"6\" x2=\"18\" y2=\"30\" gradientUnits=\"userSpaceOnUse\">"
+         "<stop offset=\"0%\" stop-color=\"#22c55e\"/>"
+         "<stop offset=\"100%\" stop-color=\"#15803d\"/>"
+         "</linearGradient>"
+         "</defs>"
+         "<polygon points=\"5,6 12,6 18,28 14,28\" fill=\"url(#dl)\"/>"
+         "<polygon points=\"31,6 24,6 18,28 22,28\" fill=\"url(#dr)\"/>"
+         "<line x1=\"9\" y1=\"16\" x2=\"13.5\" y2=\"29\" stroke=\"#bbf7d0\" stroke-width=\"1.1\" stroke-linecap=\"round\" opacity=\"0.7\"/>"
+         "</svg>"
+         "<span class=\"vix-brand-name\">Vix</span>"
+         "<span class=\"vix-brand-dim\"> API Docs</span>"
+         "</a>";
 
-    html += "function mount(){";
-    html += "var el=document.getElementById('swagger-ui');";
-    html += "if(!el) return;";
-    html += "el.innerHTML='';";
-    html += "loadInfo();";
-    html += "if(!window.SwaggerUIBundle){ console.error('SwaggerUIBundle missing'); return; }";
-    html += "try{";
-    html += "window.ui=SwaggerUIBundle({";
-    html += "url:OPENAPI_URL,";
-    html += "dom_id:'#swagger-ui',";
-    html += "deepLinking:true,";
-    html += "persistAuthorization:true,";
-    html += "displayRequestDuration:true";
-    html += "});";
-    html += "}catch(e){ console.error('SwaggerUI init failed', e); }";
-    html += "}";
+    // Middle: title + sub (filled by JS)
+    h += "<div class=\"vix-meta\">"
+         "<span class=\"vix-pill\"><b id=\"vix-docs-title\">Loading…</b></span>"
+         "<span class=\"vix-pill\" id=\"vix-docs-sub\" style=\"color:var(--muted2)\">Fetching spec</span>"
+         "</div>";
 
-    html += "if(document.readyState==='loading'){";
-    html += "document.addEventListener('DOMContentLoaded', mount);";
-    html += "}else{ mount(); }";
-    html += "window.addEventListener('pageshow', mount);";
+    // Right: spec link + version
+    h += "<div class=\"vix-topbar-right\">"
+         "<a class=\"vix-spec-link\" id=\"vix-openapi-link\" href=\"/openapi.json\" target=\"_blank\" rel=\"noopener\">"
+         "<code id=\"vix-openapi-path\">/openapi.json</code>"
+         "</a>"
+         "<span class=\"vix-ver-pill\" id=\"vix-openapi-version\">v—</span>"
+         "</div>";
 
-    html += "})();";
-    html += "</script>";
+    h += "</div>"
+         "</header>";
 
-    html += "</body>";
-    html += "</html>";
+    // Swagger container
+    h += "<div id=\"swagger-ui\"></div>";
 
-    return html;
+    // ── JS ──
+    h += "<script src=\"swagger-ui-bundle.js\"></script>"
+         "<script>"
+         "(function(){";
+
+    h += "var URL='";
+    detail::append_js_escaped(h, openapi_url);
+    h += "';";
+
+    h += "function t(id,v){var e=document.getElementById(id);if(e)e.textContent=v}";
+
+    h += "function info(){"
+         "t('vix-openapi-path',URL);"
+         "var a=document.getElementById('vix-openapi-link');"
+         "if(a)a.setAttribute('href',URL);"
+         "fetch(URL,{cache:'no-store'})"
+         ".then(function(r){if(!r.ok)throw new Error(r.status);return r.json()})"
+         ".then(function(j){"
+         "t('vix-docs-title',(j&&j.info&&j.info.title)||'Vix API');"
+         "t('vix-openapi-version','v'+((j&&j.info&&j.info.version)||'-'));"
+         "t('vix-docs-sub','OpenAPI 3.0.3');"
+         "})"
+         ".catch(function(e){"
+         "t('vix-docs-sub','Spec unavailable');"
+         "console.error(e)"
+         "})"
+         "}";
+
+    h += "function mount(){"
+         "var el=document.getElementById('swagger-ui');"
+         "if(!el)return;"
+         "el.innerHTML='';"
+         "info();"
+         "if(!window.SwaggerUIBundle){console.error('SwaggerUIBundle missing');return}"
+         "try{"
+         "window.ui=SwaggerUIBundle({"
+         "url:URL,"
+         "dom_id:'#swagger-ui',"
+         "deepLinking:true,"
+         "persistAuthorization:true,"
+         "displayRequestDuration:true,"
+         "defaultModelsExpandDepth:1,"
+         "docExpansion:'list'"
+         "})"
+         "}catch(e){console.error('SwaggerUI init failed',e)}"
+         "}";
+
+    h += "if(document.readyState==='loading'){"
+         "document.addEventListener('DOMContentLoaded',mount)"
+         "}else{mount()}"
+         "window.addEventListener('pageshow',mount)";
+
+    h += "})();"
+         "</script>";
+
+    h += "</body></html>";
+
+    return h;
   }
 
 } // namespace vix::openapi
