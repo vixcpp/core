@@ -1,46 +1,44 @@
-# Core — Vix.cpp
+# Vix.cpp Core Module
 
-Build real backends in C++.
-One runtime. One system. No glue.
+Native application foundation for Vix.cpp.
 
-## What is this?
+The Core module provides the main runtime layer used to build HTTP applications in C++ with routes, handlers, middleware, requests, responses, configuration, TLS, static files, templates, and server lifecycle management.
 
-The Vix core module is the foundation of the runtime.
+## Documentation
 
-It provides:
+Full documentation is available here:
 
+https://docs.vixcpp.com/modules/core/
+
+API reference:
+
+https://docs.vixcpp.com/modules/core/api-reference
+
+## What Core provides
+
+- `vix::App`
 - HTTP server
-- routing system
-- request / response model
-- async execution
-- configuration system (.env)
-- OpenAPI generation
-- offline API documentation (Swagger UI)
+- Routing system
+- Request and response objects
+- Middleware
+- Route groups
+- Static files
+- Templates
+- Configuration
+- TLS support
+- Runtime executor integration
+- Async I/O integration
 
-Everything you need to build APIs. Nothing extra.
+## Public header
 
-## Why this exists
+```cpp
+#include <vix.hpp>
+```
 
-Most C++ backends are built with:
+You can also include Core directly:
 
-- multiple libraries
-- inconsistent abstractions
-- manual wiring
-- fragile integrations
-
-Vix core gives you a coherent backend system:
-
-- one router
-- one request model
-- one runtime
-- one config system
-
-No fragmentation.
-
-## Install
-
-```bash
-curl -fsSL https://vixcpp.com/install.sh | bash
+```cpp
+#include <vix/core.hpp>
 ```
 
 ## Minimal HTTP server
@@ -50,140 +48,137 @@ curl -fsSL https://vixcpp.com/install.sh | bash
 
 int main()
 {
-  auto exec = std::make_shared<vix::executor::RuntimeExecutor>();
+  vix::App app;
 
-  vix::App app{exec};
+  app.get("/", [](vix::Request &req, vix::Response &res)
+  {
+    (void)req;
 
-  app.get("/", [](auto&, auto& res) {
+    res.text("Hello from Vix");
+  });
+
+  app.run(8080);
+
+  return 0;
+}
+```
+
+Run:
+
+```bash
+vix run main.cpp
+```
+
+Open:
+
+```text
+http://localhost:8080
+```
+
+## JSON API example
+
+```cpp
+#include <vix.hpp>
+
+int main()
+{
+  vix::App app;
+
+  app.get("/api/status", [](vix::Request &req, vix::Response &res)
+  {
+    (void)req;
+
     res.json({
-      "message", "Hello from Vix",
-      "framework", "Vix.cpp"
+      {"status", "ok"},
+      {"server", "Vix.cpp"}
     });
   });
 
   app.run(8080);
+
+  return 0;
 }
 ```
 
-## Request / Response model
+## Core architecture
 
-```cpp
-app.get("/hello/{name}", [](vix::Request& req, vix::Response& res) {
-  res.json({
-    "message", "Hello " + req.param("name")
-  });
-});
+```text
+App
+  -> Router
+  -> HTTPServer
+  -> Session
+  -> Transport
+  -> RuntimeExecutor
 ```
 
-- `req.param()` → path params
-- `req.query()` → query string
-- `res.json()` → JSON response
-- `res.text()` → text response
-- `res.file()` → static files
+Core connects the application API with the runtime, async I/O, HTTP server, routing layer, and response system.
 
-## Async model
+## Build
 
-Handlers are async-ready:
+Contributors should use the Vix CLI to build this module.
 
-```cpp
-vix::async::core::task<void> handle_request(
-    const Request& req,
-    Response& res);
+Vix wraps the C++ build workflow with project detection, presets, Ninja builds, clean logs, caching, and focused diagnostics. This helps avoid hidden C++ build issues and keeps the contributor workflow consistent.
+
+### Build the project
+
+```bash
+git clone https://github.com/vixcpp/vix.git
+cd vix
+vix build
 ```
 
-No blocking required.
-The runtime handles scheduling.
+### Build all targets
 
-## Configuration (.env)
+Use this before running the full test suite, install workflows, or release checks:
 
-```cpp
-vix::config::Config cfg{".env"};
-
-int port = cfg.getServerPort();
-bool async = cfg.getLogAsync();
+```bash
+vix build --build-target all
 ```
 
-No JSON. No parsing boilerplate.
+### Clean rebuild
 
-## OpenAPI (built-in)
+Use this when the local CMake cache or build directory may be stale:
 
-```cpp
-auto spec = vix::openapi::build_from_router(router);
+```bash
+vix build --clean
 ```
 
-- no annotations required
-- stable operationId
-- full JSON output
+### Release build
 
-## Offline API documentation
-
-```cpp
-vix::openapi::register_openapi_and_docs(router);
+```bash
+vix build --preset release
 ```
 
-This adds:
+## Tests
 
-- GET /openapi.json
-- GET /docs
-- GET /docs/index.html
-- GET /docs/swagger-ui.css
-- GET /docs/swagger-ui-bundle.js
+Build all targets first, then run tests:
 
-All assets are embedded and served locally.
-
-## Example
-
-Open:
-
-```
-http://localhost:8080/docs
+```bash
+vix build --build-target all
+vix tests
 ```
 
-You get:
+Before opening a pull request, use:
 
-- interactive API UI
-- live requests
-- no internet required
-
-## Design philosophy
-
-Core is designed for:
-
-- clarity over abstraction
-- explicit over magic
-- runtime consistency
-- production readiness
-
-No hidden layers.
-No implicit behavior.
-
-## What you can build
-
-- REST APIs
-- microservices
-- backend platforms
-- internal tools
-- realtime systems (with websocket module)
-
-## Examples
-
-```
-examples/http/
-examples/websocket/
+```bash
+vix fmt --check
+vix build --build-target all
+vix tests
 ```
 
-## Key idea
+## Useful links
 
-Vix core is not a framework layer.
-It is the runtime foundation.
-
-Everything else builds on top of it.
-
-## Learn more
-
-Learn more about the Vix runtime in the documentation.
+- Core documentation: https://docs.vixcpp.com/modules/core/
+- Core API reference: https://docs.vixcpp.com/modules/core/api-reference
+- Build command: https://docs.vixcpp.com/cli/build
+- Tests command: https://docs.vixcpp.com/cli/tests
+- Documentation: https://docs.vixcpp.com/
+- Engineering notes: https://blog.vixcpp.com/
+- Registry: https://registry.vixcpp.com/
+- GitHub: https://github.com/vixcpp/vix
 
 ## License
 
 MIT License.
 
+See [`LICENSE`](../../LICENSE) for details.

@@ -2,7 +2,11 @@ name: Core Strict CI
 
 on:
   push:
-    branches: [main, master, dev]
+    branches:
+      - main
+      - master
+      - dev
+      - release/**
     paths:
       - ".github/workflows/core-strict-ci.yml"
       - "CMakeLists.txt"
@@ -14,8 +18,13 @@ on:
       - "README.md"
       - "CHANGELOG.md"
       - "vix.json"
+
   pull_request:
-    branches: [main, master, dev]
+    branches:
+      - main
+      - master
+      - dev
+      - release/**
     paths:
       - ".github/workflows/core-strict-ci.yml"
       - "CMakeLists.txt"
@@ -27,6 +36,7 @@ on:
       - "README.md"
       - "CHANGELOG.md"
       - "vix.json"
+
   workflow_dispatch:
 
 permissions:
@@ -46,6 +56,8 @@ env:
     valgrind
     pkg-config
     git
+    curl
+    ca-certificates
     libasio-dev
     nlohmann-json3-dev
     libspdlog-dev
@@ -58,12 +70,19 @@ jobs:
   build-test-sanitized:
     name: Sanitized Build and Tests (${{ matrix.compiler }}, tls=${{ matrix.openssl }}, template=${{ matrix.template_mode }})
     runs-on: ubuntu-latest
+
     strategy:
       fail-fast: false
       matrix:
-        compiler: [clang, gcc]
-        openssl: [ON, OFF]
-        template_mode: [AUTO, OFF]
+        compiler:
+          - clang
+          - gcc
+        openssl:
+          - ON
+          - OFF
+        template_mode:
+          - AUTO
+          - OFF
 
     steps:
       - name: Checkout core repository
@@ -73,14 +92,26 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y $DEPS
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends $DEPS
           test -f /usr/include/asio.hpp || (echo "::error::System Asio header not found after install"; exit 1)
 
       - name: Fetch sibling dependencies
         run: |
-          rm -rf ../utils ../async ../json ../template
+          set -euxo pipefail
 
+          rm -rf \
+            ../error \
+            ../path \
+            ../env \
+            ../utils \
+            ../async \
+            ../json \
+            ../template
+
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/error.git ../error
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/path.git ../path
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/env.git ../env
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" --recurse-submodules https://github.com/vixcpp/async.git ../async
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json
@@ -88,41 +119,52 @@ jobs:
 
           git -C ../async submodule update --init --recursive --depth 1 || true
 
-          echo "---- sibling dependencies ----"
-          ls -la ../utils || true
-          ls -la ../async || true
-          ls -la ../async/third_party || true
-          ls -la ../async/third_party/asio || true
-          ls -la ../async/third_party/asio/include || true
-          ls -la ../json || true
-          ls -la ../template || true
+      - name: Prepare Asio for async
+        run: |
+          set -euxo pipefail
+
+          mkdir -p ../async/third_party/asio
+          rm -rf ../async/third_party/asio/include
+          mkdir -p ../async/third_party/asio/include
+          cp -r /usr/include/asio* ../async/third_party/asio/include/ || true
+
+          test -f ../async/third_party/asio/include/asio.hpp
 
       - name: Verify required sibling dependencies
         run: |
+          set -euxo pipefail
+
+          test -f ../error/CMakeLists.txt || (echo "::error::../error/CMakeLists.txt is missing"; exit 1)
+          test -f ../path/CMakeLists.txt || (echo "::error::../path/CMakeLists.txt is missing"; exit 1)
+          test -f ../env/CMakeLists.txt || (echo "::error::../env/CMakeLists.txt is missing"; exit 1)
           test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
           test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
           test -f ../json/CMakeLists.txt || (echo "::error::../json/CMakeLists.txt is missing"; exit 1)
 
-          if [ -f ../async/third_party/asio/include/asio.hpp ]; then
-            echo "Vendored Asio found in async."
-          elif [ -f /usr/include/asio.hpp ]; then
-            echo "System Asio found."
-          else
-            echo "::error::Neither vendored Asio nor system Asio was found."
-            exit 1
-          fi
+          test -f ../json/include/vix/json/Simple.hpp || (echo "::error::../json/include/vix/json/Simple.hpp is missing"; exit 1)
 
-          if [ -f ../json/include/vix/json/Simple.hpp ]; then
-            echo "JSON headers found."
+          if [ -f ../async/third_party/asio/include/asio.hpp ]; then
+            echo "Asio found in async."
           else
-            echo "::error::../json/include/vix/json/Simple.hpp is missing."
+            echo "::error::Asio header missing."
             exit 1
           fi
 
       - name: Export dependency include paths
         run: |
-          echo "CPATH=$GITHUB_WORKSPACE/../json/include:$GITHUB_WORKSPACE/../template/include:$GITHUB_WORKSPACE/../utils/include:$GITHUB_WORKSPACE/../async/include${CPATH:+:$CPATH}" >> "$GITHUB_ENV"
-          echo "CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/../json/include:$GITHUB_WORKSPACE/../template/include:$GITHUB_WORKSPACE/../utils/include:$GITHUB_WORKSPACE/../async/include${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}" >> "$GITHUB_ENV"
+          EXTRA_PATHS="$GITHUB_WORKSPACE/../error/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../path/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../env/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../utils/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../async/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../json/include"
+
+          if [ -d "$GITHUB_WORKSPACE/../template/include" ]; then
+            EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../template/include"
+          fi
+
+          echo "CPATH=$EXTRA_PATHS${CPATH:+:$CPATH}" >> "$GITHUB_ENV"
+          echo "CPLUS_INCLUDE_PATH=$EXTRA_PATHS${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}" >> "$GITHUB_ENV"
 
       - name: Select compiler
         run: |
@@ -136,7 +178,7 @@ jobs:
 
       - name: Configure
         run: |
-          cmake -G Ninja -S . -B build-sanitize \
+          cmake -S . -B build-sanitize -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DVIX_CORE_BUILD_TESTS=ON \
@@ -150,22 +192,10 @@ jobs:
         run: |
           cmake --build build-sanitize -j"${BUILD_JOBS}"
 
-      - name: Print executables
-        run: |
-          echo "---- executables ----"
-          find build-sanitize -type f -executable | sort || true
-
       - name: Run ctest
         run: |
-          set -e
           cd build-sanitize
-          if ctest --output-on-failure --timeout 90; then
-            echo "All discovered tests passed."
-          else
-            echo "::warning::Some tests failed or no tests were discovered."
-            test -f Testing/Temporary/LastTest.log && cat Testing/Temporary/LastTest.log || true
-            exit 0
-          fi
+          ctest --output-on-failure --timeout 90
 
   runtime-smoke:
     name: Runtime Smoke and Shutdown Checks
@@ -179,14 +209,26 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y $DEPS
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends $DEPS
           test -f /usr/include/asio.hpp || (echo "::error::System Asio header not found after install"; exit 1)
 
       - name: Fetch sibling dependencies
         run: |
-          rm -rf ../utils ../async ../json ../template
+          set -euxo pipefail
 
+          rm -rf \
+            ../error \
+            ../path \
+            ../env \
+            ../utils \
+            ../async \
+            ../json \
+            ../template
+
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/error.git ../error
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/path.git ../path
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/env.git ../env
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" --recurse-submodules https://github.com/vixcpp/async.git ../async
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json
@@ -194,20 +236,48 @@ jobs:
 
           git -C ../async submodule update --init --recursive --depth 1 || true
 
+      - name: Prepare Asio for async
+        run: |
+          set -euxo pipefail
+
+          mkdir -p ../async/third_party/asio
+          rm -rf ../async/third_party/asio/include
+          mkdir -p ../async/third_party/asio/include
+          cp -r /usr/include/asio* ../async/third_party/asio/include/ || true
+
+          test -f ../async/third_party/asio/include/asio.hpp
+
       - name: Verify required sibling dependencies
         run: |
-          test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
-          test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
-          test -f ../json/include/vix/json/Simple.hpp || (echo "::error::JSON headers are missing"; exit 1)
+          set -euxo pipefail
+
+          test -f ../error/CMakeLists.txt
+          test -f ../path/CMakeLists.txt
+          test -f ../env/CMakeLists.txt
+          test -f ../utils/CMakeLists.txt
+          test -f ../async/CMakeLists.txt
+          test -f ../json/CMakeLists.txt
+          test -f ../json/include/vix/json/Simple.hpp
 
       - name: Export dependency include paths
         run: |
-          echo "CPATH=$GITHUB_WORKSPACE/../json/include:$GITHUB_WORKSPACE/../template/include:$GITHUB_WORKSPACE/../utils/include:$GITHUB_WORKSPACE/../async/include${CPATH:+:$CPATH}" >> "$GITHUB_ENV"
-          echo "CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/../json/include:$GITHUB_WORKSPACE/../template/include:$GITHUB_WORKSPACE/../utils/include:$GITHUB_WORKSPACE/../async/include${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}" >> "$GITHUB_ENV"
+          EXTRA_PATHS="$GITHUB_WORKSPACE/../error/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../path/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../env/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../utils/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../async/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../json/include"
+
+          if [ -d "$GITHUB_WORKSPACE/../template/include" ]; then
+            EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../template/include"
+          fi
+
+          echo "CPATH=$EXTRA_PATHS${CPATH:+:$CPATH}" >> "$GITHUB_ENV"
+          echo "CPLUS_INCLUDE_PATH=$EXTRA_PATHS${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}" >> "$GITHUB_ENV"
 
       - name: Configure runtime build
         run: |
-          cmake -G Ninja -S . -B build-runtime \
+          cmake -S . -B build-runtime -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             -DVIX_CORE_BUILD_TESTS=ON \
             -DVIX_ENABLE_SANITIZERS=OFF \
@@ -220,10 +290,10 @@ jobs:
         run: |
           cmake --build build-runtime -j"${BUILD_JOBS}"
 
-      - name: List candidate executables
+      - name: Run ctest
         run: |
-          echo "---- candidates ----"
-          find build-runtime -type f -executable | sort || true
+          cd build-runtime
+          ctest --output-on-failure --timeout 90
 
       - name: Run short smoke tests on non-server executables
         shell: bash
@@ -249,7 +319,7 @@ jobs:
             base="$(basename "$exe")"
 
             if [[ "$base" =~ (server|http|ws|listener|session) ]]; then
-              echo "Skipping direct smoke run for server-like executable: $exe"
+              echo "Skipping server-like executable: $exe"
               continue
             fi
 
@@ -259,68 +329,11 @@ jobs:
             cat /tmp/core_smoke.log || true
 
             if [ $STATUS -ne 0 ] && [ $STATUS -ne 124 ]; then
-              echo "::warning::Non-zero exit status from $exe (status=$STATUS)"
+              echo "::warning::Non-zero exit status from $exe"
               FAIL=1
             fi
           done
 
-          if [ $FAIL -ne 0 ]; then
-            echo "::warning::Some smoke runs reported issues."
-          else
-            echo "Smoke runs completed."
-          fi
-          exit 0
-
-      - name: Probe graceful shutdown on server-like executables
-        shell: bash
-        run: |
-          set +e
-          FAIL=0
-
-          mapfile -t SERVERS < <(
-            find build-runtime -type f -executable | while read -r exe; do
-              base="$(basename "$exe")"
-              if [[ "$base" =~ (server|http|ws|listener|session) ]]; then
-                echo "$exe"
-              fi
-            done | sort -u
-          )
-
-          if [ ${#SERVERS[@]} -eq 0 ]; then
-            echo "No server-like executables found."
-            exit 0
-          fi
-
-          for exe in "${SERVERS[@]}"; do
-            echo "==> Shutdown probe: $exe"
-            "$exe" >/tmp/core_shutdown.log 2>&1 &
-            PID=$!
-            sleep 2
-
-            kill -INT "$PID" 2>/dev/null || true
-            sleep 3
-
-            if kill -0 "$PID" 2>/dev/null; then
-              echo "::warning::SIGINT did not stop $exe"
-              kill -TERM "$PID" 2>/dev/null || true
-              sleep 2
-            fi
-
-            if kill -0 "$PID" 2>/dev/null; then
-              echo "::warning::SIGTERM did not stop $exe"
-              kill -KILL "$PID" 2>/dev/null || true
-              FAIL=1
-            fi
-
-            wait "$PID" 2>/dev/null || true
-            cat /tmp/core_shutdown.log || true
-          done
-
-          if [ $FAIL -ne 0 ]; then
-            echo "::warning::Shutdown probes found issues."
-          else
-            echo "Shutdown probes completed."
-          fi
           exit 0
 
   static-analysis:
@@ -335,14 +348,26 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y $DEPS
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends $DEPS
           test -f /usr/include/asio.hpp || (echo "::error::System Asio header not found after install"; exit 1)
 
       - name: Fetch sibling dependencies
         run: |
-          rm -rf ../utils ../async ../json ../template
+          set -euxo pipefail
 
+          rm -rf \
+            ../error \
+            ../path \
+            ../env \
+            ../utils \
+            ../async \
+            ../json \
+            ../template
+
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/error.git ../error
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/path.git ../path
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/env.git ../env
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" --recurse-submodules https://github.com/vixcpp/async.git ../async
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json
@@ -350,20 +375,48 @@ jobs:
 
           git -C ../async submodule update --init --recursive --depth 1 || true
 
+      - name: Prepare Asio for async
+        run: |
+          set -euxo pipefail
+
+          mkdir -p ../async/third_party/asio
+          rm -rf ../async/third_party/asio/include
+          mkdir -p ../async/third_party/asio/include
+          cp -r /usr/include/asio* ../async/third_party/asio/include/ || true
+
+          test -f ../async/third_party/asio/include/asio.hpp
+
       - name: Verify required sibling dependencies
         run: |
-          test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
-          test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
-          test -f ../json/include/vix/json/Simple.hpp || (echo "::error::JSON headers are missing"; exit 1)
+          set -euxo pipefail
+
+          test -f ../error/CMakeLists.txt
+          test -f ../path/CMakeLists.txt
+          test -f ../env/CMakeLists.txt
+          test -f ../utils/CMakeLists.txt
+          test -f ../async/CMakeLists.txt
+          test -f ../json/CMakeLists.txt
+          test -f ../json/include/vix/json/Simple.hpp
 
       - name: Export dependency include paths
         run: |
-          echo "CPATH=$GITHUB_WORKSPACE/../json/include:$GITHUB_WORKSPACE/../template/include:$GITHUB_WORKSPACE/../utils/include:$GITHUB_WORKSPACE/../async/include${CPATH:+:$CPATH}" >> "$GITHUB_ENV"
-          echo "CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/../json/include:$GITHUB_WORKSPACE/../template/include:$GITHUB_WORKSPACE/../utils/include:$GITHUB_WORKSPACE/../async/include${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}" >> "$GITHUB_ENV"
+          EXTRA_PATHS="$GITHUB_WORKSPACE/../error/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../path/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../env/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../utils/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../async/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../json/include"
+
+          if [ -d "$GITHUB_WORKSPACE/../template/include" ]; then
+            EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../template/include"
+          fi
+
+          echo "CPATH=$EXTRA_PATHS${CPATH:+:$CPATH}" >> "$GITHUB_ENV"
+          echo "CPLUS_INCLUDE_PATH=$EXTRA_PATHS${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}" >> "$GITHUB_ENV"
 
       - name: Configure for analysis
         run: |
-          cmake -G Ninja -S . -B build-analyze \
+          cmake -S . -B build-analyze -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DVIX_CORE_BUILD_TESTS=ON \
@@ -376,13 +429,7 @@ jobs:
       - name: Run clang-tidy on source files
         run: |
           set +e
-          find src tests -name '*.cpp' -print0 | xargs -0 -n1 -P2 clang-tidy -p build-analyze
-          STATUS=$?
-          if [ $STATUS -ne 0 ]; then
-            echo "::warning::clang-tidy reported issues."
-          else
-            echo "clang-tidy completed successfully."
-          fi
+          find src tests -name '*.cpp' -print0 | xargs -0 -r -n1 -P2 clang-tidy -p build-analyze
           exit 0
 
       - name: Run cppcheck on headers and sources
@@ -395,12 +442,6 @@ jobs:
             --quiet \
             --suppress=missingIncludeSystem \
             include/ src/ tests/
-          STATUS=$?
-          if [ $STATUS -ne 0 ]; then
-            echo "::warning::cppcheck reported issues."
-          else
-            echo "cppcheck completed successfully."
-          fi
           exit 0
 
   valgrind:
@@ -416,14 +457,26 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y $DEPS
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends $DEPS
           test -f /usr/include/asio.hpp || (echo "::error::System Asio header not found after install"; exit 1)
 
       - name: Fetch sibling dependencies
         run: |
-          rm -rf ../utils ../async ../json ../template
+          set -euxo pipefail
 
+          rm -rf \
+            ../error \
+            ../path \
+            ../env \
+            ../utils \
+            ../async \
+            ../json \
+            ../template
+
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/error.git ../error
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/path.git ../path
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/env.git ../env
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" --recurse-submodules https://github.com/vixcpp/async.git ../async
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json
@@ -431,20 +484,48 @@ jobs:
 
           git -C ../async submodule update --init --recursive --depth 1 || true
 
+      - name: Prepare Asio for async
+        run: |
+          set -euxo pipefail
+
+          mkdir -p ../async/third_party/asio
+          rm -rf ../async/third_party/asio/include
+          mkdir -p ../async/third_party/asio/include
+          cp -r /usr/include/asio* ../async/third_party/asio/include/ || true
+
+          test -f ../async/third_party/asio/include/asio.hpp
+
       - name: Verify required sibling dependencies
         run: |
-          test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
-          test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
-          test -f ../json/include/vix/json/Simple.hpp || (echo "::error::JSON headers are missing"; exit 1)
+          set -euxo pipefail
+
+          test -f ../error/CMakeLists.txt
+          test -f ../path/CMakeLists.txt
+          test -f ../env/CMakeLists.txt
+          test -f ../utils/CMakeLists.txt
+          test -f ../async/CMakeLists.txt
+          test -f ../json/CMakeLists.txt
+          test -f ../json/include/vix/json/Simple.hpp
 
       - name: Export dependency include paths
         run: |
-          echo "CPATH=$GITHUB_WORKSPACE/../json/include:$GITHUB_WORKSPACE/../template/include:$GITHUB_WORKSPACE/../utils/include:$GITHUB_WORKSPACE/../async/include${CPATH:+:$CPATH}" >> "$GITHUB_ENV"
-          echo "CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/../json/include:$GITHUB_WORKSPACE/../template/include:$GITHUB_WORKSPACE/../utils/include:$GITHUB_WORKSPACE/../async/include${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}" >> "$GITHUB_ENV"
+          EXTRA_PATHS="$GITHUB_WORKSPACE/../error/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../path/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../env/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../utils/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../async/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../json/include"
+
+          if [ -d "$GITHUB_WORKSPACE/../template/include" ]; then
+            EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../template/include"
+          fi
+
+          echo "CPATH=$EXTRA_PATHS${CPATH:+:$CPATH}" >> "$GITHUB_ENV"
+          echo "CPLUS_INCLUDE_PATH=$EXTRA_PATHS${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}" >> "$GITHUB_ENV"
 
       - name: Configure valgrind build
         run: |
-          cmake -G Ninja -S . -B build-valgrind \
+          cmake -S . -B build-valgrind -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             -DVIX_CORE_BUILD_TESTS=ON \
             -DVIX_ENABLE_SANITIZERS=OFF \
@@ -487,11 +568,6 @@ jobs:
             fi
           done
 
-          if [ $FAIL -ne 0 ]; then
-            echo "::warning::Valgrind detected potential issues."
-          else
-            echo "Valgrind checks completed."
-          fi
           exit 0
 
   config-coverage:
@@ -506,14 +582,26 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y $DEPS
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends $DEPS
           test -f /usr/include/asio.hpp || (echo "::error::System Asio header not found after install"; exit 1)
 
       - name: Fetch sibling dependencies
         run: |
-          rm -rf ../utils ../async ../json ../template
+          set -euxo pipefail
 
+          rm -rf \
+            ../error \
+            ../path \
+            ../env \
+            ../utils \
+            ../async \
+            ../json \
+            ../template
+
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/error.git ../error
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/path.git ../path
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/env.git ../env
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" --recurse-submodules https://github.com/vixcpp/async.git ../async
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json
@@ -521,20 +609,48 @@ jobs:
 
           git -C ../async submodule update --init --recursive --depth 1 || true
 
+      - name: Prepare Asio for async
+        run: |
+          set -euxo pipefail
+
+          mkdir -p ../async/third_party/asio
+          rm -rf ../async/third_party/asio/include
+          mkdir -p ../async/third_party/asio/include
+          cp -r /usr/include/asio* ../async/third_party/asio/include/ || true
+
+          test -f ../async/third_party/asio/include/asio.hpp
+
       - name: Verify required sibling dependencies
         run: |
-          test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
-          test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
-          test -f ../json/include/vix/json/Simple.hpp || (echo "::error::JSON headers are missing"; exit 1)
+          set -euxo pipefail
+
+          test -f ../error/CMakeLists.txt
+          test -f ../path/CMakeLists.txt
+          test -f ../env/CMakeLists.txt
+          test -f ../utils/CMakeLists.txt
+          test -f ../async/CMakeLists.txt
+          test -f ../json/CMakeLists.txt
+          test -f ../json/include/vix/json/Simple.hpp
 
       - name: Export dependency include paths
         run: |
-          echo "CPATH=$GITHUB_WORKSPACE/../json/include:$GITHUB_WORKSPACE/../template/include:$GITHUB_WORKSPACE/../utils/include:$GITHUB_WORKSPACE/../async/include${CPATH:+:$CPATH}" >> "$GITHUB_ENV"
-          echo "CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/../json/include:$GITHUB_WORKSPACE/../template/include:$GITHUB_WORKSPACE/../utils/include:$GITHUB_WORKSPACE/../async/include${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}" >> "$GITHUB_ENV"
+          EXTRA_PATHS="$GITHUB_WORKSPACE/../error/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../path/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../env/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../utils/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../async/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../json/include"
+
+          if [ -d "$GITHUB_WORKSPACE/../template/include" ]; then
+            EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../template/include"
+          fi
+
+          echo "CPATH=$EXTRA_PATHS${CPATH:+:$CPATH}" >> "$GITHUB_ENV"
+          echo "CPLUS_INCLUDE_PATH=$EXTRA_PATHS${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}" >> "$GITHUB_ENV"
 
       - name: Configure release mode
         run: |
-          cmake -G Ninja -S . -B build-release \
+          cmake -S . -B build-release -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DVIX_CORE_BUILD_TESTS=OFF \
             -DVIX_ENABLE_SANITIZERS=OFF \
@@ -549,7 +665,7 @@ jobs:
 
       - name: Configure bench mode
         run: |
-          cmake -G Ninja -S . -B build-bench \
+          cmake -S . -B build-bench -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DVIX_CORE_BUILD_TESTS=OFF \
             -DVIX_ENABLE_SANITIZERS=OFF \
@@ -565,24 +681,20 @@ jobs:
   summary:
     name: Core Strict CI Summary
     needs:
-      [
-        build-test-sanitized,
-        runtime-smoke,
-        static-analysis,
-        valgrind,
-        config-coverage,
-      ]
+      - build-test-sanitized
+      - runtime-smoke
+      - static-analysis
+      - valgrind
+      - config-coverage
     runs-on: ubuntu-latest
 
     steps:
       - name: Print summary
         run: |
           echo "Core strict CI completed."
-          echo "This workflow validates:"
           echo "- sanitized builds"
           echo "- unit tests"
           echo "- runtime smoke checks"
-          echo "- graceful shutdown behavior"
           echo "- static analysis"
           echo "- valgrind"
-          echo "- important configuration variants"
+          echo "- release and bench configuration coverage"
