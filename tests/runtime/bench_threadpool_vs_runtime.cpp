@@ -19,12 +19,11 @@
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <thread>
-#include <vector>
 
 #include <vix/runtime/Runtime.hpp>
-#include <vix/experimental/ThreadPoolExecutor.hpp>
 
 namespace
 {
@@ -40,12 +39,12 @@ namespace
     double opsPerSec;
   };
 
-  void print_result(const Result &r)
+  void print_result(const Result &result)
   {
-    std::cout << std::left << std::setw(28) << r.name
-              << " | ops=" << std::setw(10) << r.operations
-              << " | time_ms=" << std::setw(12) << std::fixed << std::setprecision(3) << r.elapsedMs
-              << " | ops/sec=" << std::fixed << std::setprecision(2) << r.opsPerSec
+    std::cout << std::left << std::setw(28) << result.name
+              << " | ops=" << std::setw(10) << result.operations
+              << " | time_ms=" << std::setw(12) << std::fixed << std::setprecision(3) << result.elapsedMs
+              << " | ops/sec=" << std::fixed << std::setprecision(2) << result.opsPerSec
               << '\n';
   }
 
@@ -87,49 +86,13 @@ namespace
   void busy_steps(std::uint32_t steps, std::atomic<std::uint64_t> &sink)
   {
     std::uint64_t local = 0;
+
     for (std::uint32_t i = 0; i < steps; ++i)
     {
       local += static_cast<std::uint64_t>(i ^ (i << 1));
     }
+
     sink.fetch_add(local, std::memory_order_relaxed);
-  }
-
-  Result bench_threadpool_tiny_tasks(std::uint32_t workers, std::uint64_t taskCount)
-  {
-    std::atomic<std::uint64_t> done{0};
-    std::atomic<std::uint64_t> sink{0};
-
-    return measure("threadpool/tiny_tasks", taskCount, [&]()
-                   {
-                   vix::experimental::ThreadPoolExecutor executor(
-                       workers,
-                       workers,
-                       0);
-
-                   for (std::uint64_t i = 0; i < taskCount; ++i)
-                   {
-                     const bool ok = executor.post([&done, &sink]()
-                                                   {
-                                                     busy_steps(8, sink);
-                                                     done.fetch_add(1, std::memory_order_relaxed);
-                                                   });
-
-                     if (!ok)
-                     {
-                       std::cerr << "[bench] threadpool post failed\n";
-                       std::exit(EXIT_FAILURE);
-                     }
-                   }
-
-                   executor.wait_idle();
-
-                   const auto completed = done.load(std::memory_order_relaxed);
-                   if (completed != taskCount)
-                   {
-                     std::cerr << "[bench] threadpool tiny tasks mismatch: expected "
-                               << taskCount << ", got " << completed << '\n';
-                     std::exit(EXIT_FAILURE);
-                   } });
   }
 
   Result bench_runtime_tiny_tasks(std::uint32_t workers, std::uint64_t taskCount)
@@ -141,6 +104,7 @@ namespace
                    {
                      vix::runtime::Runtime runtime(
                          vix::runtime::RuntimeConfig{workers, vix::runtime::BudgetConfig{16}});
+
                      runtime.start();
 
                      for (std::uint64_t i = 0; i < taskCount; ++i)
@@ -182,6 +146,7 @@ namespace
                    {
                      vix::runtime::Runtime runtime(
                          vix::runtime::RuntimeConfig{workers, vix::runtime::BudgetConfig{8}});
+
                      runtime.start();
 
                      for (std::uint64_t i = 0; i < taskCount; ++i)
@@ -222,53 +187,45 @@ namespace
                      } });
   }
 
-  Result bench_threadpool_split_tasks(std::uint32_t workers,
-                                      std::uint64_t logicalTaskCount,
-                                      std::uint32_t stepsPerTask)
+  Result bench_runtime_cpu_tasks(std::uint32_t workers, std::uint64_t taskCount)
   {
     std::atomic<std::uint64_t> done{0};
     std::atomic<std::uint64_t> sink{0};
 
-    return measure("threadpool/split_tasks", logicalTaskCount, [&]()
+    return measure("runtime/cpu_tasks", taskCount, [&]()
                    {
-                   vix::experimental::ThreadPoolExecutor executor(
-                       workers,
-                       workers,
-                       0);
+                     vix::runtime::Runtime runtime(
+                         vix::runtime::RuntimeConfig{workers, vix::runtime::BudgetConfig{32}});
 
-                   for (std::uint64_t i = 0; i < logicalTaskCount; ++i)
-                   {
-                     for (std::uint32_t s = 0; s < stepsPerTask; ++s)
+                     runtime.start();
+
+                     for (std::uint64_t i = 0; i < taskCount; ++i)
                      {
-                       const bool ok = executor.post([&done, &sink, s, stepsPerTask]()
-                                                     {
-                                                       busy_steps(4, sink);
-
-                                                       if (s + 1 == stepsPerTask)
-                                                       {
-                                                         done.fetch_add(1, std::memory_order_relaxed);
-                                                       }
-                                                     });
+                       const bool ok = runtime.submit([&done, &sink]() -> vix::runtime::TaskResult
+                                                      {
+                                                        busy_steps(256, sink);
+                                                        done.fetch_add(1, std::memory_order_relaxed);
+                                                        return vix::runtime::TaskResult::complete;
+                                                      });
 
                        if (!ok)
                        {
-                         std::cerr << "[bench] threadpool post failed\n";
+                         std::cerr << "[bench] runtime submit failed\n";
                          std::exit(EXIT_FAILURE);
                        }
                      }
-                   }
 
-                   executor.wait_idle();
+                     const bool ok = wait_until([&done, taskCount]()
+                                                { return done.load(std::memory_order_relaxed) == taskCount; });
 
-                   const auto completed = done.load(std::memory_order_relaxed);
-                   if (completed != logicalTaskCount)
-                   {
-                     std::cerr << "[bench] threadpool split tasks mismatch: expected "
-                               << logicalTaskCount << ", got " << completed << '\n';
-                     std::exit(EXIT_FAILURE);
-                   } });
+                     runtime.stop();
+
+                     if (!ok)
+                     {
+                       std::cerr << "[bench] timeout in runtime cpu tasks\n";
+                       std::exit(EXIT_FAILURE);
+                     } });
   }
-
 } // namespace
 
 int main()
@@ -278,25 +235,28 @@ int main()
 
   const std::uint64_t tinyTaskCount = 100000;
   const std::uint64_t yieldingLogicalTaskCount = 30000;
+  const std::uint64_t cpuTaskCount = 50000;
   const std::uint32_t yieldingSteps = 5;
 
-  std::cout << "Vix benchmark: threadpool vs runtime\n";
+  std::cout << "Vix benchmark: runtime scheduler\n";
   std::cout << "workers=" << workers << "\n\n";
 
-  const auto a = bench_threadpool_tiny_tasks(workers, tinyTaskCount);
-  const auto b = bench_runtime_tiny_tasks(workers, tinyTaskCount);
-  const auto c = bench_threadpool_split_tasks(workers, yieldingLogicalTaskCount, yieldingSteps);
-  const auto d = bench_runtime_yielding_tasks(workers, yieldingLogicalTaskCount, yieldingSteps);
+  const auto tiny = bench_runtime_tiny_tasks(workers, tinyTaskCount);
+  const auto yielding = bench_runtime_yielding_tasks(
+      workers,
+      yieldingLogicalTaskCount,
+      yieldingSteps);
+  const auto cpu = bench_runtime_cpu_tasks(workers, cpuTaskCount);
 
-  print_result(a);
-  print_result(b);
-  print_result(c);
-  print_result(d);
+  print_result(tiny);
+  print_result(yielding);
+  print_result(cpu);
 
   std::cout << "\n";
   std::cout << "Notes:\n";
-  std::cout << "- tiny_tasks measures scheduler overhead on short jobs\n";
-  std::cout << "- split_tasks vs yielding_tasks approximates resumable work\n";
+  std::cout << "- tiny_tasks measures runtime scheduler overhead on short jobs\n";
+  std::cout << "- yielding_tasks measures resumable work with cooperative yielding\n";
+  std::cout << "- cpu_tasks measures heavier runtime task execution\n";
 
   return EXIT_SUCCESS;
 }
