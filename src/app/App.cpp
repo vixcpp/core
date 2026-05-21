@@ -217,7 +217,7 @@ namespace vix
 
       if (vix::utils::env_bool("VIX_DOCS", true))
       {
-        vix::openapi::register_openapi_and_docs(*router_, "Vix API", "2.5.3");
+        vix::openapi::register_openapi_and_docs(*router_, "Vix API", "2.6.0");
       }
 
       install_access_logs(*this);
@@ -450,7 +450,7 @@ namespace vix
 
     vix::utils::ServerReadyInfo info;
     info.app = "vix.cpp";
-    info.version = "v2.5.3";
+    info.version = "v2.6.0";
     info.ready_ms = ready_ms;
     info.mode = dev_mode_ ? "dev" : "run";
 

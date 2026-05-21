@@ -22,6 +22,8 @@
 # Public Dependencies:
 #   - vix::utils
 #   - vix::async
+#   - vix::env
+#   - vix::io
 #   - vix::json  (resolved dynamically among common aliases)
 #
 # Additional Dependencies in STATIC mode:
@@ -66,6 +68,7 @@ option(VIX_CORE_WITH_MYSQL   "Enable MySQL client linkage" OFF)
 option(VIX_CORE_FETCH_UTILS  "Auto-resolve vix::utils if missing" ON)
 option(VIX_CORE_FETCH_ASYNC  "Auto-resolve vix::async if missing" ON)
 option(VIX_CORE_FETCH_ENV    "Auto-resolve vix::env if missing" ON)
+option(VIX_CORE_FETCH_IO     "Auto-resolve vix::io if missing" ON)
 option(VIX_BENCH_MODE        "Enable ultra-minimal /bench route for benchmarking" OFF)
 option(VIX_CORE_FETCH_TEMPLATE "Auto-resolve vix::template if missing" ON)
 set(VIX_CORE_WITH_TEMPLATE "AUTO" CACHE STRING "Link template backend (AUTO|ON|OFF)")
@@ -154,6 +157,33 @@ if (NOT VIX_ENV_TARGET)
   message(FATAL_ERROR
     "vix::env not found.\n"
     "Provide ../env in the umbrella build, or install/export the env package."
+  )
+endif()
+
+# --------------------------------------------------------------------
+# io dependency
+# --------------------------------------------------------------------
+if (NOT TARGET vix::io AND NOT TARGET vix_io)
+  if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../io/CMakeLists.txt")
+    message(STATUS "[core] Adding io from sibling: ../io")
+    add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../io" "io")
+  elseif (VIX_CORE_FETCH_IO)
+    find_package(vix_io CONFIG QUIET)
+    find_package(io CONFIG QUIET)
+  endif()
+endif()
+
+set(VIX_IO_TARGET "")
+if (TARGET vix::io)
+  set(VIX_IO_TARGET vix::io)
+elseif (TARGET vix_io)
+  set(VIX_IO_TARGET vix_io)
+endif()
+
+if (NOT VIX_IO_TARGET)
+  message(FATAL_ERROR
+    "vix::io not found.\n"
+    "Provide ../io in the umbrella build, or install/export the io package."
   )
 endif()
 
@@ -285,6 +315,7 @@ if (CORE_SOURCES)
       ${VIX_UTILS_TARGET}
       ${VIX_ASYNC_TARGET}
       ${VIX_ENV_TARGET}
+      ${VIX_IO_TARGET}
   )
 
   # OpenSSL (optional)
@@ -382,6 +413,7 @@ else()
     ${VIX_UTILS_TARGET}
     ${VIX_ASYNC_TARGET}
     ${VIX_ENV_TARGET}
+    ${VIX_IO_TARGET}
   )
 
   vix_core_try_link_json(vix_core INTERFACE)
@@ -467,6 +499,7 @@ message(STATUS "Export set:       ${VIX_CORE_EXPORT_SET}")
 message(STATUS "OpenSSL enabled:  ${VIX_CORE_WITH_OPENSSL}")
 message(STATUS "MySQL linkage:    ${VIX_CORE_WITH_MYSQL}")
 message(STATUS "Env target:       ${VIX_ENV_TARGET}")
+message(STATUS "IO target:        ${VIX_IO_TARGET}")
 message(STATUS "JSON policy:      ${VIX_CORE_WITH_JSON}")
 message(STATUS "Utils target:     ${VIX_UTILS_TARGET}")
 message(STATUS "Async target:     ${VIX_ASYNC_TARGET}")
