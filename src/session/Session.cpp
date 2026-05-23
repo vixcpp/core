@@ -243,6 +243,17 @@ namespace vix::session
       return false;
     }
 
+    inline bool is_normal_disconnect_message(std::string_view message) noexcept
+    {
+      return contains_token_icase(message, "broken pipe") ||
+             contains_token_icase(message, "connection reset") ||
+             contains_token_icase(message, "connection reset by peer") ||
+             contains_token_icase(message, "operation canceled") ||
+             contains_token_icase(message, "operation cancelled") ||
+             contains_token_icase(message, "end of file") ||
+             contains_token_icase(message, "eof");
+    }
+
     inline std::vector<std::string_view> split_lines(std::string_view block)
     {
       std::vector<std::string_view> out;
@@ -780,6 +791,34 @@ namespace vix::session
         must_close = true;
       }
     }
+    catch (const std::system_error &e)
+    {
+#ifndef VIX_BENCH_MODE
+      if (!config_.isBenchMode())
+      {
+        cancel_timer();
+      }
+#endif
+
+      if (is_normal_disconnect(e))
+      {
+        log().log(
+            Logger::Level::Debug,
+            "[session] client disconnected during response write: {}",
+            e.what());
+
+        must_close = true;
+      }
+      else
+      {
+        log().log(
+            Logger::Level::Error,
+            "[session] write/system error: {}",
+            e.what());
+
+        must_close = true;
+      }
+    }
     catch (const std::exception &e)
     {
 #ifndef VIX_BENCH_MODE
@@ -789,12 +828,24 @@ namespace vix::session
       }
 #endif
 
-      log().log(
-          Logger::Level::Error,
-          "[session] write error: {}",
-          e.what());
+      if (is_normal_disconnect_message(e.what()))
+      {
+        log().log(
+            Logger::Level::Debug,
+            "[session] client disconnected during response write: {}",
+            e.what());
 
-      must_close = true;
+        must_close = true;
+      }
+      else
+      {
+        log().log(
+            Logger::Level::Error,
+            "[session] write error: {}",
+            e.what());
+
+        must_close = true;
+      }
     }
 
     if (must_close)
