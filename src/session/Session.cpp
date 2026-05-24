@@ -37,6 +37,7 @@
 #include <vix/async/core/spawn.hpp>
 #include <vix/http/Response.hpp>
 #include <vix/utils/Logger.hpp>
+#include <vix/utils/NetworkError.hpp>
 
 namespace vix::session
 {
@@ -195,64 +196,6 @@ namespace vix::session
       return target.substr(0, q);
     }
 #endif
-
-    inline bool contains_token_icase(std::string_view text, std::string_view token)
-    {
-      if (token.empty())
-      {
-        return true;
-      }
-
-      if (token.size() > text.size())
-      {
-        return false;
-      }
-
-      const auto lower_char = [](unsigned char c) -> char
-      {
-        return static_cast<char>(std::tolower(c));
-      };
-
-      const char first = lower_char(static_cast<unsigned char>(token.front()));
-      const std::size_t last = text.size() - token.size();
-
-      for (std::size_t i = 0; i <= last; ++i)
-      {
-        if (lower_char(static_cast<unsigned char>(text[i])) != first)
-        {
-          continue;
-        }
-
-        std::size_t j = 1;
-
-        for (; j < token.size(); ++j)
-        {
-          if (lower_char(static_cast<unsigned char>(text[i + j])) !=
-              lower_char(static_cast<unsigned char>(token[j])))
-          {
-            break;
-          }
-        }
-
-        if (j == token.size())
-        {
-          return true;
-        }
-      }
-
-      return false;
-    }
-
-    inline bool is_normal_disconnect_message(std::string_view message) noexcept
-    {
-      return contains_token_icase(message, "broken pipe") ||
-             contains_token_icase(message, "connection reset") ||
-             contains_token_icase(message, "connection reset by peer") ||
-             contains_token_icase(message, "operation canceled") ||
-             contains_token_icase(message, "operation cancelled") ||
-             contains_token_icase(message, "end of file") ||
-             contains_token_icase(message, "eof");
-    }
 
     inline std::vector<std::string_view> split_lines(std::string_view block)
     {
@@ -426,61 +369,7 @@ namespace vix::session
 
   bool Session::is_normal_disconnect(const std::system_error &e) noexcept
   {
-    const auto code = e.code();
-
-    if (code == std::errc::operation_canceled ||
-        code == std::errc::broken_pipe ||
-        code == std::errc::connection_reset ||
-        code == std::errc::connection_aborted ||
-        code == std::errc::timed_out)
-    {
-      return true;
-    }
-
-#ifdef ECANCELED
-    if (code.value() == ECANCELED)
-    {
-      return true;
-    }
-#endif
-
-#ifdef EPIPE
-    if (code.value() == EPIPE)
-    {
-      return true;
-    }
-#endif
-
-#ifdef ECONNRESET
-    if (code.value() == ECONNRESET)
-    {
-      return true;
-    }
-#endif
-
-#ifdef ECONNABORTED
-    if (code.value() == ECONNABORTED)
-    {
-      return true;
-    }
-#endif
-
-#ifdef ETIMEDOUT
-    if (code.value() == ETIMEDOUT)
-    {
-      return true;
-    }
-#endif
-
-    const std::string msg = to_lower(e.what());
-
-    if (msg.find("end of file") != std::string::npos ||
-        msg.find("eof") != std::string::npos)
-    {
-      return true;
-    }
-
-    return false;
+    return vix::utils::is_normal_network_disconnect(e);
   }
 
   task<std::optional<vix::http::Request>> Session::read_request()
@@ -828,7 +717,7 @@ namespace vix::session
       }
 #endif
 
-      if (is_normal_disconnect_message(e.what()))
+      if (vix::utils::is_normal_network_disconnect_message(e.what()))
       {
         log().log(
             Logger::Level::Debug,
@@ -931,10 +820,10 @@ namespace vix::session
 
     const bool suspicious_url =
         target.find('<') != std::string_view::npos ||
-        contains_token_icase(target, "script") ||
-        contains_token_icase(target, "union") ||
-        contains_token_icase(target, "select") ||
-        contains_token_icase(target, "drop");
+        vix::utils::contains_token_icase(target, "script") ||
+        vix::utils::contains_token_icase(target, "union") ||
+        vix::utils::contains_token_icase(target, "select") ||
+        vix::utils::contains_token_icase(target, "drop");
 
     if (suspicious_url)
     {
@@ -980,12 +869,12 @@ namespace vix::session
 
     const bool cheap_trigger =
         body.find('<') != std::string::npos ||
-        contains_token_icase(body, "union") ||
-        contains_token_icase(body, "select") ||
-        contains_token_icase(body, "drop") ||
-        contains_token_icase(body, "insert") ||
-        contains_token_icase(body, "delete") ||
-        contains_token_icase(body, "update");
+        vix::utils::contains_token_icase(body, "union") ||
+        vix::utils::contains_token_icase(body, "select") ||
+        vix::utils::contains_token_icase(body, "drop") ||
+        vix::utils::contains_token_icase(body, "insert") ||
+        vix::utils::contains_token_icase(body, "delete") ||
+        vix::utils::contains_token_icase(body, "update");
 
     if (mode == "basic" && !cheap_trigger)
     {
