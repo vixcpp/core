@@ -106,6 +106,7 @@ jobs:
             ../env \
             ../utils \
             ../async \
+            ../io \
             ../json \
             ../template
 
@@ -114,6 +115,7 @@ jobs:
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/env.git ../env
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" --recurse-submodules https://github.com/vixcpp/async.git ../async
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/io.git ../io
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/template.git ../template || true
 
@@ -139,6 +141,7 @@ jobs:
           test -f ../env/CMakeLists.txt || (echo "::error::../env/CMakeLists.txt is missing"; exit 1)
           test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
           test -f ../async/CMakeLists.txt || (echo "::error::../async/CMakeLists.txt is missing"; exit 1)
+          test -f ../io/CMakeLists.txt || (echo "::error::../io/CMakeLists.txt is missing"; exit 1)
           test -f ../json/CMakeLists.txt || (echo "::error::../json/CMakeLists.txt is missing"; exit 1)
 
           test -f ../json/include/vix/json/Simple.hpp || (echo "::error::../json/include/vix/json/Simple.hpp is missing"; exit 1)
@@ -157,6 +160,7 @@ jobs:
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../env/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../utils/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../async/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../io/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../json/include"
 
           if [ -d "$GITHUB_WORKSPACE/../template/include" ]; then
@@ -223,6 +227,7 @@ jobs:
             ../env \
             ../utils \
             ../async \
+            ../io \
             ../json \
             ../template
 
@@ -231,6 +236,7 @@ jobs:
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/env.git ../env
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" --recurse-submodules https://github.com/vixcpp/async.git ../async
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/io.git ../io
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/template.git ../template || true
 
@@ -256,6 +262,7 @@ jobs:
           test -f ../env/CMakeLists.txt
           test -f ../utils/CMakeLists.txt
           test -f ../async/CMakeLists.txt
+          test -f ../io/CMakeLists.txt
           test -f ../json/CMakeLists.txt
           test -f ../json/include/vix/json/Simple.hpp
 
@@ -266,6 +273,7 @@ jobs:
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../env/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../utils/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../async/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../io/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../json/include"
 
           if [ -d "$GITHUB_WORKSPACE/../template/include" ]; then
@@ -362,6 +370,7 @@ jobs:
             ../env \
             ../utils \
             ../async \
+            ../io \
             ../json \
             ../template
 
@@ -370,6 +379,7 @@ jobs:
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/env.git ../env
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" --recurse-submodules https://github.com/vixcpp/async.git ../async
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/io.git ../io
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/template.git ../template || true
 
@@ -395,6 +405,7 @@ jobs:
           test -f ../env/CMakeLists.txt
           test -f ../utils/CMakeLists.txt
           test -f ../async/CMakeLists.txt
+          test -f ../io/CMakeLists.txt
           test -f ../json/CMakeLists.txt
           test -f ../json/include/vix/json/Simple.hpp
 
@@ -405,6 +416,7 @@ jobs:
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../env/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../utils/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../async/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../io/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../json/include"
 
           if [ -d "$GITHUB_WORKSPACE/../template/include" ]; then
@@ -471,6 +483,7 @@ jobs:
             ../env \
             ../utils \
             ../async \
+            ../io \
             ../json \
             ../template
 
@@ -479,6 +492,7 @@ jobs:
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/env.git ../env
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" --recurse-submodules https://github.com/vixcpp/async.git ../async
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/io.git ../io
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/template.git ../template || true
 
@@ -504,6 +518,7 @@ jobs:
           test -f ../env/CMakeLists.txt
           test -f ../utils/CMakeLists.txt
           test -f ../async/CMakeLists.txt
+          test -f ../io/CMakeLists.txt
           test -f ../json/CMakeLists.txt
           test -f ../json/include/vix/json/Simple.hpp
 
@@ -514,6 +529,7 @@ jobs:
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../env/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../utils/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../async/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../io/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../json/include"
 
           if [ -d "$GITHUB_WORKSPACE/../template/include" ]; then
@@ -596,6 +612,7 @@ jobs:
             ../env \
             ../utils \
             ../async \
+            ../io \
             ../json \
             ../template
 
@@ -604,6 +621,7 @@ jobs:
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/env.git ../env
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" --recurse-submodules https://github.com/vixcpp/async.git ../async
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/io.git ../io
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json
           git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/template.git ../template || true
 
@@ -629,6 +647,7 @@ jobs:
           test -f ../env/CMakeLists.txt
           test -f ../utils/CMakeLists.txt
           test -f ../async/CMakeLists.txt
+          test -f ../io/CMakeLists.txt
           test -f ../json/CMakeLists.txt
           test -f ../json/include/vix/json/Simple.hpp
 
@@ -639,6 +658,7 @@ jobs:
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../env/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../utils/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../async/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../io/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../json/include"
 
           if [ -d "$GITHUB_WORKSPACE/../template/include" ]; then
