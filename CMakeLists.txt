@@ -71,6 +71,8 @@ option(VIX_CORE_FETCH_ENV    "Auto-resolve vix::env if missing" ON)
 option(VIX_CORE_FETCH_IO     "Auto-resolve vix::io if missing" ON)
 option(VIX_BENCH_MODE        "Enable ultra-minimal /bench route for benchmarking" OFF)
 option(VIX_CORE_FETCH_TEMPLATE "Auto-resolve vix::template if missing" ON)
+option(VIX_CORE_ENABLE_PCH "Enable private precompiled headers for vix::core" ON)
+
 set(VIX_CORE_WITH_TEMPLATE "AUTO" CACHE STRING "Link template backend (AUTO|ON|OFF)")
 set_property(CACHE VIX_CORE_WITH_TEMPLATE PROPERTY STRINGS AUTO ON OFF)
 
@@ -303,6 +305,26 @@ if (CORE_SOURCES)
   add_library(vix::core ALIAS vix_core)
 
   target_compile_features(vix_core PUBLIC cxx_std_20)
+
+  if (VIX_CORE_ENABLE_PCH)
+    target_precompile_headers(vix_core PRIVATE
+      <algorithm>
+      <array>
+      <atomic>
+      <chrono>
+      <cstddef>
+      <cstdint>
+      <functional>
+      <memory>
+      <mutex>
+      <optional>
+      <string>
+      <string_view>
+      <unordered_map>
+      <utility>
+      <vector>
+    )
+  endif()
 
   target_include_directories(vix_core
     PUBLIC
