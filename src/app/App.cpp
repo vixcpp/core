@@ -158,6 +158,16 @@ namespace
     g_signal_stop_requested.store(true, std::memory_order_relaxed);
   }
 
+  bool request_accepts_html(const vix::http::Request &req)
+  {
+    const std::string accept = req.header("Accept");
+
+    if (accept.empty())
+      return true;
+
+    return accept.find("text/html") != std::string::npos ||
+           accept.find("*/*") != std::string::npos;
+  }
 } // namespace
 
 namespace vix
@@ -630,6 +640,29 @@ namespace vix
     return h;
   }
 
+  static App::StaticResponseHook &static_response_hook_ref()
+  {
+    static App::StaticResponseHook h{};
+    return h;
+  }
+
+  void App::set_static_response_hook(StaticResponseHook fn)
+  {
+    static_response_hook_ref() = std::move(fn);
+  }
+
+  static void maybe_run_static_response_hook(
+      const vix::http::Request &req,
+      vix::http::ResponseWrapper &res)
+  {
+    auto &hook = static_response_hook_ref();
+
+    if (hook)
+    {
+      hook(req, res);
+    }
+  }
+
   void App::set_static_handler(StaticHandler fn)
   {
     static_handler_ref() = std::move(fn);
@@ -640,15 +673,34 @@ namespace vix
                        std::string index_file,
                        bool add_cache_control,
                        std::string cache_control,
-                       bool fallthrough)
+                       bool fallthrough,
+                       bool spa_fallback)
   {
+    std::string normalizedMount = normalize_prefix(std::move(mount));
+
+    if (auto &handler = static_handler_ref())
+    {
+      if (handler(
+              *this,
+              root,
+              normalizedMount,
+              index_file,
+              add_cache_control,
+              cache_control,
+              fallthrough))
+      {
+        return;
+      }
+    }
+
     static_mounts_.push_back(StaticMount{
         std::move(root),
-        normalize_prefix(std::move(mount)),
+        std::move(normalizedMount),
         std::move(index_file),
         add_cache_control,
         std::move(cache_control),
-        fallthrough});
+        fallthrough,
+        spa_fallback});
   }
 
   bool App::serve_static_from_mount_(const StaticMount &m,
@@ -694,6 +746,29 @@ namespace vix
 
     if (!std::filesystem::exists(full, ec) || !std::filesystem::is_regular_file(full, ec))
     {
+      if (m.spa_fallback && request_accepts_html(req))
+      {
+        const std::filesystem::path fallback = m.root / m.index_file;
+
+        if (std::filesystem::exists(fallback, ec) &&
+            std::filesystem::is_regular_file(fallback, ec))
+        {
+          if (m.add_cache_control)
+            res.header("Cache-Control", m.cache_control);
+
+          if (method == "HEAD")
+          {
+            res.file(fallback);
+            res.res.set_body("");
+            return true;
+          }
+
+          res.file(fallback);
+          maybe_run_static_response_hook(req, res);
+          return true;
+        }
+      }
+
       if (m.fallthrough)
         return false;
 
@@ -712,6 +787,7 @@ namespace vix
     }
 
     res.file(full);
+    maybe_run_static_response_hook(req, res);
     return true;
   }
 

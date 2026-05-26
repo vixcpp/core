@@ -106,6 +106,16 @@ namespace vix
                            bool fallthrough)>;
 
     /**
+     * @brief Hook executed after a static file response has been written.
+     *
+     * This is intentionally generic so vix::core does not depend on optional
+     * modules such as vix::middleware.
+     */
+    using StaticResponseHook =
+        std::function<void(const vix::http::Request &,
+                           vix::http::ResponseWrapper &)>;
+
+    /**
      * @brief Signature of the optional module initialization hook.
      */
     using ModuleInitFn = void (*)();
@@ -438,6 +448,16 @@ namespace vix
     static void set_static_handler(StaticHandler fn);
 
     /**
+     * @brief Installs a hook executed after static file responses.
+     *
+     * Optional modules can use this to transform static responses, for example
+     * to apply gzip compression, without making vix::core depend on them.
+     *
+     * @param fn Static response hook.
+     */
+    static void set_static_response_hook(StaticResponseHook fn);
+
+    /**
      * @brief Mounts a static directory.
      *
      * @param root Filesystem root to expose.
@@ -452,7 +472,8 @@ namespace vix
                     std::string index_file = "index.html",
                     bool add_cache_control = true,
                     std::string cache_control = "public, max-age=3600",
-                    bool fallthrough = true);
+                    bool fallthrough = true,
+                    bool spa_fallback = false);
 
     /**
      * @brief Installs a global module initialization hook.
@@ -977,6 +998,7 @@ namespace vix
       bool add_cache_control{true};
       std::string cache_control{"public, max-age=3600"};
       bool fallthrough{true};
+      bool spa_fallback{false};
     };
 
     /**
