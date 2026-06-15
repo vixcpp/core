@@ -912,6 +912,11 @@ namespace vix::session
 
       if (pos != std::string::npos)
       {
+        if (pos > MAX_HEADER_BYTES)
+        {
+          throw std::runtime_error("HTTP header too large");
+        }
+
         std::string header = read_buffer_.substr(0, pos);
         read_buffer_.erase(0, pos);
         co_return header;

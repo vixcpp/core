@@ -388,10 +388,7 @@ namespace vix::runtime
       while (running() && budget.available())
       {
         const TaskResult result = task.run();
-        if (!budget.consume())
-        {
-          return;
-        }
+        const bool has_capacity = budget.consume();
 
         if (result == TaskResult::complete)
         {
@@ -414,6 +411,7 @@ namespace vix::runtime
           }
 
           task.mark_ready();
+
           const bool resubmitted = submit(std::move(task));
           if (!resubmitted)
           {
@@ -421,6 +419,11 @@ namespace vix::runtime
           }
 
           return;
+        }
+
+        if (!has_capacity)
+        {
+          break;
         }
       }
 

@@ -180,6 +180,9 @@ namespace vix::router
           res.set_body("");
           res.set_header("Connection", "close");
           res.set_should_close(true);
+
+          finalize_response(req, res, false);
+
           co_return true;
         }
       }
@@ -459,32 +462,41 @@ namespace vix::router
         vix::http::Response &res,
         bool is_head)
     {
-      if (res.status() == vix::http::NO_CONTENT ||
-          res.status() == vix::http::NOT_MODIFIED)
+      const bool no_body_status =
+          res.status() == vix::http::NO_CONTENT ||
+          res.status() == vix::http::NOT_MODIFIED;
+
+      if (no_body_status)
       {
         res.set_body("");
+        res.set_header("Content-Length", "0");
       }
-
-      if (is_head)
+      else if (is_head)
       {
         const std::size_t body_len = res.body().size();
         res.set_header("Content-Length", std::to_string(body_len));
         res.set_body("");
       }
 
-      if (!res.has_header("Connection"))
+      const std::string connection = req.header("Connection");
+
+      if (!connection.empty())
       {
-        const std::string connection = req.header("Connection");
-        if (!connection.empty())
+        if (equals_icase(connection, "close"))
+        {
+          res.set_header("Connection", "close");
+          res.set_should_close(true);
+        }
+        else if (!res.has_header("Connection"))
         {
           res.set_header("Connection", connection);
           res.set_should_close(equals_icase(connection, "close"));
         }
-        else
-        {
-          res.set_header("Connection", "keep-alive");
-          res.set_should_close(false);
-        }
+      }
+      else if (!res.has_header("Connection"))
+      {
+        res.set_header("Connection", "keep-alive");
+        res.set_should_close(false);
       }
 
       if (!res.has_header("Content-Length"))
