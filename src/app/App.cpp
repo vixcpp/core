@@ -568,6 +568,18 @@ namespace vix
 
   void App::close()
   {
+    const bool was_started =
+        started_.load(std::memory_order_acquire) ||
+        server_thread_.joinable();
+
+    stop_requested_.store(true, std::memory_order_release);
+    stop_cv_.notify_one();
+
+    if (!was_started)
+    {
+      return;
+    }
+
     bool expected = false;
     const bool first_close = closed_.compare_exchange_strong(
         expected,
@@ -581,12 +593,6 @@ namespace vix
       return;
     }
 
-    const bool was_started =
-        started_.load(std::memory_order_acquire);
-
-    stop_requested_.store(true, std::memory_order_release);
-    stop_cv_.notify_one();
-
     if (shutdown_cb_)
     {
       try
@@ -598,17 +604,13 @@ namespace vix
       }
     }
 
-    if (was_started)
-    {
-      server_.stop_async();
-      server_.stop_blocking();
-    }
+    server_.stop_async();
+    server_.stop_blocking();
 
     join_or_detach_thread(server_thread_, "App::server_thread");
 
     started_.store(false, std::memory_order_release);
   }
-
   void App::run(int port)
   {
     listen(port);
