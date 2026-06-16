@@ -525,8 +525,7 @@ namespace vix::server
 
     if (!called_from_io_thread)
     {
-      const auto deadline =
-          std::chrono::steady_clock::now() + std::chrono::seconds(2);
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
 
       while (accept_loop_started_.load(std::memory_order_acquire) &&
              std::chrono::steady_clock::now() < deadline)
@@ -578,6 +577,14 @@ namespace vix::server
     }
 
     io_threads_.clear();
+
+    try
+    {
+      listener_.reset();
+    }
+    catch (...)
+    {
+    }
 
     if (!deferred_completion && io_context_)
     {
