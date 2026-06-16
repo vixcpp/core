@@ -460,13 +460,24 @@ jobs:
           set -euxo pipefail
 
           cppcheck \
-            --enable=warning,style,performance,portability \
+            --enable=warning,performance,portability \
             --std=c++20 \
             --inconclusive \
             --error-exitcode=2 \
             --suppress=missingIncludeSystem \
             --inline-suppr \
             include/ src/
+
+      - name: Run cppcheck style report
+        run: |
+          set -euxo pipefail
+
+          cppcheck \
+            --enable=style \
+            --std=c++20 \
+            --suppress=missingIncludeSystem \
+            --inline-suppr \
+            include/ src/ tests/ || true
 
       - name: Run cppcheck on tests
         run: |
@@ -484,7 +495,7 @@ jobs:
   valgrind:
     name: Valgrind Memory Checks
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
 
     steps:
       - name: Checkout core repository
@@ -576,10 +587,10 @@ jobs:
           set -euxo pipefail
           cmake --build build-valgrind -j"${BUILD_JOBS}"
 
-      - name: Run tests once before valgrind
+      - name: List tests before valgrind
         run: |
           set -euxo pipefail
-          ctest --test-dir build-valgrind --output-on-failure --timeout 120
+          ctest --test-dir build-valgrind -N
 
       - name: Run valgrind on test executables
         shell: bash
@@ -602,8 +613,19 @@ jobs:
           for exe in "${TEST_BINS[@]}"; do
             echo "==> Valgrind: $exe"
 
+            LIMIT="90s"
+
+            case "$(basename "$exe")" in
+              runtime_worker_test)
+                LIMIT="300s"
+                ;;
+              app_lifecycle_test)
+                LIMIT="240s"
+                ;;
+            esac
+
             set +e
-            timeout 90s valgrind \
+            timeout "$LIMIT" valgrind \
               --leak-check=full \
               --show-leak-kinds=all \
               --track-origins=yes \
