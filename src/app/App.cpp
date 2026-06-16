@@ -437,7 +437,8 @@ namespace vix
 
   void App::request_stop_from_signal() noexcept
   {
-    stop_requested_.store(true, std::memory_order_relaxed);
+    stop_requested_.store(true, std::memory_order_release);
+    stop_cv_.notify_all();
   }
 
   void App::listen_port(int port, ListenPortCallback cb)
@@ -556,21 +557,30 @@ namespace vix
   {
     wait_called_.store(true, std::memory_order_relaxed);
 
+    bool should_close = false;
+
     for (;;)
     {
-      if (g_signal_stop_requested.exchange(false, std::memory_order_relaxed))
+      if (g_signal_stop_requested.exchange(false, std::memory_order_acq_rel))
       {
-        stop_requested_.store(true, std::memory_order_relaxed);
-        stop_cv_.notify_one();
+        stop_requested_.store(true, std::memory_order_release);
+        stop_cv_.notify_all();
+        should_close = true;
         break;
       }
 
-      if (stop_requested_.load(std::memory_order_relaxed))
+      if (stop_requested_.load(std::memory_order_acquire))
       {
+        should_close = true;
         break;
       }
 
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    if (should_close)
+    {
+      close();
     }
   }
 
