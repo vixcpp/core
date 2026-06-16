@@ -576,7 +576,9 @@ jobs:
           FAIL=0
 
           mapfile -t TEST_BINS < <(
-            find build-valgrind/tests -type f -executable 2>/dev/null | sort
+            find build-valgrind/tests -type f -executable 2>/dev/null \
+              | grep -Ev '(/runtime_bench$|_bench$)' \
+              | sort
           )
 
           if [ ${#TEST_BINS[@]} -eq 0 ]; then
