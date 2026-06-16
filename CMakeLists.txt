@@ -261,6 +261,7 @@ function(vix_core_try_link_template onto link_scope)
 
   set(_template_candidates
     vix::template
+    vix_template
     template
   )
 
@@ -277,10 +278,11 @@ function(vix_core_try_link_template onto link_scope)
     target_link_libraries(${onto} ${link_scope} ${_template_found})
     target_compile_definitions(${onto} ${link_scope} VIX_CORE_HAS_TEMPLATE=1)
     set(VIX_CORE_PACKAGE_WITH_TEMPLATE ON PARENT_SCOPE)
+    set(VIX_TEMPLATE_TARGET ${_template_found} PARENT_SCOPE)
   else()
     if (VIX_CORE_WITH_TEMPLATE STREQUAL "ON")
       message(FATAL_ERROR
-        "Template required but not found (expected: vix::template or template)."
+        "Template required but not found (expected: vix::template, vix_template or template)."
       )
     else()
       message(STATUS "[core] No template backend detected; building without template.")
@@ -394,6 +396,12 @@ if (CORE_SOURCES)
 
   vix_core_try_link_json(vix_core PUBLIC)
   vix_core_try_link_template(vix_core PUBLIC)
+
+  get_target_property(_vix_core_links vix_core LINK_LIBRARIES)
+  get_target_property(_vix_core_iface_links vix_core INTERFACE_LINK_LIBRARIES)
+
+  message(STATUS "[core] vix_core LINK_LIBRARIES: ${_vix_core_links}")
+  message(STATUS "[core] vix_core INTERFACE_LINK_LIBRARIES: ${_vix_core_iface_links}")
 
   if (VIX_CORE_WITH_MYSQL)
     find_library(MYSQLCPP_CONN8_LIB mysqlcppconn8)

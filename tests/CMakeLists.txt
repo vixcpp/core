@@ -25,6 +25,14 @@ function(vix_core_add_test test_name)
     ${VIX_CORE_TEST_TARGET}
   )
 
+  if (TARGET vix::template)
+    target_link_libraries(${test_name} PRIVATE vix::template)
+  elseif (TARGET vix_template)
+    target_link_libraries(${test_name} PRIVATE vix_template)
+  elseif (TARGET template)
+    target_link_libraries(${test_name} PRIVATE template)
+  endif()
+
   target_compile_features(${test_name} PRIVATE cxx_std_20)
 
   if (BUILD_TESTING)
@@ -61,6 +69,14 @@ add_executable(runtime_bench
 target_link_libraries(runtime_bench PRIVATE
   ${VIX_CORE_TEST_TARGET}
 )
+
+if (TARGET vix::template)
+  target_link_libraries(runtime_bench PRIVATE vix::template)
+elseif (TARGET vix_template)
+  target_link_libraries(runtime_bench PRIVATE vix_template)
+elseif (TARGET template)
+  target_link_libraries(runtime_bench PRIVATE template)
+endif()
 
 target_compile_features(runtime_bench PRIVATE cxx_std_20)
 
