@@ -86,6 +86,55 @@ namespace
         });
   }
 
+  void join_or_detach_thread(std::thread &t, const char *name)
+  {
+    if (!t.joinable())
+    {
+      return;
+    }
+
+    if (t.get_id() == std::this_thread::get_id())
+    {
+      try
+      {
+        log().log(
+            vix::utils::Logger::Level::Warn,
+            "{}: detaching current thread during shutdown",
+            name);
+        t.detach();
+      }
+      catch (...)
+      {
+      }
+
+      return;
+    }
+
+    try
+    {
+      t.join();
+    }
+    catch (const std::exception &e)
+    {
+      log().log(
+          vix::utils::Logger::Level::Warn,
+          "{}: join failed during shutdown: {}",
+          name,
+          e.what());
+
+      try
+      {
+        if (t.joinable())
+        {
+          t.detach();
+        }
+      }
+      catch (...)
+      {
+      }
+    }
+  }
+
   vix::utils::Logger::Level parse_log_level_from_env()
   {
     using Level = vix::utils::Logger::Level;
@@ -520,21 +569,22 @@ namespace vix
   void App::close()
   {
     bool expected = false;
-    if (!closed_.compare_exchange_strong(
-            expected,
-            true,
-            std::memory_order_acq_rel,
-            std::memory_order_acquire))
+    const bool first_close = closed_.compare_exchange_strong(
+        expected,
+        true,
+        std::memory_order_acq_rel,
+        std::memory_order_acquire);
+
+    if (!first_close)
     {
+      join_or_detach_thread(server_thread_, "App::server_thread");
       return;
     }
 
-    if (!started_.load(std::memory_order_relaxed))
-    {
-      return;
-    }
+    const bool was_started =
+        started_.load(std::memory_order_acquire);
 
-    stop_requested_.store(true, std::memory_order_relaxed);
+    stop_requested_.store(true, std::memory_order_release);
     stop_cv_.notify_one();
 
     if (shutdown_cb_)
@@ -548,15 +598,15 @@ namespace vix
       }
     }
 
-    server_.stop_async();
-    server_.stop_blocking();
-
-    if (server_thread_.joinable())
+    if (was_started)
     {
-      server_thread_.join();
+      server_.stop_async();
+      server_.stop_blocking();
     }
 
-    started_.store(false, std::memory_order_relaxed);
+    join_or_detach_thread(server_thread_, "App::server_thread");
+
+    started_.store(false, std::memory_order_release);
   }
 
   void App::run(int port)

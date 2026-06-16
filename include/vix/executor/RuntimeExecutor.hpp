@@ -371,6 +371,8 @@ namespace vix::executor
 
       const auto shared = state_;
 
+      shared->inFlight.fetch_add(1, std::memory_order_relaxed);
+
       const bool accepted = runtime_->submit(
           [shared,
            task = std::move(fn),
@@ -378,13 +380,22 @@ namespace vix::executor
           {
             shared->active.fetch_add(1, std::memory_order_relaxed);
 
+            struct FinishGuard
+            {
+              std::shared_ptr<SharedState> shared;
+
+              ~FinishGuard()
+              {
+                shared->active.fetch_sub(1, std::memory_order_relaxed);
+                shared->inFlight.fetch_sub(1, std::memory_order_relaxed);
+              }
+            } finish{shared};
+
             const auto startTime = std::chrono::steady_clock::now();
 
             try
             {
               task();
-
-              shared->active.fetch_sub(1, std::memory_order_relaxed);
 
               if (options.timeout.count() > 0)
               {
@@ -402,8 +413,6 @@ namespace vix::executor
             }
             catch (...)
             {
-              shared->active.fetch_sub(1, std::memory_order_relaxed);
-
               if (options.timeout.count() > 0)
               {
                 const auto elapsed =
@@ -427,6 +436,7 @@ namespace vix::executor
       }
       else
       {
+        shared->inFlight.fetch_sub(1, std::memory_order_relaxed);
         state_->rejected.fetch_add(1, std::memory_order_relaxed);
       }
 
@@ -456,8 +466,16 @@ namespace vix::executor
     {
       for (;;)
       {
-        const auto m = metrics();
-        if (m.pending == 0 && m.active == 0)
+        const auto inFlight =
+            state_->inFlight.load(std::memory_order_acquire);
+
+        const auto active =
+            state_->active.load(std::memory_order_acquire);
+
+        const auto pending =
+            static_cast<std::uint64_t>(runtime_->size());
+
+        if (inFlight == 0 && active == 0 && pending == 0)
         {
           break;
         }
@@ -536,6 +554,7 @@ namespace vix::executor
     struct SharedState
     {
       std::atomic<std::uint64_t> active{0};
+      std::atomic<std::uint64_t> inFlight{0};
       std::atomic<std::uint64_t> timedOut{0};
       std::atomic<std::uint64_t> submitted{0};
       std::atomic<std::uint64_t> rejected{0};
