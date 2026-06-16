@@ -145,8 +145,10 @@ namespace vix::server
     /**
      * @brief Request an asynchronous server shutdown.
      *
-     * This closes the listener, stops the I/O context, and wakes background
-     * monitor threads. The function does not join worker threads by itself.
+     * This requests shutdown, closes the listener to cancel pending accepts,
+     * and wakes background monitor threads. The function does not join worker
+     * threads and does not stop the I/O context immediately; the blocking
+     * shutdown path stops the context after the accept loop has drained.
      */
     void stop_async();
 
@@ -172,8 +174,9 @@ namespace vix::server
      *
      * This is the strong shutdown path:
      * - request stop
-     * - stop the async context
      * - close the listener
+     * - allow the accept loop to drain
+     * - stop the async context
      * - join all internal threads
      */
     void stop_blocking();

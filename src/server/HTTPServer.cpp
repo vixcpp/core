@@ -455,13 +455,7 @@ namespace vix::server
 
   void HTTPServer::stop_async()
   {
-    const bool already_stopping =
-        stop_requested_.exchange(true, std::memory_order_acq_rel);
-
-    if (already_stopping)
-    {
-      return;
-    }
+    stop_requested_.store(true, std::memory_order_release);
 
     metrics_cv_.notify_all();
 
@@ -476,10 +470,19 @@ namespace vix::server
     {
     }
 
-    if (io_context_)
-    {
-      io_context_->stop();
-    }
+    /*
+     * Important:
+     *
+     * Do not stop io_context_ here.
+     *
+     * listener_->close() is supposed to cancel the pending async_accept().
+     * The accept completion must still be allowed to resume accept_loop(),
+     * let it catch/observe the shutdown error, store accept_loop_started_=false,
+     * and reach co_return.
+     *
+     * io_context_ is stopped later in join_threads(), after the accept loop
+     * has had a chance to drain.
+     */
   }
 
   void HTTPServer::join_threads()
@@ -507,6 +510,51 @@ namespace vix::server
       {
         metrics_thread_.join();
       }
+    }
+
+    bool called_from_io_thread = false;
+
+    for (const auto &t : io_threads_)
+    {
+      if (t.joinable() && t.get_id() == current_id)
+      {
+        called_from_io_thread = true;
+        break;
+      }
+    }
+
+    if (!called_from_io_thread)
+    {
+      const auto deadline =
+          std::chrono::steady_clock::now() + std::chrono::seconds(2);
+
+      while (accept_loop_started_.load(std::memory_order_acquire) &&
+             std::chrono::steady_clock::now() < deadline)
+      {
+        try
+        {
+          if (listener_)
+          {
+            listener_->close();
+          }
+        }
+        catch (...)
+        {
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+
+      if (accept_loop_started_.load(std::memory_order_acquire))
+      {
+        log().log(Logger::Level::Warn,
+                  "[http] accept loop did not drain before io_context stop");
+      }
+    }
+
+    if (io_context_)
+    {
+      io_context_->stop();
     }
 
     for (std::size_t i = 0; i < io_threads_.size(); ++i)
