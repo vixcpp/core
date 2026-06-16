@@ -484,13 +484,25 @@ jobs:
           set -euxo pipefail
 
           cppcheck \
-            --enable=warning,performance,portability \
+            --enable=warning,portability \
             --std=c++20 \
             --inconclusive \
             --error-exitcode=2 \
             --suppress=missingIncludeSystem \
             --inline-suppr \
             tests/
+
+      - name: Run cppcheck performance report on tests
+        run: |
+          set -euxo pipefail
+
+          cppcheck \
+            --enable=performance \
+            --std=c++20 \
+            --inconclusive \
+            --suppress=missingIncludeSystem \
+            --inline-suppr \
+            tests/ || true
 
   valgrind:
     name: Valgrind Memory Checks

@@ -493,8 +493,45 @@ namespace vix
     std::signal(SIGTERM, handle_stop_signal);
 #endif
 
-    server_thread_ = std::thread([this]()
-                                 { server_.run(); });
+    server_thread_ = std::thread(
+        [this]()
+        {
+          try
+          {
+            server_.run();
+          }
+          catch (const std::exception &e)
+          {
+            try
+            {
+              log().log(
+                  Logger::Level::Error,
+                  "App server thread stopped with exception: {}",
+                  e.what());
+            }
+            catch (...)
+            {
+            }
+
+            stop_requested_.store(true, std::memory_order_release);
+            stop_cv_.notify_all();
+          }
+          catch (...)
+          {
+            try
+            {
+              log().log(
+                  Logger::Level::Error,
+                  "App server thread stopped with unknown exception");
+            }
+            catch (...)
+            {
+            }
+
+            stop_requested_.store(true, std::memory_order_release);
+            stop_cv_.notify_all();
+          }
+        });
     int bound = 0;
     for (int i = 0; i < 200; ++i)
     {
@@ -624,8 +661,36 @@ namespace vix
       }
     }
 
-    server_.stop_async();
-    server_.stop_blocking();
+    try
+    {
+      server_.stop_async();
+      server_.stop_blocking();
+    }
+    catch (const std::exception &e)
+    {
+      try
+      {
+        log().log(
+            Logger::Level::Warn,
+            "App::close: server shutdown failed: {}",
+            e.what());
+      }
+      catch (...)
+      {
+      }
+    }
+    catch (...)
+    {
+      try
+      {
+        log().log(
+            Logger::Level::Warn,
+            "App::close: server shutdown failed with unknown exception");
+      }
+      catch (...)
+      {
+      }
+    }
 
     join_or_detach_thread(server_thread_, "App::server_thread");
   }
