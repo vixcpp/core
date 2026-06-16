@@ -659,8 +659,13 @@ namespace vix::session
       else
       {
         const bool header_ok = co_await write_all(*transport_, header_block, token);
-        const bool body_ok =
-            header_ok ? co_await write_all(*transport_, body, token) : false;
+
+        bool body_ok = false;
+
+        if (header_ok)
+        {
+          body_ok = co_await write_all(*transport_, body, token);
+        }
 
         if (!header_ok || !body_ok)
         {
