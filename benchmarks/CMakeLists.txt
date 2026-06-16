@@ -10,6 +10,16 @@ if (NOT TARGET ${VIX_CORE_BENCH_TARGET})
   message(FATAL_ERROR "[core/benchmarks] Missing core target (expected vix::core or vix_core).")
 endif()
 
+function(vix_core_link_template_if_available target_name)
+  if (TARGET vix::template)
+    target_link_libraries(${target_name} PRIVATE vix::template)
+  elseif (TARGET vix_template)
+    target_link_libraries(${target_name} PRIVATE vix_template)
+  elseif (TARGET template)
+    target_link_libraries(${target_name} PRIVATE template)
+  endif()
+endfunction()
+
 function(vix_core_add_benchmark bench_name)
   add_executable(${bench_name}
     ${ARGN}
@@ -18,6 +28,8 @@ function(vix_core_add_benchmark bench_name)
   target_link_libraries(${bench_name} PRIVATE
     ${VIX_CORE_BENCH_TARGET}
   )
+
+  vix_core_link_template_if_available(${bench_name})
 
   target_compile_features(${bench_name} PRIVATE cxx_std_20)
 

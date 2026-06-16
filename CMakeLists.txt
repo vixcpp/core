@@ -295,7 +295,7 @@ endfunction()
 # --------------------------------------------------------------------
 # template dependency
 # --------------------------------------------------------------------
-if (NOT TARGET vix::template AND NOT TARGET template)
+if (NOT TARGET vix::template AND NOT TARGET vix_template AND NOT TARGET template)
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../template/CMakeLists.txt")
     message(STATUS "[core] Adding template from sibling: ../template")
     add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../template" "template")
@@ -308,6 +308,8 @@ endif()
 set(VIX_TEMPLATE_TARGET "")
 if (TARGET vix::template)
   set(VIX_TEMPLATE_TARGET vix::template)
+elseif (TARGET vix_template)
+  set(VIX_TEMPLATE_TARGET vix_template)
 elseif (TARGET template)
   set(VIX_TEMPLATE_TARGET template)
 endif()
