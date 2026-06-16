@@ -461,6 +461,14 @@ namespace vix
   {
     using clock = std::chrono::steady_clock;
 
+    if (closed_.load(std::memory_order_acquire))
+    {
+      log().log(
+          Logger::Level::Warn,
+          "App::listen() called after close(); create a new App instance instead");
+      return;
+    }
+
     listen_called_.store(true, std::memory_order_relaxed);
 
     if (started_.exchange(true, std::memory_order_relaxed))
@@ -568,17 +576,14 @@ namespace vix
 
   void App::close()
   {
-    const bool was_started =
-        started_.load(std::memory_order_acquire) ||
-        server_thread_.joinable();
-
     stop_requested_.store(true, std::memory_order_release);
-    stop_cv_.notify_one();
+    stop_cv_.notify_all();
 
-    if (!was_started)
-    {
-      return;
-    }
+    const bool had_server_thread = server_thread_.joinable();
+
+    const bool was_started =
+        started_.exchange(false, std::memory_order_acq_rel) ||
+        had_server_thread;
 
     bool expected = false;
     const bool first_close = closed_.compare_exchange_strong(
@@ -590,6 +595,11 @@ namespace vix
     if (!first_close)
     {
       join_or_detach_thread(server_thread_, "App::server_thread");
+      return;
+    }
+
+    if (!was_started)
+    {
       return;
     }
 
@@ -608,9 +618,8 @@ namespace vix
     server_.stop_blocking();
 
     join_or_detach_thread(server_thread_, "App::server_thread");
-
-    started_.store(false, std::memory_order_release);
   }
+
   void App::run(int port)
   {
     listen(port);
