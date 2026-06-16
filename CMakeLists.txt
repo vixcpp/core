@@ -72,6 +72,7 @@ option(VIX_CORE_FETCH_IO     "Auto-resolve vix::io if missing" ON)
 option(VIX_BENCH_MODE        "Enable ultra-minimal /bench route for benchmarking" OFF)
 option(VIX_CORE_FETCH_TEMPLATE "Auto-resolve vix::template if missing" ON)
 option(VIX_CORE_ENABLE_PCH "Enable private precompiled headers for vix::core" ON)
+option(VIX_CORE_FETCH_JSON  "Auto-resolve vix::json if missing" ON)
 
 set(VIX_CORE_WITH_TEMPLATE "AUTO" CACHE STRING "Link template backend (AUTO|ON|OFF)")
 set_property(CACHE VIX_CORE_WITH_TEMPLATE PROPERTY STRINGS AUTO ON OFF)
@@ -190,19 +191,41 @@ if (NOT VIX_IO_TARGET)
 endif()
 
 # --------------------------------------------------------------------
+# json dependency
+# --------------------------------------------------------------------
+if (NOT TARGET vix::json AND NOT TARGET vix_json)
+  if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../json/CMakeLists.txt")
+    message(STATUS "[core] Adding json from sibling: ../json")
+    add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../json" "json")
+  elseif (VIX_CORE_FETCH_JSON)
+    find_package(vix_json CONFIG QUIET)
+    find_package(json CONFIG QUIET)
+  endif()
+endif()
+
+set(VIX_JSON_TARGET "")
+if (TARGET vix::json)
+  set(VIX_JSON_TARGET vix::json)
+elseif (TARGET vix_json)
+  set(VIX_JSON_TARGET vix_json)
+endif()
+
+if (NOT VIX_JSON_TARGET)
+  message(FATAL_ERROR
+    "vix::json not found.\n"
+    "Core requires JSON because public headers include <vix/json/json.hpp> "
+    "and Config uses vix::json::Json.\n"
+    "Provide ../json in the standalone build, or install/export the json package."
+  )
+endif()
+
+# --------------------------------------------------------------------
 # JSON linkage policy
 # --------------------------------------------------------------------
 set(VIX_CORE_WITH_JSON "AUTO" CACHE STRING "Link JSON backend (AUTO|ON|OFF)")
 set_property(CACHE VIX_CORE_WITH_JSON PROPERTY STRINGS AUTO ON OFF)
 
 function(vix_core_try_link_json onto link_scope)
-  if (VIX_CORE_WITH_JSON STREQUAL "OFF")
-    message(STATUS "[core] JSON disabled (OFF)")
-    target_compile_definitions(${onto} ${link_scope} VIX_CORE_NO_JSON=1)
-    set(VIX_CORE_PACKAGE_WITH_JSON OFF PARENT_SCOPE)
-    return()
-  endif()
-
   set(_json_candidates
     vix::json
     vix_json
@@ -221,15 +244,10 @@ function(vix_core_try_link_json onto link_scope)
     target_link_libraries(${onto} ${link_scope} ${_json_found})
     set(VIX_CORE_PACKAGE_WITH_JSON ON PARENT_SCOPE)
   else()
-    if (VIX_CORE_WITH_JSON STREQUAL "ON")
-      message(FATAL_ERROR
-        "JSON required but not found (expected: vix::json or vix_json)."
-      )
-    else()
-      message(STATUS "[core] No JSON backend detected; building without JSON.")
-      target_compile_definitions(${onto} ${link_scope} VIX_CORE_NO_JSON=1)
-      set(VIX_CORE_PACKAGE_WITH_JSON OFF PARENT_SCOPE)
-    endif()
+    message(FATAL_ERROR
+      "JSON backend is required by vix::core but was not found "
+      "(expected: vix::json or vix_json)."
+    )
   endif()
 endfunction()
 
