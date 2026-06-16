@@ -507,6 +507,12 @@ if (VIX_CORE_BUILD_TESTS)
   add_subdirectory(tests)
 endif()
 
+option(VIX_CORE_BUILD_BENCHMARKS "Build Vix core benchmarks" OFF)
+
+if (VIX_CORE_BUILD_BENCHMARKS)
+  add_subdirectory(benchmarks)
+endif()
+
 # --------------------------------------------------------------------
 # Summary
 # --------------------------------------------------------------------

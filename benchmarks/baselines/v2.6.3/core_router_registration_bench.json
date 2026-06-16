@@ -1,0 +1,896 @@
+{
+  "arch": "x86_64",
+  "build_type": "Release",
+  "compiler": {
+    "name": "gcc",
+    "version": "13.3.0"
+  },
+  "machine": "vix-bench-runner-1",
+  "os": "linux",
+  "results": [
+    {
+      "max_ms": 1.815024,
+      "max_ops_per_sec": 1401518.1244323852,
+      "mean_ms": 1.582417714285714,
+      "mean_ops_per_sec": 1276996.3282736284,
+      "measure_iterations": 7,
+      "median_ms": 1.484881,
+      "median_ops_per_sec": 1346909.280945746,
+      "min_ms": 1.427024,
+      "min_ops_per_sec": 1101913.803894604,
+      "name": "router.registration/static_routes",
+      "operations": 2000,
+      "samples": [
+        {
+          "elapsed_ms": 1.815024,
+          "ops_per_sec": 1101913.803894604
+        },
+        {
+          "elapsed_ms": 1.484881,
+          "ops_per_sec": 1346909.280945746
+        },
+        {
+          "elapsed_ms": 1.74005,
+          "ops_per_sec": 1149392.2588431367
+        },
+        {
+          "elapsed_ms": 1.747221,
+          "ops_per_sec": 1144674.8865770272
+        },
+        {
+          "elapsed_ms": 1.427098,
+          "ops_per_sec": 1401445.4508379942
+        },
+        {
+          "elapsed_ms": 1.435626,
+          "ops_per_sec": 1393120.4923845069
+        },
+        {
+          "elapsed_ms": 1.427024,
+          "ops_per_sec": 1401518.1244323852
+        }
+      ],
+      "warmup_iterations": 1
+    },
+    {
+      "max_ms": 2.691192,
+      "max_ops_per_sec": 845891.6522759349,
+      "mean_ms": 2.431915666666667,
+      "mean_ops_per_sec": 823220.347575375,
+      "measure_iterations": 15,
+      "median_ms": 2.401392,
+      "median_ops_per_sec": 832850.2801708343,
+      "min_ms": 2.364369,
+      "min_ops_per_sec": 743165.1104789253,
+      "name": "router.registration/nested_static_routes",
+      "operations": 2000,
+      "samples": [
+        {
+          "elapsed_ms": 2.509824,
+          "ops_per_sec": 796868.6250509996
+        },
+        {
+          "elapsed_ms": 2.397343,
+          "ops_per_sec": 834256.9252710189
+        },
+        {
+          "elapsed_ms": 2.393557,
+          "ops_per_sec": 835576.5081007053
+        },
+        {
+          "elapsed_ms": 2.383018,
+          "ops_per_sec": 839271.881286671
+        },
+        {
+          "elapsed_ms": 2.391099,
+          "ops_per_sec": 836435.4633580626
+        },
+        {
+          "elapsed_ms": 2.402877,
+          "ops_per_sec": 832335.5710675161
+        },
+        {
+          "elapsed_ms": 2.474206,
+          "ops_per_sec": 808340.1301265941
+        },
+        {
+          "elapsed_ms": 2.390715,
+          "ops_per_sec": 836569.81279659
+        },
+        {
+          "elapsed_ms": 2.367073,
+          "ops_per_sec": 844925.3571816332
+        },
+        {
+          "elapsed_ms": 2.364369,
+          "ops_per_sec": 845891.6522759349
+        },
+        {
+          "elapsed_ms": 2.401392,
+          "ops_per_sec": 832850.2801708343
+        },
+        {
+          "elapsed_ms": 2.412285,
+          "ops_per_sec": 829089.4318042853
+        },
+        {
+          "elapsed_ms": 2.453612,
+          "ops_per_sec": 815124.8037587034
+        },
+        {
+          "elapsed_ms": 2.446173,
+          "ops_per_sec": 817603.6609021521
+        },
+        {
+          "elapsed_ms": 2.691192,
+          "ops_per_sec": 743165.1104789253
+        }
+      ],
+      "warmup_iterations": 3
+    },
+    {
+      "max_ms": 3.218386,
+      "max_ops_per_sec": 706923.8597053046,
+      "mean_ms": 2.955617133333334,
+      "mean_ops_per_sec": 677623.9004058043,
+      "measure_iterations": 15,
+      "median_ms": 2.938645,
+      "median_ops_per_sec": 680585.7801810018,
+      "min_ms": 2.829159,
+      "min_ops_per_sec": 621429.499134038,
+      "name": "router.registration/param_routes",
+      "operations": 2000,
+      "samples": [
+        {
+          "elapsed_ms": 3.002941,
+          "ops_per_sec": 666013.7511859208
+        },
+        {
+          "elapsed_ms": 2.831701,
+          "ops_per_sec": 706289.2586470111
+        },
+        {
+          "elapsed_ms": 3.12135,
+          "ops_per_sec": 640748.3941243372
+        },
+        {
+          "elapsed_ms": 3.022422,
+          "ops_per_sec": 661720.9641803824
+        },
+        {
+          "elapsed_ms": 2.853661,
+          "ops_per_sec": 700854.0958439002
+        },
+        {
+          "elapsed_ms": 2.858812,
+          "ops_per_sec": 699591.2987632626
+        },
+        {
+          "elapsed_ms": 2.829159,
+          "ops_per_sec": 706923.8597053046
+        },
+        {
+          "elapsed_ms": 2.832844,
+          "ops_per_sec": 706004.2840339955
+        },
+        {
+          "elapsed_ms": 2.938645,
+          "ops_per_sec": 680585.7801810018
+        },
+        {
+          "elapsed_ms": 2.91615,
+          "ops_per_sec": 685835.7766232876
+        },
+        {
+          "elapsed_ms": 2.923764,
+          "ops_per_sec": 684049.7386245949
+        },
+        {
+          "elapsed_ms": 2.948261,
+          "ops_per_sec": 678365.9926987468
+        },
+        {
+          "elapsed_ms": 2.953873,
+          "ops_per_sec": 677077.1796891742
+        },
+        {
+          "elapsed_ms": 3.218386,
+          "ops_per_sec": 621429.499134038
+        },
+        {
+          "elapsed_ms": 3.082288,
+          "ops_per_sec": 648868.6326521077
+        }
+      ],
+      "warmup_iterations": 3
+    },
+    {
+      "max_ms": 5.40222,
+      "max_ops_per_sec": 398925.29525458417,
+      "mean_ms": 5.117355,
+      "mean_ops_per_sec": 390956.3947723035,
+      "measure_iterations": 15,
+      "median_ms": 5.098172,
+      "median_ops_per_sec": 392297.47446731885,
+      "min_ms": 5.01347,
+      "min_ops_per_sec": 370218.169567326,
+      "name": "router.registration/nested_param_routes",
+      "operations": 2000,
+      "samples": [
+        {
+          "elapsed_ms": 5.06646,
+          "ops_per_sec": 394752.9438700789
+        },
+        {
+          "elapsed_ms": 5.098172,
+          "ops_per_sec": 392297.47446731885
+        },
+        {
+          "elapsed_ms": 5.01347,
+          "ops_per_sec": 398925.29525458417
+        },
+        {
+          "elapsed_ms": 5.043779,
+          "ops_per_sec": 396528.07944202155
+        },
+        {
+          "elapsed_ms": 5.109481,
+          "ops_per_sec": 391429.18820913514
+        },
+        {
+          "elapsed_ms": 5.055579,
+          "ops_per_sec": 395602.56105185975
+        },
+        {
+          "elapsed_ms": 5.40222,
+          "ops_per_sec": 370218.169567326
+        },
+        {
+          "elapsed_ms": 5.252125,
+          "ops_per_sec": 380798.24832805764
+        },
+        {
+          "elapsed_ms": 5.110735,
+          "ops_per_sec": 391333.1448412019
+        },
+        {
+          "elapsed_ms": 5.114566,
+          "ops_per_sec": 391040.0217731084
+        },
+        {
+          "elapsed_ms": 5.157948,
+          "ops_per_sec": 387751.0979172337
+        },
+        {
+          "elapsed_ms": 5.142059,
+          "ops_per_sec": 388949.2516519161
+        },
+        {
+          "elapsed_ms": 5.035503,
+          "ops_per_sec": 397179.78521708754
+        },
+        {
+          "elapsed_ms": 5.071584,
+          "ops_per_sec": 394354.111062737
+        },
+        {
+          "elapsed_ms": 5.086644,
+          "ops_per_sec": 393186.5489308865
+        }
+      ],
+      "warmup_iterations": 3
+    },
+    {
+      "max_ms": 2.042583,
+      "max_ops_per_sec": 1074066.5556081848,
+      "mean_ms": 1.9171154666666668,
+      "mean_ops_per_sec": 1043806.482799046,
+      "measure_iterations": 15,
+      "median_ms": 1.910952,
+      "median_ops_per_sec": 1046598.7633389012,
+      "min_ms": 1.862082,
+      "min_ops_per_sec": 979152.3771616624,
+      "name": "router.registration/mixed_methods",
+      "operations": 2000,
+      "samples": [
+        {
+          "elapsed_ms": 1.924669,
+          "ops_per_sec": 1039139.7170110809
+        },
+        {
+          "elapsed_ms": 1.927613,
+          "ops_per_sec": 1037552.662282315
+        },
+        {
+          "elapsed_ms": 2.042583,
+          "ops_per_sec": 979152.3771616624
+        },
+        {
+          "elapsed_ms": 1.938573,
+          "ops_per_sec": 1031686.7097602205
+        },
+        {
+          "elapsed_ms": 1.978281,
+          "ops_per_sec": 1010978.7234472757
+        },
+        {
+          "elapsed_ms": 1.902025,
+          "ops_per_sec": 1051510.8897096515
+        },
+        {
+          "elapsed_ms": 1.944796,
+          "ops_per_sec": 1028385.4964736662
+        },
+        {
+          "elapsed_ms": 1.910952,
+          "ops_per_sec": 1046598.7633389012
+        },
+        {
+          "elapsed_ms": 1.862082,
+          "ops_per_sec": 1074066.5556081848
+        },
+        {
+          "elapsed_ms": 1.867544,
+          "ops_per_sec": 1070925.2365673848
+        },
+        {
+          "elapsed_ms": 1.869798,
+          "ops_per_sec": 1069634.2599574926
+        },
+        {
+          "elapsed_ms": 1.891418,
+          "ops_per_sec": 1057407.7226715616
+        },
+        {
+          "elapsed_ms": 1.902184,
+          "ops_per_sec": 1051422.9958826276
+        },
+        {
+          "elapsed_ms": 1.913712,
+          "ops_per_sec": 1045089.3342362904
+        },
+        {
+          "elapsed_ms": 1.880502,
+          "ops_per_sec": 1063545.7978773753
+        }
+      ],
+      "warmup_iterations": 3
+    },
+    {
+      "max_ms": 1.934806,
+      "max_ops_per_sec": 1053498.774780925,
+      "mean_ms": 1.9157402,
+      "mean_ops_per_sec": 1044018.764171733,
+      "measure_iterations": 15,
+      "median_ms": 1.915273,
+      "median_ops_per_sec": 1044237.5577789694,
+      "min_ms": 1.898436,
+      "min_ops_per_sec": 1033695.3679076869,
+      "name": "router.registration/lowercase_methods",
+      "operations": 2000,
+      "samples": [
+        {
+          "elapsed_ms": 1.922227,
+          "ops_per_sec": 1040459.8416316075
+        },
+        {
+          "elapsed_ms": 1.933107,
+          "ops_per_sec": 1034603.8786264806
+        },
+        {
+          "elapsed_ms": 1.934806,
+          "ops_per_sec": 1033695.3679076869
+        },
+        {
+          "elapsed_ms": 1.926477,
+          "ops_per_sec": 1038164.4836662987
+        },
+        {
+          "elapsed_ms": 1.925859,
+          "ops_per_sec": 1038497.6262540508
+        },
+        {
+          "elapsed_ms": 1.922249,
+          "ops_per_sec": 1040447.9336443925
+        },
+        {
+          "elapsed_ms": 1.899262,
+          "ops_per_sec": 1053040.6020864947
+        },
+        {
+          "elapsed_ms": 1.912481,
+          "ops_per_sec": 1045762.0232567015
+        },
+        {
+          "elapsed_ms": 1.902732,
+          "ops_per_sec": 1051120.17877452
+        },
+        {
+          "elapsed_ms": 1.915666,
+          "ops_per_sec": 1044023.3318334197
+        },
+        {
+          "elapsed_ms": 1.909859,
+          "ops_per_sec": 1047197.7250676621
+        },
+        {
+          "elapsed_ms": 1.898436,
+          "ops_per_sec": 1053498.774780925
+        },
+        {
+          "elapsed_ms": 1.913514,
+          "ops_per_sec": 1045197.4743848229
+        },
+        {
+          "elapsed_ms": 1.904155,
+          "ops_per_sec": 1050334.6628819606
+        },
+        {
+          "elapsed_ms": 1.915273,
+          "ops_per_sec": 1044237.5577789694
+        }
+      ],
+      "warmup_iterations": 3
+    },
+    {
+      "max_ms": 1.879173,
+      "max_ops_per_sec": 1086677.7652689093,
+      "mean_ms": 1.8563844,
+      "mean_ops_per_sec": 1077402.0461466298,
+      "measure_iterations": 15,
+      "median_ms": 1.853264,
+      "median_ops_per_sec": 1079177.0627390377,
+      "min_ms": 1.840472,
+      "min_ops_per_sec": 1064297.9651155055,
+      "name": "router.registration/path_without_leading_slash",
+      "operations": 2000,
+      "samples": [
+        {
+          "elapsed_ms": 1.854222,
+          "ops_per_sec": 1078619.4964788465
+        },
+        {
+          "elapsed_ms": 1.872359,
+          "ops_per_sec": 1068171.221437769
+        },
+        {
+          "elapsed_ms": 1.843696,
+          "ops_per_sec": 1084777.5338233635
+        },
+        {
+          "elapsed_ms": 1.850281,
+          "ops_per_sec": 1080916.8985683795
+        },
+        {
+          "elapsed_ms": 1.869913,
+          "ops_per_sec": 1069568.4772500112
+        },
+        {
+          "elapsed_ms": 1.840472,
+          "ops_per_sec": 1086677.7652689093
+        },
+        {
+          "elapsed_ms": 1.850346,
+          "ops_per_sec": 1080878.927508693
+        },
+        {
+          "elapsed_ms": 1.850362,
+          "ops_per_sec": 1080869.5811954634
+        },
+        {
+          "elapsed_ms": 1.855204,
+          "ops_per_sec": 1078048.5596193194
+        },
+        {
+          "elapsed_ms": 1.871029,
+          "ops_per_sec": 1068930.5189818009
+        },
+        {
+          "elapsed_ms": 1.85107,
+          "ops_per_sec": 1080456.1685943806
+        },
+        {
+          "elapsed_ms": 1.859311,
+          "ops_per_sec": 1075667.2767492905
+        },
+        {
+          "elapsed_ms": 1.845064,
+          "ops_per_sec": 1083973.2388686787
+        },
+        {
+          "elapsed_ms": 1.853264,
+          "ops_per_sec": 1079177.0627390377
+        },
+        {
+          "elapsed_ms": 1.879173,
+          "ops_per_sec": 1064297.9651155055
+        }
+      ],
+      "warmup_iterations": 3
+    },
+    {
+      "max_ms": 2.118327,
+      "max_ops_per_sec": 1109323.8671030009,
+      "mean_ms": 1.8441432666666664,
+      "mean_ops_per_sec": 1086056.2576740996,
+      "measure_iterations": 15,
+      "median_ms": 1.826098,
+      "median_ops_per_sec": 1095231.4716953854,
+      "min_ms": 1.8029,
+      "min_ops_per_sec": 944141.2964098556,
+      "name": "router.registration/path_with_trailing_slash",
+      "operations": 2000,
+      "samples": [
+        {
+          "elapsed_ms": 1.8029,
+          "ops_per_sec": 1109323.8671030009
+        },
+        {
+          "elapsed_ms": 1.826332,
+          "ops_per_sec": 1095091.1444359513
+        },
+        {
+          "elapsed_ms": 1.831803,
+          "ops_per_sec": 1091820.4632266678
+        },
+        {
+          "elapsed_ms": 1.824407,
+          "ops_per_sec": 1096246.6160237272
+        },
+        {
+          "elapsed_ms": 1.826098,
+          "ops_per_sec": 1095231.4716953854
+        },
+        {
+          "elapsed_ms": 1.827171,
+          "ops_per_sec": 1094588.3007118655
+        },
+        {
+          "elapsed_ms": 2.118327,
+          "ops_per_sec": 944141.2964098556
+        },
+        {
+          "elapsed_ms": 1.808444,
+          "ops_per_sec": 1105923.1029548054
+        },
+        {
+          "elapsed_ms": 1.824795,
+          "ops_per_sec": 1096013.5248068962
+        },
+        {
+          "elapsed_ms": 1.838254,
+          "ops_per_sec": 1087988.9286246623
+        },
+        {
+          "elapsed_ms": 1.831105,
+          "ops_per_sec": 1092236.6549160206
+        },
+        {
+          "elapsed_ms": 1.845861,
+          "ops_per_sec": 1083505.2043463727
+        },
+        {
+          "elapsed_ms": 1.822477,
+          "ops_per_sec": 1097407.5392995358
+        },
+        {
+          "elapsed_ms": 1.818202,
+          "ops_per_sec": 1099987.7901355294
+        },
+        {
+          "elapsed_ms": 1.815973,
+          "ops_per_sec": 1101337.9604212176
+        }
+      ],
+      "warmup_iterations": 3
+    },
+    {
+      "max_ms": 1.159128,
+      "max_ops_per_sec": 1804357.1616740106,
+      "mean_ms": 1.1215906666666668,
+      "mean_ops_per_sec": 1783513.7246048332,
+      "measure_iterations": 15,
+      "median_ms": 1.11371,
+      "median_ops_per_sec": 1795799.6246778786,
+      "min_ms": 1.108428,
+      "min_ops_per_sec": 1725434.9821590025,
+      "name": "router.registration/duplicate_route",
+      "operations": 2000,
+      "samples": [
+        {
+          "elapsed_ms": 1.123051,
+          "ops_per_sec": 1780863.0240300752
+        },
+        {
+          "elapsed_ms": 1.11371,
+          "ops_per_sec": 1795799.6246778786
+        },
+        {
+          "elapsed_ms": 1.11194,
+          "ops_per_sec": 1798658.2009820675
+        },
+        {
+          "elapsed_ms": 1.153933,
+          "ops_per_sec": 1733202.8809298286
+        },
+        {
+          "elapsed_ms": 1.135476,
+          "ops_per_sec": 1761375.84590075
+        },
+        {
+          "elapsed_ms": 1.126534,
+          "ops_per_sec": 1775356.9799047345
+        },
+        {
+          "elapsed_ms": 1.112174,
+          "ops_per_sec": 1798279.7655762497
+        },
+        {
+          "elapsed_ms": 1.159128,
+          "ops_per_sec": 1725434.9821590025
+        },
+        {
+          "elapsed_ms": 1.119772,
+          "ops_per_sec": 1786077.8801398857
+        },
+        {
+          "elapsed_ms": 1.111363,
+          "ops_per_sec": 1799592.0324862353
+        },
+        {
+          "elapsed_ms": 1.115474,
+          "ops_per_sec": 1792959.7641899318
+        },
+        {
+          "elapsed_ms": 1.110768,
+          "ops_per_sec": 1800556.011696412
+        },
+        {
+          "elapsed_ms": 1.109369,
+          "ops_per_sec": 1802826.6519075257
+        },
+        {
+          "elapsed_ms": 1.11274,
+          "ops_per_sec": 1797365.0628179088
+        },
+        {
+          "elapsed_ms": 1.108428,
+          "ops_per_sec": 1804357.1616740106
+        }
+      ],
+      "warmup_iterations": 3
+    },
+    {
+      "max_ms": 4.676388,
+      "max_ops_per_sec": 980755.8538252052,
+      "mean_ms": 4.378704600000001,
+      "mean_ops_per_sec": 914168.622373563,
+      "measure_iterations": 15,
+      "median_ms": 4.382051,
+      "median_ops_per_sec": 912814.5701636061,
+      "min_ms": 4.078487,
+      "min_ops_per_sec": 855361.0179480402,
+      "name": "router.registration/static_and_param_same_prefix",
+      "operations": 4000,
+      "samples": [
+        {
+          "elapsed_ms": 4.391177,
+          "ops_per_sec": 910917.5057165767
+        },
+        {
+          "elapsed_ms": 4.363868,
+          "ops_per_sec": 916618.0095273276
+        },
+        {
+          "elapsed_ms": 4.466232,
+          "ops_per_sec": 895609.5428988015
+        },
+        {
+          "elapsed_ms": 4.452944,
+          "ops_per_sec": 898282.1252636459
+        },
+        {
+          "elapsed_ms": 4.384599,
+          "ops_per_sec": 912284.1108160632
+        },
+        {
+          "elapsed_ms": 4.354327,
+          "ops_per_sec": 918626.4605299511
+        },
+        {
+          "elapsed_ms": 4.349485,
+          "ops_per_sec": 919649.1078828874
+        },
+        {
+          "elapsed_ms": 4.38378,
+          "ops_per_sec": 912454.54835781
+        },
+        {
+          "elapsed_ms": 4.676388,
+          "ops_per_sec": 855361.0179480402
+        },
+        {
+          "elapsed_ms": 4.078487,
+          "ops_per_sec": 980755.8538252052
+        },
+        {
+          "elapsed_ms": 4.382051,
+          "ops_per_sec": 912814.5701636061
+        },
+        {
+          "elapsed_ms": 4.359574,
+          "ops_per_sec": 917520.8403389872
+        },
+        {
+          "elapsed_ms": 4.397025,
+          "ops_per_sec": 909705.9943939368
+        },
+        {
+          "elapsed_ms": 4.366676,
+          "ops_per_sec": 916028.5764274702
+        },
+        {
+          "elapsed_ms": 4.273956,
+          "ops_per_sec": 935901.0715131367
+        }
+      ],
+      "warmup_iterations": 3
+    },
+    {
+      "max_ms": 2.823948,
+      "max_ops_per_sec": 899497.6845130605,
+      "mean_ms": 2.7904774,
+      "mean_ops_per_sec": 895917.2625677879,
+      "measure_iterations": 15,
+      "median_ms": 2.787892,
+      "median_ops_per_sec": 896734.8806912176,
+      "min_ms": 2.779329,
+      "min_ops_per_sec": 885285.4231026917,
+      "name": "router.registration/mixed_route_tree",
+      "operations": 2500,
+      "samples": [
+        {
+          "elapsed_ms": 2.791495,
+          "ops_per_sec": 895577.4593900401
+        },
+        {
+          "elapsed_ms": 2.787892,
+          "ops_per_sec": 896734.8806912176
+        },
+        {
+          "elapsed_ms": 2.786944,
+          "ops_per_sec": 897039.9118173885
+        },
+        {
+          "elapsed_ms": 2.794069,
+          "ops_per_sec": 894752.4202158215
+        },
+        {
+          "elapsed_ms": 2.785818,
+          "ops_per_sec": 897402.4864510173
+        },
+        {
+          "elapsed_ms": 2.791267,
+          "ops_per_sec": 895650.6131444968
+        },
+        {
+          "elapsed_ms": 2.823948,
+          "ops_per_sec": 885285.4231026917
+        },
+        {
+          "elapsed_ms": 2.78197,
+          "ops_per_sec": 898643.7668271046
+        },
+        {
+          "elapsed_ms": 2.787883,
+          "ops_per_sec": 896737.7755809695
+        },
+        {
+          "elapsed_ms": 2.791125,
+          "ops_per_sec": 895696.1798557929
+        },
+        {
+          "elapsed_ms": 2.804292,
+          "ops_per_sec": 891490.6150999968
+        },
+        {
+          "elapsed_ms": 2.782136,
+          "ops_per_sec": 898590.1480013918
+        },
+        {
+          "elapsed_ms": 2.787974,
+          "ops_per_sec": 896708.5058899401
+        },
+        {
+          "elapsed_ms": 2.781019,
+          "ops_per_sec": 898951.0679358896
+        },
+        {
+          "elapsed_ms": 2.779329,
+          "ops_per_sec": 899497.6845130605
+        }
+      ],
+      "warmup_iterations": 3
+    },
+    {
+      "max_ms": 297.332402,
+      "max_ops_per_sec": 214356.54687551112,
+      "mean_ms": 240.86359979999997,
+      "mean_ops_per_sec": 208308.66545496398,
+      "measure_iterations": 15,
+      "median_ms": 235.623584,
+      "median_ops_per_sec": 212202.86675547724,
+      "min_ms": 233.25623,
+      "min_ops_per_sec": 168161.96170910427,
+      "name": "router.registration/route_records_scan",
+      "operations": 50000,
+      "samples": [
+        {
+          "elapsed_ms": 233.307635,
+          "ops_per_sec": 214309.3173954637
+        },
+        {
+          "elapsed_ms": 235.459723,
+          "ops_per_sec": 212350.54285696242
+        },
+        {
+          "elapsed_ms": 297.332402,
+          "ops_per_sec": 168161.96170910427
+        },
+        {
+          "elapsed_ms": 246.933503,
+          "ops_per_sec": 202483.6621703779
+        },
+        {
+          "elapsed_ms": 236.664469,
+          "ops_per_sec": 211269.56746515253
+        },
+        {
+          "elapsed_ms": 233.25623,
+          "ops_per_sec": 214356.54687551112
+        },
+        {
+          "elapsed_ms": 238.043528,
+          "ops_per_sec": 210045.61821147264
+        },
+        {
+          "elapsed_ms": 234.44399,
+          "ops_per_sec": 213270.55558131388
+        },
+        {
+          "elapsed_ms": 233.637807,
+          "ops_per_sec": 214006.46000756204
+        },
+        {
+          "elapsed_ms": 235.623584,
+          "ops_per_sec": 212202.86675547724
+        },
+        {
+          "elapsed_ms": 242.063517,
+          "ops_per_sec": 206557.3557703865
+        },
+        {
+          "elapsed_ms": 233.429186,
+          "ops_per_sec": 214197.72247331575
+        },
+        {
+          "elapsed_ms": 239.411815,
+          "ops_per_sec": 208845.1649723302
+        },
+        {
+          "elapsed_ms": 234.117514,
+          "ops_per_sec": 213567.9605755595
+        },
+        {
+          "elapsed_ms": 239.229094,
+          "ops_per_sec": 209004.67900446925
+        }
+      ],
+      "warmup_iterations": 3
+    }
+  ],
+  "runner": "official",
+  "suite": "vix.core.router.registration",
+  "timestamp_unix": "1781594182",
+  "version": "v2.6.3"
+}
