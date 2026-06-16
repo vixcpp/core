@@ -430,6 +430,30 @@ namespace vix::server
       return;
     }
 
+    /*
+     * The metrics thread is created and joined under the same join_mutex_ as
+     * join_threads(). This serializes creation against shutdown so that
+     * stop_blocking()/join_threads() can never observe a partially constructed
+     * metrics_thread_, and guarantees that a joinable std::thread is never
+     * destroyed without being joined or detached.
+     *
+     * If a stop has already been requested by the time we acquire the lock,
+     * we must NOT create the thread: join_threads() may already have run (and
+     * cleared/joined everything), so a thread created afterwards would leak
+     * and trigger std::terminate at destruction.
+     */
+    std::lock_guard<std::mutex> lock(join_mutex_);
+
+    if (stop_requested_.load(std::memory_order_acquire))
+    {
+      return;
+    }
+
+    if (threads_joined_.load(std::memory_order_acquire))
+    {
+      return;
+    }
+
     if (metrics_thread_.joinable())
     {
       return;
@@ -495,7 +519,21 @@ namespace vix::server
     }
 
     const std::thread::id current_id = std::this_thread::get_id();
-    bool deferred_completion = false;
+
+    /*
+     * deferred_shutdown is true only when we self-detach a thread we are
+     * currently running on. In that case we must NOT call io_context_->shutdown()
+     * here, because tearing down the io_context from within one of its own
+     * threads is unsafe; the deferred shutdown is left to a later/outer caller.
+     *
+     * It must NOT, however, prevent threads_joined_ from being set. The
+     * idempotence flag has to be raised unconditionally once we have joined or
+     * detached every thread and cleared the containers, otherwise a subsequent
+     * call (e.g. from the destructor) would re-enter and operate on an already
+     * cleared io_threads_ vector / detached threads, leaving a joinable
+     * metrics_thread_ behind and ultimately calling std::terminate.
+     */
+    bool deferred_shutdown = false;
 
     if (metrics_thread_.joinable())
     {
@@ -504,7 +542,7 @@ namespace vix::server
         log().log(Logger::Level::Warn,
                   "[http] join_threads: metrics self thread detached");
         metrics_thread_.detach();
-        deferred_completion = true;
+        deferred_shutdown = true;
       }
       else
       {
@@ -568,7 +606,7 @@ namespace vix::server
         log().log(Logger::Level::Warn,
                   "[http] join_threads: detaching current io thread {}",
                   i);
-        deferred_completion = true;
+        deferred_shutdown = true;
         io_threads_[i].detach();
         continue;
       }
@@ -586,15 +624,21 @@ namespace vix::server
     {
     }
 
-    if (!deferred_completion && io_context_)
+    /*
+     * Only the io_context shutdown is gated on deferred_shutdown: tearing it
+     * down from within one of its own threads is unsafe.
+     */
+    if (!deferred_shutdown && io_context_)
     {
       io_context_->shutdown();
     }
 
-    if (!deferred_completion)
-    {
-      threads_joined_.store(true, std::memory_order_release);
-    }
+    /*
+     * The idempotence flag is raised unconditionally. Every owned thread has
+     * now been joined or detached and the containers are cleared, so re-entry
+     * must be prevented in all cases, including the self-detach path.
+     */
+    threads_joined_.store(true, std::memory_order_release);
   }
 
   void HTTPServer::stop_blocking()
