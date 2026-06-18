@@ -22,6 +22,11 @@ namespace
 {
   struct UserId
   {
+    explicit UserId(int v)
+        : value(v)
+    {
+    }
+
     int value{};
   };
 
