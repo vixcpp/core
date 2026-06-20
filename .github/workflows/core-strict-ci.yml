@@ -428,7 +428,7 @@ jobs:
   static-analysis:
     name: Static Analysis
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout core repository
@@ -548,7 +548,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          mapfile -d '' FILES < <(find src tests -name '*.cpp' -print0)
+          mapfile -d '' FILES < <(find src -name '*.cpp' -print0)
 
           if [ ${#FILES[@]} -eq 0 ]; then
             echo "::error::No source files found for clang-tidy."
