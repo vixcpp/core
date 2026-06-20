@@ -19,6 +19,10 @@ if (@VIX_CORE_PACKAGE_WITH_TEMPLATE@)
   find_dependency(template CONFIG REQUIRED)
 endif()
 
+if (@VIX_CORE_PACKAGE_WITH_UI@)
+  find_dependency(ui CONFIG REQUIRED)
+endif()
+
 include("${CMAKE_CURRENT_LIST_DIR}/vix_coreTargets.cmake")
 
 check_required_components(vix_core)

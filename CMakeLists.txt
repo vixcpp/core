@@ -71,11 +71,15 @@ option(VIX_CORE_FETCH_ENV    "Auto-resolve vix::env if missing" ON)
 option(VIX_CORE_FETCH_IO     "Auto-resolve vix::io if missing" ON)
 option(VIX_BENCH_MODE        "Enable ultra-minimal /bench route for benchmarking" OFF)
 option(VIX_CORE_FETCH_TEMPLATE "Auto-resolve vix::template if missing" ON)
+option(VIX_CORE_FETCH_UI       "Auto-resolve vix::ui if missing" ON)
 option(VIX_CORE_ENABLE_PCH "Enable private precompiled headers for vix::core" ON)
 option(VIX_CORE_FETCH_JSON  "Auto-resolve vix::json if missing" ON)
 
 set(VIX_CORE_WITH_TEMPLATE "AUTO" CACHE STRING "Link template backend (AUTO|ON|OFF)")
 set_property(CACHE VIX_CORE_WITH_TEMPLATE PROPERTY STRINGS AUTO ON OFF)
+
+set(VIX_CORE_WITH_UI "AUTO" CACHE STRING "Link UI backend (AUTO|ON|OFF)")
+set_property(CACHE VIX_CORE_WITH_UI PROPERTY STRINGS AUTO ON OFF)
 
 # Sources discovery
 file(GLOB_RECURSE CORE_SOURCES CONFIGURE_DEPENDS
@@ -292,6 +296,47 @@ function(vix_core_try_link_template onto link_scope)
   endif()
 endfunction()
 
+function(vix_core_try_link_ui onto link_scope)
+  if (VIX_CORE_WITH_UI STREQUAL "OFF")
+    message(STATUS "[core] UI disabled (OFF)")
+    target_compile_definitions(${onto} ${link_scope} VIX_CORE_NO_UI=1)
+    set(VIX_CORE_PACKAGE_WITH_UI OFF PARENT_SCOPE)
+    return()
+  endif()
+
+  set(_ui_candidates
+    vix::ui
+    vix_ui
+    ui
+  )
+
+  set(_ui_found "")
+  foreach(t IN LISTS _ui_candidates)
+    if (TARGET ${t})
+      set(_ui_found ${t})
+      break()
+    endif()
+  endforeach()
+
+  if (_ui_found)
+    message(STATUS "[core] UI backend: ${_ui_found}")
+    target_link_libraries(${onto} ${link_scope} ${_ui_found})
+    target_compile_definitions(${onto} ${link_scope} VIX_CORE_HAS_UI=1)
+    set(VIX_CORE_PACKAGE_WITH_UI ON PARENT_SCOPE)
+    set(VIX_UI_TARGET ${_ui_found} PARENT_SCOPE)
+  else()
+    if (VIX_CORE_WITH_UI STREQUAL "ON")
+      message(FATAL_ERROR
+        "UI required but not found (expected: vix::ui, vix_ui or ui)."
+      )
+    else()
+      message(STATUS "[core] No UI backend detected; building without UI.")
+      target_compile_definitions(${onto} ${link_scope} VIX_CORE_NO_UI=1)
+      set(VIX_CORE_PACKAGE_WITH_UI OFF PARENT_SCOPE)
+    endif()
+  endif()
+endfunction()
+
 # --------------------------------------------------------------------
 # template dependency
 # --------------------------------------------------------------------
@@ -314,10 +359,33 @@ elseif (TARGET template)
   set(VIX_TEMPLATE_TARGET template)
 endif()
 
+# --------------------------------------------------------------------
+# ui dependency
+# --------------------------------------------------------------------
+if (NOT TARGET vix::ui AND NOT TARGET vix_ui AND NOT TARGET ui)
+  if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ui/CMakeLists.txt")
+    message(STATUS "[core] Adding ui from sibling: ../ui")
+    add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../ui" "ui")
+  elseif (VIX_CORE_FETCH_UI)
+    find_package(ui CONFIG QUIET)
+    find_package(vix_ui CONFIG QUIET)
+  endif()
+endif()
+
+set(VIX_UI_TARGET "")
+if (TARGET vix::ui)
+  set(VIX_UI_TARGET vix::ui)
+elseif (TARGET vix_ui)
+  set(VIX_UI_TARGET vix_ui)
+elseif (TARGET ui)
+  set(VIX_UI_TARGET ui)
+endif()
+
 # Defaults for standalone package config generation
 set(VIX_CORE_PACKAGE_WITH_OPENSSL OFF)
 set(VIX_CORE_PACKAGE_WITH_JSON OFF)
 set(VIX_CORE_PACKAGE_WITH_TEMPLATE OFF)
+set(VIX_CORE_PACKAGE_WITH_UI OFF)
 
 # ============================== STATIC ===============================
 if (CORE_SOURCES)
@@ -398,6 +466,7 @@ if (CORE_SOURCES)
 
   vix_core_try_link_json(vix_core PUBLIC)
   vix_core_try_link_template(vix_core PUBLIC)
+  vix_core_try_link_ui(vix_core PUBLIC)
 
   get_target_property(_vix_core_links vix_core LINK_LIBRARIES)
   get_target_property(_vix_core_iface_links vix_core INTERFACE_LINK_LIBRARIES)
@@ -468,6 +537,7 @@ else()
 
   vix_core_try_link_json(vix_core INTERFACE)
   vix_core_try_link_template(vix_core INTERFACE)
+  vix_core_try_link_ui(vix_core INTERFACE)
 
   target_compile_definitions(vix_core INTERFACE
     VIX_CORE_WITH_MYSQL=0
@@ -557,6 +627,9 @@ message(STATUS "MySQL linkage:    ${VIX_CORE_WITH_MYSQL}")
 message(STATUS "Env target:       ${VIX_ENV_TARGET}")
 message(STATUS "IO target:        ${VIX_IO_TARGET}")
 message(STATUS "JSON policy:      ${VIX_CORE_WITH_JSON}")
+message(STATUS "Template policy:  ${VIX_CORE_WITH_TEMPLATE}")
+message(STATUS "UI policy:        ${VIX_CORE_WITH_UI}")
+message(STATUS "UI target:        ${VIX_UI_TARGET}")
 message(STATUS "Utils target:     ${VIX_UTILS_TARGET}")
 message(STATUS "Async target:     ${VIX_ASYNC_TARGET}")
 message(STATUS "Include dir:      ${CMAKE_CURRENT_SOURCE_DIR}/include (for <vix/...>)")

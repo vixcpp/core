@@ -14,12 +14,19 @@
 #include <cassert>
 #include <filesystem>
 #include <fstream>
+#include <memory>
+#include <stdexcept>
 #include <string>
 
 #include <vix/http/ResponseWrapper.hpp>
 #include <vix/http/Status.hpp>
 #include <vix/json/Simple.hpp>
 #include <vix/json/json.hpp>
+#include <vix/template/Engine.hpp>
+#include <vix/template/StringLoader.hpp>
+#include <vix/ui/core/View.hpp>
+#include <vix/ui/html/HtmlResponse.hpp>
+#include <vix/view/TemplateView.hpp>
 
 namespace
 {
@@ -41,6 +48,19 @@ namespace
     auto dir = std::filesystem::temp_directory_path() / "vix_response_wrapper_test";
     std::filesystem::create_directories(dir);
     return dir;
+  }
+
+  static std::shared_ptr<vix::view::TemplateView> make_template_view()
+  {
+    auto loader = std::make_shared<vix::template_::StringLoader>();
+
+    loader->set(
+        "ui/home.html",
+        "<h1>{{ page_title }}</h1><p>Hello {{ name }}</p>");
+
+    auto engine = std::make_shared<vix::template_::Engine>(loader);
+
+    return std::make_shared<vix::view::TemplateView>(engine);
   }
 
   static void write_file(const std::filesystem::path &path, const std::string &body)
@@ -135,6 +155,96 @@ namespace
     assert(res.status() == vix::http::OK);
     assert(res.body() == "hello");
     assert(res.header("Content-Type") == "text/custom");
+  }
+
+  static void test_ui_html_response()
+  {
+    Response res;
+    ResponseWrapper out{res};
+
+    vix::ui::HtmlResponse html =
+        vix::ui::HtmlResponse::html("<h1>Hello UI</h1>", vix::http::CREATED);
+
+    out.ui(html);
+
+    assert(res.status() == vix::http::CREATED);
+    assert(res.body() == "<h1>Hello UI</h1>");
+    assert(res.header("Content-Type") == "text/html; charset=utf-8");
+    assert(res.header("X-Content-Type-Options") == "nosniff");
+  }
+
+  static void test_ui_html_response_no_content_clears_body()
+  {
+    Response res;
+    ResponseWrapper out{res};
+
+    vix::ui::HtmlResponse html =
+        vix::ui::HtmlResponse::html("<h1>ignored</h1>", vix::http::NO_CONTENT);
+
+    out.ui(html);
+
+    assert(res.status() == vix::http::NO_CONTENT);
+    assert(res.body().empty());
+  }
+
+  static void test_ui_view_response()
+  {
+    auto template_view = make_template_view();
+
+    Response res;
+    ResponseWrapper out{res, template_view.get()};
+
+    vix::ui::View view("ui/home.html");
+    view.set_title("Home");
+    view.set("name", "Gaspard");
+
+    out.ui(view);
+
+    assert(res.status() == vix::http::OK);
+    assert(res.header("Content-Type") == "text/html; charset=utf-8");
+    assert(res.header("X-Content-Type-Options") == "nosniff");
+    assert(res.body() == "<h1>Home</h1><p>Hello Gaspard</p>");
+  }
+
+  static void test_ui_view_preserves_existing_status()
+  {
+    auto template_view = make_template_view();
+
+    Response res;
+    ResponseWrapper out{res, template_view.get()};
+
+    vix::ui::View view("ui/home.html");
+    view.set_title("Missing");
+    view.set("name", "Gaspard");
+
+    out.status(vix::http::NOT_FOUND).ui(view);
+
+    assert(res.status() == vix::http::NOT_FOUND);
+    assert(res.header("Content-Type") == "text/html; charset=utf-8");
+    assert(res.body() == "<h1>Missing</h1><p>Hello Gaspard</p>");
+  }
+
+  static void test_ui_view_requires_template_view()
+  {
+    Response res;
+    ResponseWrapper out{res};
+
+    vix::ui::View view("ui/home.html");
+    view.set_title("Home");
+    view.set("name", "Gaspard");
+
+    bool thrown = false;
+
+    try
+    {
+      out.ui(view);
+    }
+    catch (const std::runtime_error &)
+    {
+      thrown = true;
+    }
+
+    assert(thrown);
   }
 
   static void test_send_string_variants()
@@ -765,6 +875,11 @@ int main()
   test_header_set_append_and_type();
   test_text_response_sets_plain_text_defaults();
   test_text_response_preserves_existing_content_type();
+  test_ui_html_response();
+  test_ui_html_response_no_content_clears_body();
+  test_ui_view_response();
+  test_ui_view_preserves_existing_status();
+  test_ui_view_requires_template_view();
   test_send_string_variants();
   test_send_without_payload_adds_default_status_body();
   test_send_without_payload_keeps_existing_body();

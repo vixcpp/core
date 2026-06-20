@@ -33,6 +33,8 @@
 #include <nlohmann/json.hpp>
 #include <vix/template/Context.hpp>
 #include <vix/view/TemplateView.hpp>
+#include <vix/ui/core/View.hpp>
+#include <vix/ui/html/HtmlResponse.hpp>
 
 namespace vix::http
 {
@@ -445,6 +447,49 @@ namespace vix::http
 
       res = std::move(rendered);
       return *this;
+    }
+
+    /** @brief Send a Vix UI HTML response. */
+    ResponseWrapper &ui(const vix::ui::HtmlResponse &response)
+    {
+      status(response.status_code());
+
+      const int s = res.status();
+      if (s == NO_CONTENT || s == NOT_MODIFIED)
+      {
+        res.set_body("");
+        return *this;
+      }
+
+      res.set_header("Content-Type", response.header_content_type());
+      res.set_header("X-Content-Type-Options", "nosniff");
+      res.set_body(response.body());
+
+      return *this;
+    }
+
+    /** @brief Render and send a Vix UI view using the configured template view. */
+    ResponseWrapper &ui(const vix::ui::View &view)
+    {
+      ensure_status();
+
+      const int s = res.status();
+      if (s == NO_CONTENT || s == NOT_MODIFIED)
+      {
+        res.set_body("");
+        return *this;
+      }
+
+      if (!template_view_ || !template_view_->engine())
+      {
+        throw std::runtime_error(
+            "ResponseWrapper::ui() called but templates are not configured");
+      }
+
+      const vix::ui::ViewResult result =
+          view.render(*template_view_->engine());
+
+      return ui(vix::ui::HtmlResponse::from_view_result(result, s));
     }
 
     /** @brief Send JSON using nlohmann::json with an auto Content-Type if missing. */
