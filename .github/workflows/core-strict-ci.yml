@@ -72,16 +72,46 @@ env:
 
 jobs:
   sanitized-tests:
-    name: Sanitized Tests (${{ matrix.compiler }}, tls=${{ matrix.openssl }}, template=${{ matrix.template_mode }})
+    name: Sanitized Tests (${{ matrix.compiler }}, tls=${{ matrix.openssl }}, template=${{ matrix.template_mode }}, ui=${{ matrix.ui_mode }})
     runs-on: ubuntu-latest
     timeout-minutes: 35
 
     strategy:
       fail-fast: false
       matrix:
-        compiler: ["clang", "gcc"]
-        openssl: ["ON", "OFF"]
-        template_mode: ["AUTO", "OFF"]
+        include:
+          - compiler: clang
+            openssl: "ON"
+            template_mode: "AUTO"
+            ui_mode: "AUTO"
+          - compiler: clang
+            openssl: "OFF"
+            template_mode: "AUTO"
+            ui_mode: "AUTO"
+          - compiler: clang
+            openssl: "ON"
+            template_mode: "OFF"
+            ui_mode: "OFF"
+          - compiler: clang
+            openssl: "OFF"
+            template_mode: "OFF"
+            ui_mode: "OFF"
+          - compiler: gcc
+            openssl: "ON"
+            template_mode: "AUTO"
+            ui_mode: "AUTO"
+          - compiler: gcc
+            openssl: "OFF"
+            template_mode: "AUTO"
+            ui_mode: "AUTO"
+          - compiler: gcc
+            openssl: "ON"
+            template_mode: "OFF"
+            ui_mode: "OFF"
+          - compiler: gcc
+            openssl: "OFF"
+            template_mode: "OFF"
+            ui_mode: "OFF"
 
     env:
       ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:strict_string_checks=1:check_initialization_order=1
@@ -101,19 +131,35 @@ jobs:
           test -f /usr/include/asio.hpp
 
       - name: Fetch sibling dependencies
+        shell: bash
         run: |
           set -euxo pipefail
 
-          rm -rf ../error ../path ../env ../utils ../async ../io ../json ../template
+          rm -rf ../error ../path ../env ../utils ../async ../io ../json ../template ../ui
 
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/error.git ../error
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/path.git ../path
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/env.git ../env
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" --recurse-submodules https://github.com/vixcpp/async.git ../async
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/io.git ../io
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/template.git ../template || true
+          clone_vix_dep() {
+            local repo="$1"
+            local dest="$2"
+            shift 2
+
+            local url="https://github.com/vixcpp/${repo}.git"
+
+            if git ls-remote --exit-code --heads "$url" "${VIX_GIT_BRANCH}" >/dev/null 2>&1; then
+              git clone --depth 1 --branch "${VIX_GIT_BRANCH}" "$@" "$url" "$dest"
+            else
+              git clone --depth 1 --branch main "$@" "$url" "$dest"
+            fi
+          }
+
+          clone_vix_dep error ../error
+          clone_vix_dep path ../path
+          clone_vix_dep env ../env
+          clone_vix_dep utils ../utils
+          clone_vix_dep async ../async --recurse-submodules
+          clone_vix_dep io ../io
+          clone_vix_dep json ../json
+          clone_vix_dep template ../template
+          clone_vix_dep ui ../ui
 
           git -C ../async submodule update --init --recursive --depth 1 || true
 
@@ -137,6 +183,10 @@ jobs:
           test -f ../io/CMakeLists.txt
           test -f ../json/CMakeLists.txt
           test -f ../json/include/vix/json/Simple.hpp
+          test -f ../template/CMakeLists.txt
+          test -d ../template/include
+          test -f ../ui/CMakeLists.txt
+          test -d ../ui/include
 
       - name: Export dependency include paths
         run: |
@@ -149,10 +199,8 @@ jobs:
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../async/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../io/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../json/include"
-
-          if [ -d "$GITHUB_WORKSPACE/../template/include" ]; then
-            EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../template/include"
-          fi
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../template/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../ui/include"
 
           echo "CPATH=$EXTRA_PATHS${CPATH:+:$CPATH}" >> "$GITHUB_ENV"
           echo "CPLUS_INCLUDE_PATH=$EXTRA_PATHS${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}" >> "$GITHUB_ENV"
@@ -181,8 +229,14 @@ jobs:
             -DVIX_ENABLE_SANITIZERS=ON \
             -DVIX_CORE_WITH_OPENSSL=${{ matrix.openssl }} \
             -DVIX_CORE_WITH_TEMPLATE=${{ matrix.template_mode }} \
+            -DVIX_CORE_WITH_UI=${{ matrix.ui_mode }} \
+            -DVIX_CORE_FETCH_UI=ON \
             -DVIX_CORE_WITH_MYSQL=OFF \
-            -DVIX_BENCH_MODE=OFF
+            -DVIX_BENCH_MODE=OFF \
+            -DUI_BUILD_TESTS=OFF \
+            -DUI_BUILD_EXAMPLES=OFF \
+            -DUI_BUILD_BENCHMARKS=OFF \
+            -DUI_INSTALL=OFF
 
       - name: Build sanitized targets
         run: |
@@ -213,19 +267,35 @@ jobs:
           test -f /usr/include/asio.hpp
 
       - name: Fetch sibling dependencies
+        shell: bash
         run: |
           set -euxo pipefail
 
-          rm -rf ../error ../path ../env ../utils ../async ../io ../json ../template
+          rm -rf ../error ../path ../env ../utils ../async ../io ../json ../template ../ui
 
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/error.git ../error
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/path.git ../path
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/env.git ../env
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" --recurse-submodules https://github.com/vixcpp/async.git ../async
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/io.git ../io
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/template.git ../template || true
+          clone_vix_dep() {
+            local repo="$1"
+            local dest="$2"
+            shift 2
+
+            local url="https://github.com/vixcpp/${repo}.git"
+
+            if git ls-remote --exit-code --heads "$url" "${VIX_GIT_BRANCH}" >/dev/null 2>&1; then
+              git clone --depth 1 --branch "${VIX_GIT_BRANCH}" "$@" "$url" "$dest"
+            else
+              git clone --depth 1 --branch main "$@" "$url" "$dest"
+            fi
+          }
+
+          clone_vix_dep error ../error
+          clone_vix_dep path ../path
+          clone_vix_dep env ../env
+          clone_vix_dep utils ../utils
+          clone_vix_dep async ../async --recurse-submodules
+          clone_vix_dep io ../io
+          clone_vix_dep json ../json
+          clone_vix_dep template ../template
+          clone_vix_dep ui ../ui
 
           git -C ../async submodule update --init --recursive --depth 1 || true
 
@@ -249,6 +319,10 @@ jobs:
           test -f ../io/CMakeLists.txt
           test -f ../json/CMakeLists.txt
           test -f ../json/include/vix/json/Simple.hpp
+          test -f ../template/CMakeLists.txt
+          test -d ../template/include
+          test -f ../ui/CMakeLists.txt
+          test -d ../ui/include
 
       - name: Export dependency include paths
         run: |
@@ -261,10 +335,8 @@ jobs:
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../async/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../io/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../json/include"
-
-          if [ -d "$GITHUB_WORKSPACE/../template/include" ]; then
-            EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../template/include"
-          fi
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../template/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../ui/include"
 
           echo "CPATH=$EXTRA_PATHS${CPATH:+:$CPATH}" >> "$GITHUB_ENV"
           echo "CPLUS_INCLUDE_PATH=$EXTRA_PATHS${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}" >> "$GITHUB_ENV"
@@ -281,8 +353,14 @@ jobs:
             -DVIX_ENABLE_SANITIZERS=OFF \
             -DVIX_CORE_WITH_OPENSSL=OFF \
             -DVIX_CORE_WITH_TEMPLATE=OFF \
+            -DVIX_CORE_WITH_UI=OFF \
+            -DVIX_CORE_FETCH_UI=ON \
             -DVIX_CORE_WITH_MYSQL=OFF \
-            -DVIX_BENCH_MODE=OFF
+            -DVIX_BENCH_MODE=OFF \
+            -DUI_BUILD_TESTS=OFF \
+            -DUI_BUILD_EXAMPLES=OFF \
+            -DUI_BUILD_BENCHMARKS=OFF \
+            -DUI_INSTALL=OFF
 
       - name: Build runtime artifacts
         run: |
@@ -366,19 +444,35 @@ jobs:
           test -f /usr/include/asio.hpp
 
       - name: Fetch sibling dependencies
+        shell: bash
         run: |
           set -euxo pipefail
 
-          rm -rf ../error ../path ../env ../utils ../async ../io ../json ../template
+          rm -rf ../error ../path ../env ../utils ../async ../io ../json ../template ../ui
 
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/error.git ../error
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/path.git ../path
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/env.git ../env
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" --recurse-submodules https://github.com/vixcpp/async.git ../async
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/io.git ../io
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/template.git ../template || true
+          clone_vix_dep() {
+            local repo="$1"
+            local dest="$2"
+            shift 2
+
+            local url="https://github.com/vixcpp/${repo}.git"
+
+            if git ls-remote --exit-code --heads "$url" "${VIX_GIT_BRANCH}" >/dev/null 2>&1; then
+              git clone --depth 1 --branch "${VIX_GIT_BRANCH}" "$@" "$url" "$dest"
+            else
+              git clone --depth 1 --branch main "$@" "$url" "$dest"
+            fi
+          }
+
+          clone_vix_dep error ../error
+          clone_vix_dep path ../path
+          clone_vix_dep env ../env
+          clone_vix_dep utils ../utils
+          clone_vix_dep async ../async --recurse-submodules
+          clone_vix_dep io ../io
+          clone_vix_dep json ../json
+          clone_vix_dep template ../template
+          clone_vix_dep ui ../ui
 
           git -C ../async submodule update --init --recursive --depth 1 || true
 
@@ -402,6 +496,10 @@ jobs:
           test -f ../io/CMakeLists.txt
           test -f ../json/CMakeLists.txt
           test -f ../json/include/vix/json/Simple.hpp
+          test -f ../template/CMakeLists.txt
+          test -d ../template/include
+          test -f ../ui/CMakeLists.txt
+          test -d ../ui/include
 
       - name: Export dependency include paths
         run: |
@@ -414,10 +512,8 @@ jobs:
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../async/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../io/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../json/include"
-
-          if [ -d "$GITHUB_WORKSPACE/../template/include" ]; then
-            EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../template/include"
-          fi
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../template/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../ui/include"
 
           echo "CPATH=$EXTRA_PATHS${CPATH:+:$CPATH}" >> "$GITHUB_ENV"
           echo "CPLUS_INCLUDE_PATH=$EXTRA_PATHS${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}" >> "$GITHUB_ENV"
@@ -434,8 +530,14 @@ jobs:
             -DVIX_ENABLE_SANITIZERS=OFF \
             -DVIX_CORE_WITH_OPENSSL=ON \
             -DVIX_CORE_WITH_TEMPLATE=AUTO \
+            -DVIX_CORE_WITH_UI=AUTO \
+            -DVIX_CORE_FETCH_UI=ON \
             -DVIX_CORE_WITH_MYSQL=OFF \
-            -DVIX_BENCH_MODE=OFF
+            -DVIX_BENCH_MODE=OFF \
+            -DUI_BUILD_TESTS=OFF \
+            -DUI_BUILD_EXAMPLES=OFF \
+            -DUI_BUILD_BENCHMARKS=OFF \
+            -DUI_INSTALL=OFF
 
       - name: Build analysis target
         run: |
@@ -523,19 +625,35 @@ jobs:
           test -f /usr/include/asio.hpp
 
       - name: Fetch sibling dependencies
+        shell: bash
         run: |
           set -euxo pipefail
 
-          rm -rf ../error ../path ../env ../utils ../async ../io ../json ../template
+          rm -rf ../error ../path ../env ../utils ../async ../io ../json ../template ../ui
 
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/error.git ../error
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/path.git ../path
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/env.git ../env
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" --recurse-submodules https://github.com/vixcpp/async.git ../async
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/io.git ../io
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/template.git ../template || true
+          clone_vix_dep() {
+            local repo="$1"
+            local dest="$2"
+            shift 2
+
+            local url="https://github.com/vixcpp/${repo}.git"
+
+            if git ls-remote --exit-code --heads "$url" "${VIX_GIT_BRANCH}" >/dev/null 2>&1; then
+              git clone --depth 1 --branch "${VIX_GIT_BRANCH}" "$@" "$url" "$dest"
+            else
+              git clone --depth 1 --branch main "$@" "$url" "$dest"
+            fi
+          }
+
+          clone_vix_dep error ../error
+          clone_vix_dep path ../path
+          clone_vix_dep env ../env
+          clone_vix_dep utils ../utils
+          clone_vix_dep async ../async --recurse-submodules
+          clone_vix_dep io ../io
+          clone_vix_dep json ../json
+          clone_vix_dep template ../template
+          clone_vix_dep ui ../ui
 
           git -C ../async submodule update --init --recursive --depth 1 || true
 
@@ -559,6 +677,10 @@ jobs:
           test -f ../io/CMakeLists.txt
           test -f ../json/CMakeLists.txt
           test -f ../json/include/vix/json/Simple.hpp
+          test -f ../template/CMakeLists.txt
+          test -d ../template/include
+          test -f ../ui/CMakeLists.txt
+          test -d ../ui/include
 
       - name: Export dependency include paths
         run: |
@@ -571,10 +693,8 @@ jobs:
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../async/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../io/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../json/include"
-
-          if [ -d "$GITHUB_WORKSPACE/../template/include" ]; then
-            EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../template/include"
-          fi
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../template/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../ui/include"
 
           echo "CPATH=$EXTRA_PATHS${CPATH:+:$CPATH}" >> "$GITHUB_ENV"
           echo "CPLUS_INCLUDE_PATH=$EXTRA_PATHS${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}" >> "$GITHUB_ENV"
@@ -591,8 +711,14 @@ jobs:
             -DVIX_ENABLE_SANITIZERS=OFF \
             -DVIX_CORE_WITH_OPENSSL=OFF \
             -DVIX_CORE_WITH_TEMPLATE=OFF \
+            -DVIX_CORE_WITH_UI=OFF \
+            -DVIX_CORE_FETCH_UI=ON \
             -DVIX_CORE_WITH_MYSQL=OFF \
-            -DVIX_BENCH_MODE=OFF
+            -DVIX_BENCH_MODE=OFF \
+            -DUI_BUILD_TESTS=OFF \
+            -DUI_BUILD_EXAMPLES=OFF \
+            -DUI_BUILD_BENCHMARKS=OFF \
+            -DUI_INSTALL=OFF
 
       - name: Build valgrind targets
         run: |
@@ -674,19 +800,35 @@ jobs:
           test -f /usr/include/asio.hpp
 
       - name: Fetch sibling dependencies
+        shell: bash
         run: |
           set -euxo pipefail
 
-          rm -rf ../error ../path ../env ../utils ../async ../io ../json ../template
+          rm -rf ../error ../path ../env ../utils ../async ../io ../json ../template ../ui
 
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/error.git ../error
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/path.git ../path
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/env.git ../env
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" --recurse-submodules https://github.com/vixcpp/async.git ../async
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/io.git ../io
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/template.git ../template || true
+          clone_vix_dep() {
+            local repo="$1"
+            local dest="$2"
+            shift 2
+
+            local url="https://github.com/vixcpp/${repo}.git"
+
+            if git ls-remote --exit-code --heads "$url" "${VIX_GIT_BRANCH}" >/dev/null 2>&1; then
+              git clone --depth 1 --branch "${VIX_GIT_BRANCH}" "$@" "$url" "$dest"
+            else
+              git clone --depth 1 --branch main "$@" "$url" "$dest"
+            fi
+          }
+
+          clone_vix_dep error ../error
+          clone_vix_dep path ../path
+          clone_vix_dep env ../env
+          clone_vix_dep utils ../utils
+          clone_vix_dep async ../async --recurse-submodules
+          clone_vix_dep io ../io
+          clone_vix_dep json ../json
+          clone_vix_dep template ../template
+          clone_vix_dep ui ../ui
 
           git -C ../async submodule update --init --recursive --depth 1 || true
 
@@ -710,6 +852,10 @@ jobs:
           test -f ../io/CMakeLists.txt
           test -f ../json/CMakeLists.txt
           test -f ../json/include/vix/json/Simple.hpp
+          test -f ../template/CMakeLists.txt
+          test -d ../template/include
+          test -f ../ui/CMakeLists.txt
+          test -d ../ui/include
 
       - name: Export dependency include paths
         run: |
@@ -722,10 +868,8 @@ jobs:
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../async/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../io/include"
           EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../json/include"
-
-          if [ -d "$GITHUB_WORKSPACE/../template/include" ]; then
-            EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../template/include"
-          fi
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../template/include"
+          EXTRA_PATHS="$EXTRA_PATHS:$GITHUB_WORKSPACE/../ui/include"
 
           echo "CPATH=$EXTRA_PATHS${CPATH:+:$CPATH}" >> "$GITHUB_ENV"
           echo "CPLUS_INCLUDE_PATH=$EXTRA_PATHS${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}" >> "$GITHUB_ENV"
@@ -742,8 +886,14 @@ jobs:
             -DVIX_ENABLE_SANITIZERS=OFF \
             -DVIX_CORE_WITH_OPENSSL=ON \
             -DVIX_CORE_WITH_TEMPLATE=AUTO \
+            -DVIX_CORE_WITH_UI=AUTO \
+            -DVIX_CORE_FETCH_UI=ON \
             -DVIX_CORE_WITH_MYSQL=OFF \
-            -DVIX_BENCH_MODE=OFF
+            -DVIX_BENCH_MODE=OFF \
+            -DUI_BUILD_TESTS=OFF \
+            -DUI_BUILD_EXAMPLES=OFF \
+            -DUI_BUILD_BENCHMARKS=OFF \
+            -DUI_INSTALL=OFF
 
       - name: Build release tests
         run: |
@@ -767,8 +917,14 @@ jobs:
             -DVIX_ENABLE_SANITIZERS=OFF \
             -DVIX_CORE_WITH_OPENSSL=OFF \
             -DVIX_CORE_WITH_TEMPLATE=OFF \
+            -DVIX_CORE_WITH_UI=OFF \
+            -DVIX_CORE_FETCH_UI=ON \
             -DVIX_CORE_WITH_MYSQL=OFF \
-            -DVIX_BENCH_MODE=ON
+            -DVIX_BENCH_MODE=ON \
+            -DUI_BUILD_TESTS=OFF \
+            -DUI_BUILD_EXAMPLES=OFF \
+            -DUI_BUILD_BENCHMARKS=OFF \
+            -DUI_INSTALL=OFF
 
       - name: Build benchmarks
         run: |
@@ -807,19 +963,35 @@ jobs:
           test -f /usr/include/asio.hpp
 
       - name: Fetch sibling dependencies
+        shell: bash
         run: |
           set -euxo pipefail
 
-          rm -rf ../error ../path ../env ../utils ../async ../io ../json ../template
+          rm -rf ../error ../path ../env ../utils ../async ../io ../json ../template ../ui
 
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/error.git ../error
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/path.git ../path
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/env.git ../env
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" --recurse-submodules https://github.com/vixcpp/async.git ../async
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/io.git ../io
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json
-          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/template.git ../template || true
+          clone_vix_dep() {
+            local repo="$1"
+            local dest="$2"
+            shift 2
+
+            local url="https://github.com/vixcpp/${repo}.git"
+
+            if git ls-remote --exit-code --heads "$url" "${VIX_GIT_BRANCH}" >/dev/null 2>&1; then
+              git clone --depth 1 --branch "${VIX_GIT_BRANCH}" "$@" "$url" "$dest"
+            else
+              git clone --depth 1 --branch main "$@" "$url" "$dest"
+            fi
+          }
+
+          clone_vix_dep error ../error
+          clone_vix_dep path ../path
+          clone_vix_dep env ../env
+          clone_vix_dep utils ../utils
+          clone_vix_dep async ../async --recurse-submodules
+          clone_vix_dep io ../io
+          clone_vix_dep json ../json
+          clone_vix_dep template ../template
+          clone_vix_dep ui ../ui
 
           git -C ../async submodule update --init --recursive --depth 1 || true
 
@@ -843,6 +1015,10 @@ jobs:
           test -f ../io/CMakeLists.txt
           test -f ../json/CMakeLists.txt
           test -f ../json/include/vix/json/Simple.hpp
+          test -f ../template/CMakeLists.txt
+          test -d ../template/include
+          test -f ../ui/CMakeLists.txt
+          test -d ../ui/include
 
       - name: Configure installable build
         run: |
@@ -856,8 +1032,14 @@ jobs:
             -DVIX_ENABLE_SANITIZERS=OFF \
             -DVIX_CORE_WITH_OPENSSL=ON \
             -DVIX_CORE_WITH_TEMPLATE=AUTO \
+            -DVIX_CORE_WITH_UI=AUTO \
+            -DVIX_CORE_FETCH_UI=ON \
             -DVIX_CORE_WITH_MYSQL=OFF \
             -DVIX_BENCH_MODE=OFF \
+            -DUI_BUILD_TESTS=OFF \
+            -DUI_BUILD_EXAMPLES=OFF \
+            -DUI_BUILD_BENCHMARKS=OFF \
+            -DUI_INSTALL=ON \
             -DCMAKE_INSTALL_PREFIX="${PWD}/.ci-install"
 
       - name: Build installable package
@@ -881,6 +1063,10 @@ jobs:
           test -f .ci-install/lib/cmake/vix_core/vix_coreConfigVersion.cmake
           test -f .ci-install/lib/cmake/vix_core/vix_coreTargets.cmake
 
+          test -f .ci-install/lib/cmake/ui/uiConfig.cmake
+          test -f .ci-install/lib/cmake/ui/uiConfigVersion.cmake
+          test -f .ci-install/lib/cmake/ui/uiTargets.cmake
+
   summary:
     name: Core Strict CI Summary
     needs:
@@ -903,3 +1089,4 @@ jobs:
           echo "- Release tests"
           echo "- Benchmark build coverage"
           echo "- Package export check"
+          echo "- Optional UI backend integration"
