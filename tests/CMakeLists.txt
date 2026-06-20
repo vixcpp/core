@@ -16,6 +16,16 @@ if (NOT TARGET ${VIX_CORE_TEST_TARGET})
   message(FATAL_ERROR "[core/tests] Missing core target (expected vix::core or vix_core).")
 endif()
 
+set(VIX_CORE_TEST_UI_TARGET "")
+
+if (TARGET vix::ui)
+  set(VIX_CORE_TEST_UI_TARGET vix::ui)
+elseif (TARGET vix_ui)
+  set(VIX_CORE_TEST_UI_TARGET vix_ui)
+elseif (TARGET ui)
+  set(VIX_CORE_TEST_UI_TARGET ui)
+endif()
+
 function(vix_core_add_test test_name)
   add_executable(${test_name}
     ${ARGN}
@@ -23,6 +33,7 @@ function(vix_core_add_test test_name)
 
   target_link_libraries(${test_name} PRIVATE
     ${VIX_CORE_TEST_TARGET}
+    ${VIX_CORE_TEST_UI_TARGET}
   )
 
   if (TARGET vix::template)
@@ -68,6 +79,7 @@ add_executable(runtime_bench
 
 target_link_libraries(runtime_bench PRIVATE
   ${VIX_CORE_TEST_TARGET}
+  ${VIX_CORE_TEST_UI_TARGET}
 )
 
 if (TARGET vix::template)
