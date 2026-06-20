@@ -236,7 +236,7 @@ jobs:
             -DUI_BUILD_TESTS=OFF \
             -DUI_BUILD_EXAMPLES=OFF \
             -DUI_BUILD_BENCHMARKS=OFF \
-            -DUI_INSTALL=OFF
+            -DUI_INSTALL=ON
 
       - name: Build sanitized targets
         run: |
@@ -530,14 +530,14 @@ jobs:
             -DVIX_ENABLE_SANITIZERS=OFF \
             -DVIX_CORE_WITH_OPENSSL=ON \
             -DVIX_CORE_WITH_TEMPLATE=AUTO \
-            -DVIX_CORE_WITH_UI=AUTO \
+            -DVIX_CORE_WITH_UI=ON \
             -DVIX_CORE_FETCH_UI=ON \
             -DVIX_CORE_WITH_MYSQL=OFF \
             -DVIX_BENCH_MODE=OFF \
             -DUI_BUILD_TESTS=OFF \
             -DUI_BUILD_EXAMPLES=OFF \
             -DUI_BUILD_BENCHMARKS=OFF \
-            -DUI_INSTALL=OFF
+            -DUI_INSTALL=ON
 
       - name: Build analysis target
         run: |
@@ -893,7 +893,7 @@ jobs:
             -DUI_BUILD_TESTS=OFF \
             -DUI_BUILD_EXAMPLES=OFF \
             -DUI_BUILD_BENCHMARKS=OFF \
-            -DUI_INSTALL=OFF
+            -DUI_INSTALL=ON
 
       - name: Build release tests
         run: |
