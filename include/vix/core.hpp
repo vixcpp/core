@@ -22,6 +22,7 @@
 #include <vix/print.hpp>
 #include <vix/console.hpp>
 #include <vix/app/App.hpp>
+#include <vix/Version.hpp>
 #include <vix/server/HTTPServer.hpp>
 #include <vix/router/Router.hpp>
 #include <vix/http/IRequestHandler.hpp>

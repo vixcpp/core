@@ -12,6 +12,7 @@
 #ifndef VIX_REQUEST_HPP
 #define VIX_REQUEST_HPP
 
+#include <functional>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -27,6 +28,39 @@
 
 namespace vix::http
 {
+#ifndef VIX_HTTP_TRANSPARENT_STRING_TYPES
+#define VIX_HTTP_TRANSPARENT_STRING_TYPES
+  struct TransparentStringHash
+  {
+    using is_transparent = void;
+
+    std::size_t operator()(std::string_view value) const noexcept
+    {
+      return std::hash<std::string_view>{}(value);
+    }
+
+    std::size_t operator()(const std::string &value) const noexcept
+    {
+      return std::hash<std::string_view>{}(value);
+    }
+
+    std::size_t operator()(const char *value) const noexcept
+    {
+      return std::hash<std::string_view>{}(value ? std::string_view{value} : std::string_view{});
+    }
+  };
+
+  struct TransparentStringEqual
+  {
+    using is_transparent = void;
+
+    bool operator()(std::string_view a, std::string_view b) const noexcept
+    {
+      return a == b;
+    }
+  };
+#endif
+
   /**
    * @brief Lightweight native HTTP request object for Vix.
    *
@@ -43,7 +77,7 @@ namespace vix::http
     using QueryMap = std::unordered_map<std::string, std::string>;
 
     /** @brief Map of HTTP headers. */
-    using HeaderMap = std::unordered_map<std::string, std::string>;
+    using HeaderMap = std::unordered_map<std::string, std::string, TransparentStringHash, TransparentStringEqual>;
 
     /** @brief Shared pointer type for request-scoped state storage. */
     using StatePtr = std::shared_ptr<vix::http::RequestState>;
@@ -229,14 +263,14 @@ namespace vix::http
      */
     std::string header(std::string_view name) const
     {
-      auto it = headers_.find(std::string(name));
+      auto it = headers_.find(name);
       return it == headers_.end() ? std::string{} : it->second;
     }
 
     /** @brief Return true if a header exists. */
     bool has_header(std::string_view name) const
     {
-      return headers_.find(std::string(name)) != headers_.end();
+      return headers_.find(name) != headers_.end();
     }
 
     /** @brief Set or replace one header. */
@@ -248,7 +282,11 @@ namespace vix::http
     /** @brief Remove a header if present. */
     void remove_header(std::string_view name)
     {
-      headers_.erase(std::string(name));
+      const auto it = headers_.find(name);
+      if (it != headers_.end())
+      {
+        headers_.erase(it);
+      }
     }
 
     /** @brief Parse and return the body as JSON, computed lazily. */

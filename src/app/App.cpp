@@ -12,6 +12,7 @@
  *
  */
 #include <vix/app/App.hpp>
+#include <vix/Version.hpp>
 
 #include <vix/openapi/register_docs.hpp>
 #include <vix/router/Router.hpp>
@@ -276,7 +277,7 @@ namespace vix
 
       if (vix::utils::env_bool("VIX_DOCS", true))
       {
-        vix::openapi::register_openapi_and_docs(*router_, "Vix API", "2.6.0");
+        vix::openapi::register_openapi_and_docs(*router_, "Vix API", "2.7.0");
       }
 
       install_access_logs(*this);
@@ -555,7 +556,7 @@ namespace vix
 
     vix::utils::ServerReadyInfo info;
     info.app = "vix.cpp";
-    info.version = "v2.6.0";
+    info.version = std::string(vix::VERSION);
     info.ready_ms = ready_ms;
     info.mode = dev_mode_ ? "dev" : "run";
 

@@ -12,6 +12,7 @@
 #ifndef VIX_RESPONSE_HPP
 #define VIX_RESPONSE_HPP
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <ctime>
@@ -136,7 +137,10 @@ namespace vix::http
     /** @brief Remove a header if present. */
     void remove_header(std::string_view name)
     {
-      headers_.erase(std::string(name));
+      if (const auto it = headers_.find(std::string(name)); it != headers_.end())
+      {
+        headers_.erase(it);
+      }
     }
 
     /** @brief Remove all headers. */
@@ -245,6 +249,35 @@ namespace vix::http
       return oss.str();
     }
 
+    /** @brief Return an HTTP date cached for the current second. */
+    static const std::string &cached_http_date_now() noexcept
+    {
+      using clock = std::chrono::system_clock;
+
+      static std::string cached = http_date_now();
+      static auto last_tick = clock::now();
+      static std::atomic_flag lock = ATOMIC_FLAG_INIT;
+
+      const auto now = clock::now();
+      if (now - last_tick < std::chrono::seconds(1))
+      {
+        return cached;
+      }
+
+      while (lock.test_and_set(std::memory_order_acquire))
+      {
+      }
+
+      if (clock::now() - last_tick >= std::chrono::seconds(1))
+      {
+        cached = http_date_now();
+        last_tick = clock::now();
+      }
+
+      lock.clear(std::memory_order_release);
+      return cached;
+    }
+
     /** @brief Apply common headers (Server, Date) if absent. */
     static void common_headers(Response &res) noexcept
     {
@@ -255,7 +288,7 @@ namespace vix::http
 
       if (!res.has_header("Date"))
       {
-        res.set_header("Date", http_date_now());
+        res.set_header("Date", cached_http_date_now());
       }
     }
 

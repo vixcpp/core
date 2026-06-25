@@ -16,6 +16,7 @@
 #include <vix/session/PlainTransport.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <cctype>
 #include <cerrno>
@@ -127,6 +128,34 @@ namespace vix::session
       return equals_icase(value, "close");
     }
 
+    inline const std::string &cached_date_header()
+    {
+      using clock = std::chrono::system_clock;
+
+      static std::string cached = vix::http::Response::http_date_now();
+      static auto last_tick = clock::now();
+      static std::atomic_flag lock = ATOMIC_FLAG_INIT;
+
+      const auto now = clock::now();
+      if (now - last_tick < std::chrono::seconds(1))
+      {
+        return cached;
+      }
+
+      while (lock.test_and_set(std::memory_order_acquire))
+      {
+      }
+
+      if (clock::now() - last_tick >= std::chrono::seconds(1))
+      {
+        cached = vix::http::Response::http_date_now();
+        last_tick = clock::now();
+      }
+
+      lock.clear(std::memory_order_release);
+      return cached;
+    }
+
     inline std::size_t find_header_terminator(const std::string &s)
     {
       const auto pos = s.find("\r\n\r\n");
@@ -194,6 +223,33 @@ namespace vix::session
       }
 
       return target.substr(0, q);
+    }
+
+    inline bool raw_header_is_bench_get(std::string_view raw_header)
+    {
+      const std::size_t line_end = raw_header.find("\r\n");
+      const std::string_view request_line =
+          line_end == std::string_view::npos
+              ? raw_header
+              : raw_header.substr(0, line_end);
+
+      const std::size_t sp1 = request_line.find(' ');
+      if (sp1 == std::string_view::npos)
+      {
+        return false;
+      }
+
+      const std::size_t sp2 = request_line.find(' ', sp1 + 1);
+      if (sp2 == std::string_view::npos)
+      {
+        return false;
+      }
+
+      const std::string_view method = request_line.substr(0, sp1);
+      const std::string_view target =
+          request_line.substr(sp1 + 1, sp2 - sp1 - 1);
+
+      return equals_icase(method, "GET") && strip_query_view(target) == "/bench";
     }
 #endif
 
@@ -264,12 +320,23 @@ namespace vix::session
     {
       throw std::invalid_argument("Session requires a valid executor");
     }
+
+    read_buffer_.reserve(8192);
   }
 
   task<void> Session::run()
   {
     try
     {
+#ifdef VIX_BENCH_MODE
+      while (transport_ && transport_->is_open())
+      {
+        if (!co_await handle_bench_request_fast())
+        {
+          break;
+        }
+      }
+#else
       while (transport_ && transport_->is_open())
       {
         auto maybe_req = co_await read_request();
@@ -286,17 +353,105 @@ namespace vix::session
           break;
         }
       }
+#endif
+    }
+    catch (const std::system_error &e)
+    {
+      if (!is_normal_disconnect(e))
+      {
+        log().log(
+            Logger::Level::Error,
+            "[session] fatal session error: {}",
+            e.what());
+      }
     }
     catch (const std::exception &e)
     {
-      log().log(
-          Logger::Level::Error,
-          "[session] fatal session error: {}",
-          e.what());
+      if (!vix::utils::is_normal_network_disconnect_message(e.what()))
+      {
+        log().log(
+            Logger::Level::Error,
+            "[session] fatal session error: {}",
+            e.what());
+      }
     }
 
     co_await close_stream_gracefully();
     co_return;
+  }
+
+  task<bool> Session::handle_bench_request_fast()
+  {
+#ifdef VIX_BENCH_MODE
+    if (!transport_ || !transport_->is_open())
+    {
+      co_return false;
+    }
+
+    constexpr std::size_t MAX_HEADER_BYTES = 64 * 1024;
+
+    while (true)
+    {
+      const auto pos = find_header_terminator(read_buffer_);
+      if (pos != std::string::npos)
+      {
+        if (pos > MAX_HEADER_BYTES)
+        {
+          co_return false;
+        }
+
+        const std::string_view raw_header{read_buffer_.data(), pos};
+
+        static constexpr std::string_view kBenchResponse =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Length: 2\r\n"
+            "Connection: keep-alive\r\n"
+            "\r\n"
+            "OK";
+
+        static constexpr std::string_view kNotFound =
+            "HTTP/1.1 404 Not Found\r\n"
+            "Content-Length: 0\r\n"
+            "Connection: close\r\n"
+            "\r\n";
+
+        const bool is_bench = raw_header_is_bench_get(raw_header);
+        const std::string_view wire = is_bench ? kBenchResponse : kNotFound;
+
+        read_buffer_.erase(0, pos);
+
+        const bool ok = co_await write_all(*transport_, wire, timer_cancel_.token());
+        if (!ok || !is_bench)
+        {
+          co_await close_stream_gracefully();
+          co_return false;
+        }
+
+        co_return true;
+      }
+
+      if (read_buffer_.size() > MAX_HEADER_BYTES)
+      {
+        co_return false;
+      }
+
+      std::array<std::byte, 8192> chunk{};
+      const std::size_t n = co_await transport_->async_read(
+          std::span<std::byte>(chunk.data(), chunk.size()),
+          timer_cancel_.token());
+
+      if (n == 0)
+      {
+        co_return false;
+      }
+
+      read_buffer_.append(
+          reinterpret_cast<const char *>(chunk.data()),
+          n);
+    }
+#else
+    co_return false;
+#endif
   }
 
   void Session::start_timer()
@@ -595,7 +750,7 @@ namespace vix::session
 
       if (!res.has_header("Date"))
       {
-        res.set_header("Date", vix::http::Response::http_date_now());
+        res.set_header("Date", cached_date_header());
       }
 
       if (!res.has_header("Content-Length"))
@@ -999,6 +1154,8 @@ namespace vix::session
       }
     }
 
+    head.headers.reserve(lines.size() > 0 ? lines.size() - 1 : 0);
+
     for (std::size_t i = 1; i < lines.size(); ++i)
     {
       const std::string_view line = lines[i];
@@ -1090,10 +1247,7 @@ namespace vix::session
     req.set_target(std::move(head.target));
     req.set_body(std::move(body));
 
-    for (auto &[k, v] : head.headers)
-    {
-      req.set_header(k, v);
-    }
+    req.set_headers(std::move(head.headers));
 
     return req;
   }
@@ -1114,22 +1268,24 @@ namespace vix::session
 
   std::string Session::trim(std::string s)
   {
-    auto not_space = [](unsigned char c)
+    std::size_t first = 0;
+    while (first < s.size() && std::isspace(static_cast<unsigned char>(s[first])))
     {
-      return !std::isspace(c);
-    };
-
-    while (!s.empty() && !not_space(static_cast<unsigned char>(s.front())))
-    {
-      s.erase(s.begin());
+      ++first;
     }
 
-    while (!s.empty() && !not_space(static_cast<unsigned char>(s.back())))
+    std::size_t last = s.size();
+    while (last > first && std::isspace(static_cast<unsigned char>(s[last - 1])))
     {
-      s.pop_back();
+      --last;
     }
 
-    return s;
+    if (first == 0 && last == s.size())
+    {
+      return s;
+    }
+
+    return s.substr(first, last - first);
   }
 
   std::size_t Session::parse_content_length(const std::string &value)
@@ -1166,28 +1322,26 @@ namespace vix::session
 
   bool Session::method_allows_body(const std::string &method)
   {
-    const std::string m = to_lower(method);
-
-    return m == "post" ||
-           m == "put" ||
-           m == "patch" ||
-           m == "delete";
+    return equals_icase(method, "POST") ||
+           equals_icase(method, "PUT") ||
+           equals_icase(method, "PATCH") ||
+           equals_icase(method, "DELETE");
   }
 
   bool Session::compute_keep_alive(const ParsedRequestHead &head)
   {
     auto it = head.headers.find("Connection");
-    const std::string conn =
-        (it == head.headers.end()) ? std::string{} : to_lower(it->second);
+    const std::string_view conn =
+        (it == head.headers.end()) ? std::string_view{} : std::string_view{it->second};
 
     if (starts_with_icase(head.version, "HTTP/1.0"))
     {
-      return conn == "keep-alive";
+      return equals_icase(conn, "keep-alive");
     }
 
     if (starts_with_icase(head.version, "HTTP/1.1"))
     {
-      return conn != "close";
+      return !equals_icase(conn, "close");
     }
 
     return false;

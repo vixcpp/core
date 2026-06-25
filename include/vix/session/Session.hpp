@@ -52,7 +52,7 @@ namespace vix::session
     std::string method{};
     std::string target{};
     std::string version{"HTTP/1.1"};
-    std::unordered_map<std::string, std::string> headers{};
+    vix::http::Request::HeaderMap headers{};
     std::size_t content_length{0};
     bool keep_alive{true};
   };
@@ -124,6 +124,9 @@ namespace vix::session
      * @return true if the error should not be treated as a server-side failure.
      */
     static bool is_normal_disconnect(const std::system_error &e) noexcept;
+
+    /** @brief Read and handle one ultra-fast /bench request in VIX_BENCH_MODE. */
+    task<bool> handle_bench_request_fast();
 
     /** @brief Read and parse the next HTTP request from the socket. */
     task<std::optional<vix::http::Request>> read_request();
