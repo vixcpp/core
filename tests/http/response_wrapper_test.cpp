@@ -24,8 +24,10 @@
 #include <vix/json/json.hpp>
 #include <vix/template/Engine.hpp>
 #include <vix/template/StringLoader.hpp>
+#ifndef VIX_CORE_NO_UI
 #include <vix/ui/core/View.hpp>
 #include <vix/ui/html/HtmlResponse.hpp>
+#endif
 #include <vix/view/TemplateView.hpp>
 
 namespace
@@ -157,6 +159,8 @@ namespace
     assert(res.header("Content-Type") == "text/custom");
   }
 
+#ifndef VIX_CORE_NO_UI
+
   static void test_ui_html_response()
   {
     Response res;
@@ -246,6 +250,8 @@ namespace
 
     assert(thrown);
   }
+
+#endif
 
   static void test_send_string_variants()
   {
@@ -875,11 +881,13 @@ int main()
   test_header_set_append_and_type();
   test_text_response_sets_plain_text_defaults();
   test_text_response_preserves_existing_content_type();
+#ifndef VIX_CORE_NO_UI
   test_ui_html_response();
   test_ui_html_response_no_content_clears_body();
   test_ui_view_response();
   test_ui_view_preserves_existing_status();
   test_ui_view_requires_template_view();
+#endif
   test_send_string_variants();
   test_send_without_payload_adds_default_status_body();
   test_send_without_payload_keeps_existing_body();
