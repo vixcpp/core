@@ -596,9 +596,15 @@ namespace vix
     wait_called_.store(true, std::memory_order_relaxed);
 
     bool should_close = false;
+    std::unique_lock<std::mutex> lock(stop_mutex_);
 
     for (;;)
     {
+      if (closed_.load(std::memory_order_acquire))
+      {
+        break;
+      }
+
       if (g_signal_stop_requested.exchange(false, std::memory_order_acq_rel))
       {
         stop_requested_.store(true, std::memory_order_release);
@@ -613,8 +619,18 @@ namespace vix
         break;
       }
 
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      stop_cv_.wait_for(
+          lock,
+          std::chrono::milliseconds(10),
+          [this]()
+          {
+            return closed_.load(std::memory_order_acquire) ||
+                   stop_requested_.load(std::memory_order_acquire) ||
+                   g_signal_stop_requested.load(std::memory_order_acquire);
+          });
     }
+
+    lock.unlock();
 
     if (should_close)
     {
