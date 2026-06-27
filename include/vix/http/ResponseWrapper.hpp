@@ -33,8 +33,10 @@
 #include <nlohmann/json.hpp>
 #include <vix/template/Context.hpp>
 #include <vix/view/TemplateView.hpp>
+#ifndef VIX_CORE_NO_UI
 #include <vix/ui/core/View.hpp>
 #include <vix/ui/html/HtmlResponse.hpp>
+#endif
 
 namespace vix::http
 {
@@ -449,6 +451,7 @@ namespace vix::http
       return *this;
     }
 
+#ifndef VIX_CORE_NO_UI
     /** @brief Send a Vix UI HTML response. */
     ResponseWrapper &ui(const vix::ui::HtmlResponse &response)
     {
@@ -492,6 +495,7 @@ namespace vix::http
       return ui(vix::ui::HtmlResponse::from_view_result(result, s));
     }
 
+#endif
     /** @brief Send JSON using nlohmann::json with an auto Content-Type if missing. */
     ResponseWrapper &json(const vix::json::Json &j)
     {

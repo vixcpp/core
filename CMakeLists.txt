@@ -362,7 +362,7 @@ endif()
 # --------------------------------------------------------------------
 # ui dependency
 # --------------------------------------------------------------------
-if (NOT TARGET vix::ui AND NOT TARGET vix_ui AND NOT TARGET ui)
+if (NOT VIX_CORE_WITH_UI STREQUAL "OFF" AND NOT TARGET vix::ui AND NOT TARGET vix_ui AND NOT TARGET ui)
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ui/CMakeLists.txt")
     message(STATUS "[core] Adding ui from sibling: ../ui")
     add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../ui" "ui")
