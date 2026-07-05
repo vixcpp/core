@@ -56,7 +56,7 @@ namespace
     const auto end = Clock::now();
 
     const double elapsedMs =
-        std::chrono::duration_cast<Ns>(end - start).count() / 1'000'000.0;
+        static_cast<double>(std::chrono::duration_cast<Ns>(end - start).count()) / 1'000'000.0;
 
     const double opsPerSec =
         (elapsedMs <= 0.0) ? 0.0 : (static_cast<double>(operations) * 1000.0 / elapsedMs);

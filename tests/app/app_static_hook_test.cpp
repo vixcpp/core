@@ -127,16 +127,7 @@ namespace
     assert(app.router()->has_route(method, path) == true);
   }
 
-  static void assert_route_not_registered(
-      App &app,
-      const std::string &method,
-      const std::string &path)
-  {
-    assert(app.router() != nullptr);
-    assert(app.router()->has_route(method, path) == false);
-  }
-
-  struct StaticHandlerCall
+struct StaticHandlerCall
   {
     bool called{false};
     App *app{nullptr};

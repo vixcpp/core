@@ -108,22 +108,7 @@ namespace
     return dir / ".env";
   }
 
-  static std::filesystem::path make_env_file(const std::string &content)
-  {
-    const std::filesystem::path path = make_empty_env_path();
-
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    assert(out);
-
-    out << content;
-    out.close();
-
-    assert(std::filesystem::exists(path));
-
-    return path;
-  }
-
-  static Config make_config_from_current_env()
+static Config make_config_from_current_env()
   {
     const std::filesystem::path env_path = make_empty_env_path();
 

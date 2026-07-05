@@ -127,23 +127,11 @@ namespace
   static App &register_static_dir(
       App &app,
       const std::filesystem::path &root,
-      const std::string &mount = "/")
-  {
-    std::filesystem::path mutable_root = root;
-
-    app.static_dir(mutable_root, mount);
-
-    return app;
-  }
-
-  static App &register_static_dir(
-      App &app,
-      const std::filesystem::path &root,
-      const std::string &mount,
-      const std::string &index_file,
-      bool add_cache_control,
-      const std::string &cache_control,
-      bool fallthrough)
+      const std::string &mount = "/",
+      const std::string &index_file = "index.html",
+      bool add_cache_control = false,
+      const std::string &cache_control = "",
+      bool fallthrough = false)
   {
     std::filesystem::path mutable_root = root;
 

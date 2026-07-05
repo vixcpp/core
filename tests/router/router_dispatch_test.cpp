@@ -192,12 +192,7 @@ namespace
     return result;
   }
 
-  static bool contains(const std::string &text, const std::string &needle)
-  {
-    return text.find(needle) != std::string::npos;
-  }
-
-  static vix::json::Json parse_body(const Response &res)
+static vix::json::Json parse_body(const Response &res)
   {
     return vix::json::loads(res.body());
   }

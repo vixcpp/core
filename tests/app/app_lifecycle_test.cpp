@@ -1083,7 +1083,7 @@ namespace
 
     close_and_wait(app);
 
-    assert(&app.executor() != nullptr);
+    (void)app.executor();
   }
 
   static void test_listen_after_manual_close_keeps_app_stopped()

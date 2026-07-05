@@ -144,7 +144,6 @@ namespace
         Response &) override
     {
       throw std::runtime_error("handler failed");
-      co_return;
     }
   };
 

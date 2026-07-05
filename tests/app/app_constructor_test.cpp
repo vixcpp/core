@@ -100,13 +100,9 @@ namespace
 
     assert(app.router() != nullptr);
 
-    /*
-     * These accessors return references. Taking their address verifies that
-     * the objects are present and usable without starting the server.
-     */
-    assert(&app.config() != nullptr);
-    assert(&app.server() != nullptr);
-    assert(&app.executor() != nullptr);
+    (void)app.config();
+    (void)app.server();
+    (void)app.executor();
 
     app.close();
   }

@@ -89,26 +89,7 @@ namespace
     };
   }
 
-  static bool has_record(
-      const std::vector<RouteRecord> &records,
-      const std::string &method,
-      const std::string &path,
-      bool heavy = false)
-  {
-    for (const auto &record : records)
-    {
-      if (record.method == method &&
-          record.path == path &&
-          record.heavy == heavy)
-      {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  static std::size_t count_records(
+static std::size_t count_records(
       const std::vector<RouteRecord> &records,
       const std::string &method,
       const std::string &path)
