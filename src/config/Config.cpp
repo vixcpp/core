@@ -207,6 +207,7 @@ namespace vix::config
     env_options.load_base_file = true;
     env_options.load_local_file = true;
     env_options.ignore_missing_files = true;
+    env_options.env.overwrite_existing = false;
 
     const std::string config_filename = configPath_.filename().string();
     const std::string environment_name = normalize_env_name(config_filename);
