@@ -140,6 +140,7 @@ namespace vix::config
     static constexpr int DEFAULT_SERVER_PORT = 8080;
     static constexpr int DEFAULT_REQUEST_TIMEOUT = 2000; // ms
     std::filesystem::path configPath_;
+    bool configPathExplicit_;
 
     std::string db_host;
     std::string db_user;

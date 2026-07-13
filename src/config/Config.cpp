@@ -165,6 +165,7 @@ namespace vix::config
 
   Config::Config(const std::filesystem::path &configPath)
       : configPath_(configPath),
+        configPathExplicit_(!configPath.empty()),
         db_host(DEFAULT_DB_HOST),
         db_user(DEFAULT_DB_USER),
         db_pass(DEFAULT_DB_PASS),
@@ -207,7 +208,7 @@ namespace vix::config
     env_options.load_base_file = true;
     env_options.load_local_file = true;
     env_options.ignore_missing_files = true;
-    env_options.env.overwrite_existing = false;
+    env_options.env.overwrite_existing = configPathExplicit_;
 
     const std::string config_filename = configPath_.filename().string();
     const std::string environment_name = normalize_env_name(config_filename);
