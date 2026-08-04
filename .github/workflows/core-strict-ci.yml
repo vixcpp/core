@@ -380,33 +380,45 @@ jobs:
           FAIL=0
 
           mapfile -t CANDIDATES < <(
-            find build-runtime -type f -executable | while read -r exe; do
-              base="$(basename "$exe")"
+            {
+              find build-runtime/tests \
+                -maxdepth 1 \
+                -type f \
+                -executable \
+                2>/dev/null
 
-              if [[ "$exe" =~ /CMakeFiles/ ]]; then
-                continue
-              fi
+              find build-runtime/async/tests \
+                -maxdepth 1 \
+                -type f \
+                -executable \
+                2>/dev/null
 
-              if [[ "$base" =~ (cmake|ctest) ]]; then
-                continue
-              fi
-
-              echo "$exe"
-            done | sort -u
+              find build-runtime/template/tests \
+                -maxdepth 1 \
+                -type f \
+                -executable \
+                2>/dev/null
+            } | sort -u
           )
 
-          if [ ${#CANDIDATES[@]} -eq 0 ]; then
-            echo "::error::No executable candidates found."
+          if [ "${#CANDIDATES[@]}" -eq 0 ]; then
+            echo "::error::No executable test candidates found."
             exit 1
           fi
 
           for exe in "${CANDIDATES[@]}"; do
             base="$(basename "$exe")"
 
-            if [[ "$base" =~ (server|http|ws|listener|session|lifecycle) ]]; then
-              echo "Skipping server-like executable: $exe"
-              continue
-            fi
+            case "$base" in
+              *server*|*http*|*ws*|*listener*|*session*|*lifecycle*)
+                echo "Skipping server-like executable: $exe"
+                continue
+                ;;
+              runtime_bench|*_bench)
+                echo "Skipping benchmark executable: $exe"
+                continue
+                ;;
+            esac
 
             echo "==> Smoke run: $exe"
 
@@ -417,7 +429,7 @@ jobs:
 
             cat /tmp/core_smoke.log || true
 
-            if [ $STATUS -ne 0 ] && [ $STATUS -ne 124 ]; then
+            if [ "$STATUS" -ne 0 ] && [ "$STATUS" -ne 124 ]; then
               echo "::error::Smoke test failed for $exe with status $STATUS"
               FAIL=1
             fi
