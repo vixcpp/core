@@ -75,6 +75,12 @@ option(VIX_CORE_FETCH_UI       "Auto-resolve vix::ui if missing" ON)
 option(VIX_CORE_ENABLE_PCH "Enable private precompiled headers for vix::core" ON)
 option(VIX_CORE_FETCH_JSON  "Auto-resolve vix::json if missing" ON)
 
+option(
+  VIX_CORE_ENABLE_INSTALL
+  "Enable installation and package export rules for vix::core"
+  ON
+)
+
 set(VIX_CORE_WITH_TEMPLATE "AUTO" CACHE STRING "Link template backend (AUTO|ON|OFF)")
 set_property(CACHE VIX_CORE_WITH_TEMPLATE PROPERTY STRINGS AUTO ON OFF)
 
@@ -506,13 +512,15 @@ if (CORE_SOURCES)
     EXPORT_NAME core
   )
 
-  install(TARGETS vix_core
-    EXPORT ${VIX_CORE_EXPORT_SET}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-  )
+  if (VIX_CORE_ENABLE_INSTALL)
+    install(TARGETS vix_core
+      EXPORT ${VIX_CORE_EXPORT_SET}
+      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+      RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+      INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    )
+  endif()
 
 # ============================ HEADER-ONLY ============================
 else()
@@ -544,16 +552,21 @@ else()
     VIX_CORE_HAS_OPENSSL=0
   )
 
-  install(TARGETS vix_core
-    EXPORT ${VIX_CORE_EXPORT_SET}
-    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-  )
+  if (VIX_CORE_ENABLE_INSTALL)
+    install(TARGETS vix_core
+      EXPORT ${VIX_CORE_EXPORT_SET}
+      INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    )
+  endif()
 endif()
 
 # --------------------------------------------------------------------
 # Install headers
 # --------------------------------------------------------------------
-if (NOT (DEFINED VIX_UMBRELLA_BUILD AND VIX_UMBRELLA_BUILD))
+if (
+  VIX_CORE_ENABLE_INSTALL
+  AND NOT (DEFINED VIX_UMBRELLA_BUILD AND VIX_UMBRELLA_BUILD)
+)
   install(DIRECTORY include/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     FILES_MATCHING
@@ -566,7 +579,10 @@ endif()
 # Standalone package config/export
 # Only for non-umbrella builds
 # --------------------------------------------------------------------
-if (NOT (DEFINED VIX_UMBRELLA_BUILD AND VIX_UMBRELLA_BUILD))
+if (
+  VIX_CORE_ENABLE_INSTALL
+  AND NOT (DEFINED VIX_UMBRELLA_BUILD AND VIX_UMBRELLA_BUILD)
+)
 
   configure_package_config_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/vix_coreConfig.cmake.in"
