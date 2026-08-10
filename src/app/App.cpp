@@ -277,7 +277,7 @@ namespace vix
 
       if (vix::utils::env_bool("VIX_DOCS", true))
       {
-        vix::openapi::register_openapi_and_docs(*router_, "Vix API", "2.7.0");
+        vix::openapi::register_openapi_and_docs(*router_, "Vix API", "2.8.4");
       }
 
       install_access_logs(*this);

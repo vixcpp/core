@@ -383,12 +383,13 @@ namespace vix::runtime
       }
 
       Budget budget(budgetConfig_);
-      executedTasks_.fetch_add(1, std::memory_order_relaxed);
 
       while (running() && budget.available())
       {
+        executedTasks_.fetch_add(1, std::memory_order_relaxed);
+
         const TaskResult result = task.run();
-        const bool has_capacity = budget.consume();
+        const bool hasCapacity = budget.consume();
 
         if (result == TaskResult::complete)
         {
@@ -412,18 +413,34 @@ namespace vix::runtime
 
           task.mark_ready();
 
-          const bool resubmitted = submit(std::move(task));
-          if (!resubmitted)
+          /*
+           * Keep executing the task inside the current scheduling quantum
+           * while budget remains.
+           *
+           * This avoids a queue round-trip for every cooperative yield.
+           */
+          if (hasCapacity)
+          {
+            continue;
+          }
+
+          /*
+           * The task exhausted its scheduling quantum.
+           * Put it back into the queue so other work gets a chance to run.
+           */
+          if (!queue_.push(std::move(task)))
           {
             return;
           }
 
+          /*
+           * Important for cooperative shutdown and especially for
+           * instrumentation environments such as Valgrind.
+           *
+           * An indefinitely yielding task must not monopolize execution.
+           */
+          std::this_thread::yield();
           return;
-        }
-
-        if (!has_capacity)
-        {
-          break;
         }
       }
 
@@ -432,16 +449,15 @@ namespace vix::runtime
         return;
       }
 
+      /*
+       * Defensive path: if the budget implementation causes the loop to
+       * terminate without a TaskResult::yield branch handling rescheduling,
+       * preserve unfinished work.
+       */
       if (!task.done())
       {
-        yieldedTasks_.fetch_add(1, std::memory_order_relaxed);
         task.mark_ready();
-
-        const bool resubmitted = submit(std::move(task));
-        if (!resubmitted)
-        {
-          return;
-        }
+        (void)queue_.push(std::move(task));
       }
     }
 
