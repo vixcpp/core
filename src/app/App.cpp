@@ -459,6 +459,11 @@ namespace vix
     listen(config_.getServerPort(), std::move(on_listen));
   }
 
+  void App::listen(ListenCallback on_listen)
+  {
+    listen(config_.getServerPort(), std::move(on_listen));
+  }
+
   void App::listen(int port, ListenCallback on_listen)
   {
     using clock = std::chrono::steady_clock;
@@ -503,6 +508,7 @@ namespace vix
           }
           catch (const std::exception &e)
           {
+            server_.report_startup_failure(e.what());
             try
             {
               log().log(
@@ -519,6 +525,7 @@ namespace vix
           }
           catch (...)
           {
+            server_.report_startup_failure("unknown server startup error");
             try
             {
               log().log(
@@ -533,17 +540,13 @@ namespace vix
             stop_cv_.notify_all();
           }
         });
-    int bound = 0;
-    for (int i = 0; i < 200; ++i)
+    if (server_.wait_for_startup() != vix::server::HTTPServer::StartupState::Ready)
     {
-      bound = server_.bound_port();
-      if (bound != 0)
-      {
-        break;
-      }
-
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      const std::string startup_error = server_.startup_error();
+      close();
+      throw std::runtime_error("Server startup failed on port " + std::to_string(port) + ": " + startup_error);
     }
+    const int bound = server_.bound_port();
 
     const auto t1 = clock::now();
     int ready_ms = static_cast<int>(
@@ -710,6 +713,13 @@ namespace vix
     }
 
     join_or_detach_thread(server_thread_, "App::server_thread");
+  }
+
+  void App::run()
+  {
+    listen();
+    wait();
+    close();
   }
 
   void App::run(int port)

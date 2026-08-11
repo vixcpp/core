@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -64,6 +65,7 @@ namespace vix::server
   class HTTPServer
   {
   public:
+    enum class StartupState { Idle, Starting, Ready, Failed };
     /**
      * @brief Construct an HTTP server from configuration and executor.
      *
@@ -103,6 +105,10 @@ namespace vix::server
      * This function throws on fatal startup failure.
      */
     void run();
+
+    [[nodiscard]] StartupState wait_for_startup();
+    [[nodiscard]] std::string startup_error() const;
+    void report_startup_failure(std::string message);
 
     /**
      * @brief Start the asynchronous accept loop.
@@ -361,6 +367,11 @@ namespace vix::server
      * @brief Actual port bound by the listener.
      */
     std::atomic<int> bound_port_;
+
+    mutable std::mutex startup_mutex_;
+    std::condition_variable startup_cv_;
+    StartupState startup_state_ = StartupState::Idle;
+    std::string startup_error_;
 
     /**
      * @brief Startup timestamp used for uptime and monitoring purposes.

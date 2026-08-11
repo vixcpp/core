@@ -147,7 +147,8 @@ namespace vix
      *
      * @param port Listening port.
      */
-    void run(int port = 8080);
+    void run();
+    void run(int port);
 
     /**
      * @brief Starts the server using an explicit configuration and blocks until shutdown.
@@ -166,7 +167,8 @@ namespace vix
      * @param port Listening port.
      * @param on_listen Optional callback executed once the server is listening.
      */
-    void listen(int port = 8080, ListenCallback on_listen = {});
+    void listen(ListenCallback on_listen = {});
+    void listen(int port, ListenCallback on_listen = {});
 
     /**
      * @brief Starts listening asynchronously using an explicit configuration.

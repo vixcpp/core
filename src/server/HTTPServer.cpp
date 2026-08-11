@@ -159,6 +159,11 @@ namespace vix::server
       co_await listener_->async_listen(ep);
 
       bound_port_.store(static_cast<int>(port), std::memory_order_relaxed);
+      {
+        std::lock_guard<std::mutex> lock(startup_mutex_);
+        startup_state_ = StartupState::Ready;
+      }
+      startup_cv_.notify_all();
     }
     catch (const std::exception &e)
     {
@@ -166,6 +171,12 @@ namespace vix::server
                 "[http] listener init failed on port {}: {}",
                 static_cast<unsigned int>(port),
                 e.what());
+      {
+        std::lock_guard<std::mutex> lock(startup_mutex_);
+        startup_error_ = e.what();
+        startup_state_ = StartupState::Failed;
+      }
+      startup_cv_.notify_all();
       throw;
     }
 
@@ -246,9 +257,37 @@ namespace vix::server
       throw std::runtime_error("executor is null");
     }
 
+    {
+      std::lock_guard<std::mutex> lock(startup_mutex_);
+      startup_error_.clear();
+      startup_state_ = StartupState::Starting;
+    }
     start_io_threads();
     spawn_detached(*io_context_, start_server());
     monitor_metrics();
+  }
+
+  HTTPServer::StartupState HTTPServer::wait_for_startup()
+  {
+    std::unique_lock<std::mutex> lock(startup_mutex_);
+    startup_cv_.wait(lock, [this] { return startup_state_ == StartupState::Ready || startup_state_ == StartupState::Failed; });
+    return startup_state_;
+  }
+
+  std::string HTTPServer::startup_error() const
+  {
+    std::lock_guard<std::mutex> lock(startup_mutex_);
+    return startup_error_;
+  }
+
+  void HTTPServer::report_startup_failure(std::string message)
+  {
+    {
+      std::lock_guard<std::mutex> lock(startup_mutex_);
+      startup_error_ = std::move(message);
+      startup_state_ = StartupState::Failed;
+    }
+    startup_cv_.notify_all();
   }
 
   void HTTPServer::start_accept()
