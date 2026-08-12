@@ -60,6 +60,7 @@ function(vix_core_add_network_test test_name server_port)
     set_tests_properties(${test_name} PROPERTIES
       TIMEOUT 20
       RUN_SERIAL TRUE
+      SKIP_RETURN_CODE 77
       ENVIRONMENT "SERVER_PORT=${server_port}"
     )
   endif()
@@ -371,4 +372,3 @@ vix_core_add_network_test(app_lifecycle_test 19100
 vix_core_add_test(app_module_init_test
   app/app_module_init_test.cpp
 )
-

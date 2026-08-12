@@ -26,21 +26,39 @@
 #include <vector>
 
 #include <vix/config/Config.hpp>
-#include <vix/executor/RuntimeExecutor.hpp>
-#include <vix/http/RequestHandler.hpp>
 #include <vix/http/ResponseWrapper.hpp>
-#include <vix/router/Router.hpp>
 #include <vix/router/RouteOptions.hpp>
-#include <vix/server/HTTPServer.hpp>
 #include <vix/utils/Logger.hpp>
 #include <vix/utils/ServerPrettyLogs.hpp>
-#include <vix/template/Engine.hpp>
-#include <vix/template/FileSystemLoader.hpp>
-#include <vix/view/TemplateView.hpp>
 
 namespace vix::router
 {
   class Router;
+}
+
+namespace vix::executor
+{
+  class RuntimeExecutor;
+}
+
+namespace vix::server
+{
+  class HTTPServer;
+}
+
+namespace vix::template_
+{
+  class Engine;
+}
+
+namespace vix::view
+{
+  class TemplateView;
+}
+
+namespace vix::http
+{
+  class Request;
 }
 
 namespace vix
@@ -346,20 +364,14 @@ namespace vix
      *
      * @return vix::server::HTTPServer& HTTP server instance.
      */
-    vix::server::HTTPServer &server() noexcept
-    {
-      return server_;
-    }
+    vix::server::HTTPServer &server() noexcept;
 
     /**
      * @brief Returns the runtime executor used by the application.
      *
      * @return vix::executor::RuntimeExecutor& Executor.
      */
-    vix::executor::RuntimeExecutor &executor() noexcept
-    {
-      return *executor_;
-    }
+    vix::executor::RuntimeExecutor &executor() noexcept;
 
     /**
      * @brief Configure the application template directory.
@@ -729,18 +741,7 @@ namespace vix
      * @param path Exact path to protect.
      * @param mw Middleware function.
      */
-    void protect_exact(std::string path, Middleware mw)
-    {
-      std::string match = normalize_prefix(std::move(path));
-      use(match, [mw = std::move(mw), match](vix::http::Request &req,
-                                             vix::http::ResponseWrapper &res,
-                                             Next next) mutable
-          {
-            if (req.path() == match)
-              mw(req, res, std::move(next));
-            else
-              next(); });
-    }
+    void protect_exact(std::string path, Middleware mw);
 
     /**
      * @brief Returns the last captured server ready information.
@@ -815,50 +816,31 @@ namespace vix
       static_assert(is_facade_handler_v<Handler>,
                     "Invalid handler: expected (vix::http::Request&, ResponseWrapper&)");
 
-      auto chain = collect_middlewares_for_(path);
       auto final = std::move(handler);
 
-      auto wrapped = [chain = std::move(chain), final = std::move(final)](
-                         vix::http::Request &req,
-                         vix::http::ResponseWrapper &res) mutable
+      RouteHandler wrapped = [final = std::move(final)](
+                                 vix::http::Request &req,
+                                 vix::http::ResponseWrapper &res) mutable
       {
-        std::function<void()> final_handler = [&]()
+        auto should_auto_send = [&]() -> bool
         {
-          auto should_auto_send = [&]() -> bool
-          {
-            return res.res.body().empty() &&
-                   !res.res.has_header("Content-Length");
-          };
-
-          using Ret = std::invoke_result_t<decltype(final), vix::http::Request &, vix::http::ResponseWrapper &>;
-
-          if constexpr (std::is_void_v<Ret>)
-          {
-            final(req, res);
-          }
-          else
-          {
-            auto out = final(req, res);
-            if (should_auto_send())
-              res.send(out);
-          }
+          return res.res.body().empty() &&
+                 !res.res.has_header("Content-Length");
         };
 
-        run_middleware_chain_(chain, 0, req, res, final_handler);
+        using Ret = std::invoke_result_t<decltype(final), vix::http::Request &, vix::http::ResponseWrapper &>;
+
+        if constexpr (std::is_void_v<Ret>)
+          final(req, res);
+        else
+        {
+          auto out = final(req, res);
+          if (should_auto_send())
+            res.send(out);
+        }
       };
 
-      using Adapter = vix::http::RequestHandler<decltype(wrapped)>;
-      auto request_handler = std::make_shared<Adapter>(
-          path,
-          std::move(wrapped),
-          template_view_.get());
-
-      router_->add_route(method, path, request_handler, opt);
-
-      if (method != "OPTIONS")
-      {
-        ensure_options_route_for_path_(path);
-      }
+      add_route_erased_(method, path, std::move(wrapped), opt);
     }
 
     /**
@@ -887,26 +869,16 @@ namespace vix
      * @param res Response wrapper.
      * @param final_handler Final route callback.
      */
-    static inline void run_middleware_chain_(
+    using RouteHandler = std::function<void(
+        vix::http::Request &,
+        vix::http::ResponseWrapper &)>;
+
+    static void run_middleware_chain_(
         const std::vector<Middleware> &chain,
         std::size_t i,
         vix::http::Request &req,
         vix::http::ResponseWrapper &res,
-        std::function<void()> final_handler)
-    {
-      if (i >= chain.size())
-      {
-        final_handler();
-        return;
-      }
-
-      auto next = [&]()
-      {
-        run_middleware_chain_(chain, i + 1, req, res, std::move(final_handler));
-      };
-
-      chain[i](req, res, std::move(next));
-    }
+        std::function<void()> final_handler);
 
     /**
      * @brief Normalizes a route prefix or exact path.
@@ -933,43 +905,12 @@ namespace vix
      *
      * @param path Route path.
      */
-    void ensure_options_route_for_path_(const std::string &path)
-    {
-      if (!router_)
-        return;
+    void add_route_erased_(const std::string &method,
+                           const std::string &path,
+                           RouteHandler handler,
+                           vix::router::RouteOptions opt);
 
-      if (router_->has_route("OPTIONS", path))
-        return;
-
-      auto chain = collect_middlewares_for_(path);
-
-      auto wrapped = [chain = std::move(chain)](
-                         vix::http::Request &req,
-                         vix::http::ResponseWrapper &res) mutable
-      {
-        std::function<void()> final_handler = [&]()
-        {
-          if (res.res.status() == 0 && res.res.body().empty())
-          {
-            res.status(204).send();
-          }
-          else if (res.res.status() == 0)
-          {
-            res.send();
-          }
-        };
-
-        run_middleware_chain_(chain, 0, req, res, final_handler);
-      };
-
-      using Adapter = vix::http::RequestHandler<decltype(wrapped)>;
-      auto request_handler = std::make_shared<Adapter>(
-          path,
-          std::move(wrapped),
-          template_view_.get());
-
-      router_->add_route("OPTIONS", path, request_handler, vix::router::RouteOptions{});
-    }
+    void ensure_options_route_for_path_(const std::string &path);
 
     /**
      * @brief Describes a mounted static directory.
@@ -1058,7 +999,7 @@ namespace vix
     vix::config::Config config_;
     std::shared_ptr<vix::router::Router> router_;
     std::shared_ptr<vix::executor::RuntimeExecutor> executor_;
-    vix::server::HTTPServer server_;
+    std::unique_ptr<vix::server::HTTPServer> server_;
 
     ShutdownCallback shutdown_cb_{};
 

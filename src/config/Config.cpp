@@ -13,6 +13,8 @@
 
 #include <vix/config/Config.hpp>
 
+#include <vix/json/json.hpp>
+
 #include <vix/env/EnvFileOptions.hpp>
 #include <vix/env/Get.hpp>
 #include <vix/env/GetBool.hpp>
@@ -30,6 +32,13 @@
 
 namespace vix::config
 {
+  struct Config::RawConfigState
+  {
+    RawConfigState() : value(vix::json::Json::object()) {}
+
+    vix::json::Json value;
+  };
+
   namespace
   {
     [[nodiscard]] std::string trim_copy(std::string value)
@@ -148,7 +157,7 @@ namespace vix::config
         db_port(DEFAULT_DB_PORT),
         server_port(DEFAULT_SERVER_PORT),
         request_timeout(DEFAULT_REQUEST_TIMEOUT),
-        rawConfig_(vix::json::Json::object()),
+        rawConfig_(std::make_shared<RawConfigState>()),
         io_threads_(DEFAULT_IO_THREADS),
         log_async_(DEFAULT_LOG_ASYNC),
         log_queue_max_(DEFAULT_LOG_QUEUE_MAX),
@@ -172,7 +181,7 @@ namespace vix::config
 
   void Config::loadConfig()
   {
-    rawConfig_ = vix::json::Json::object();
+    rawConfig_ = std::make_shared<RawConfigState>();
 
     vix::env::EnvFileOptions env_options{};
     env_options.base_dir = configPath_.has_parent_path()
@@ -272,7 +281,12 @@ namespace vix::config
       return;
     }
 
-    vix::json::Json *node = &rawConfig_;
+    if (!rawConfig_.unique())
+    {
+      rawConfig_ = std::make_shared<RawConfigState>(*rawConfig_);
+    }
+
+    vix::json::Json *node = &rawConfig_->value;
     std::size_t start = 0;
 
     while (start < dottedKey.size())
@@ -290,6 +304,31 @@ namespace vix::config
       node = &((*node)[key]);
       start = dot + 1;
     }
+  }
+
+  void Config::set(const std::string &dottedKey, std::string_view value)
+  {
+    set(dottedKey, vix::json::Json(value));
+  }
+
+  void Config::set(const std::string &dottedKey, const char *value)
+  {
+    set(dottedKey, std::string_view(value ? value : ""));
+  }
+
+  void Config::set(const std::string &dottedKey, bool value)
+  {
+    set(dottedKey, vix::json::Json(value));
+  }
+
+  void Config::setInteger(const std::string &dottedKey, std::int64_t value)
+  {
+    set(dottedKey, vix::json::Json(value));
+  }
+
+  void Config::setNumber(const std::string &dottedKey, double value)
+  {
+    set(dottedKey, vix::json::Json(value));
   }
 
   const std::string &Config::getDbHost() const noexcept
@@ -335,7 +374,7 @@ namespace vix::config
       return nullptr;
     }
 
-    const vix::json::Json *node = &rawConfig_;
+    const vix::json::Json *node = &rawConfig_->value;
     std::size_t start = 0;
 
     while (start < dottedKey.size())

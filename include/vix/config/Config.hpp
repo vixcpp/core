@@ -15,9 +15,13 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 #include <filesystem>
+#include <cstdint>
+#include <concepts>
+#include <type_traits>
 
-#include <vix/json/json.hpp>
+#include <vix/json/fwd.hpp>
 #include <vix/server/TlsConfig.hpp>
 
 namespace vix::config
@@ -44,6 +48,23 @@ namespace vix::config
     void loadConfig();
 
     void set(const std::string &dottedKey, const vix::json::Json &value);
+
+    void set(const std::string &dottedKey, std::string_view value);
+    void set(const std::string &dottedKey, const char *value);
+    void set(const std::string &dottedKey, bool value);
+
+    template <std::integral T>
+      requires(!std::same_as<std::remove_cvref_t<T>, bool>)
+    void set(const std::string &dottedKey, T value)
+    {
+      setInteger(dottedKey, static_cast<std::int64_t>(value));
+    }
+
+    template <std::floating_point T>
+    void set(const std::string &dottedKey, T value)
+    {
+      setNumber(dottedKey, static_cast<double>(value));
+    }
 
 #if VIX_CORE_WITH_MYSQL
     namespace sql
@@ -150,7 +171,10 @@ namespace vix::config
     int db_port;
     int server_port;
     int request_timeout;
-    vix::json::Json rawConfig_;
+    struct RawConfigState;
+    std::shared_ptr<RawConfigState> rawConfig_;
+    void setInteger(const std::string &dottedKey, std::int64_t value);
+    void setNumber(const std::string &dottedKey, double value);
     const vix::json::Json *findNode(const std::string &dottedKey) const noexcept;
     static constexpr int DEFAULT_IO_THREADS = 0; // 0 => auto
     static constexpr bool DEFAULT_LOG_ASYNC = true;

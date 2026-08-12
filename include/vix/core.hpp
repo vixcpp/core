@@ -23,14 +23,15 @@
 #include <vix/console.hpp>
 #include <vix/app/App.hpp>
 #include <vix/Version.hpp>
-#include <vix/server/HTTPServer.hpp>
-#include <vix/router/Router.hpp>
-#include <vix/http/IRequestHandler.hpp>
-#include <vix/http/RequestHandler.hpp>
+#include <vix/http/Request.hpp>
 #include <vix/http/Response.hpp>
-#include <vix/session/Session.hpp>
 #include <vix/config/Config.hpp>
 #include <vix/http/Status.hpp>
+
+namespace vix::session
+{
+  class Session;
+}
 
 namespace vix
 {

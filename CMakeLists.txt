@@ -81,6 +81,11 @@ option(
   ON
 )
 
+# A standalone core build may resolve dependencies by adding sibling source
+# directories.  Those targets are intentionally not part of vix_coreTargets;
+# exporting core alone in that configuration would create a broken package.
+set(VIX_CORE_HAS_LOCAL_DEPENDENCIES OFF)
+
 set(VIX_CORE_WITH_TEMPLATE "AUTO" CACHE STRING "Link template backend (AUTO|ON|OFF)")
 set_property(CACHE VIX_CORE_WITH_TEMPLATE PROPERTY STRINGS AUTO ON OFF)
 
@@ -99,6 +104,7 @@ if (NOT TARGET vix::utils AND NOT TARGET vix_utils)
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../utils/CMakeLists.txt")
     message(STATUS "[core] Adding utils from sibling: ../utils")
     add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../utils" "utils")
+    set(VIX_CORE_HAS_LOCAL_DEPENDENCIES ON)
   elseif (VIX_CORE_FETCH_UTILS)
     find_package(vix_utils CONFIG QUIET)
     find_package(utils CONFIG QUIET)
@@ -126,6 +132,7 @@ if (NOT TARGET vix::async AND NOT TARGET vix_async)
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../async/CMakeLists.txt")
     message(STATUS "[core] Adding async from sibling: ../async")
     add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../async" "async")
+    set(VIX_CORE_HAS_LOCAL_DEPENDENCIES ON)
   elseif (VIX_CORE_FETCH_ASYNC)
     find_package(vix_async CONFIG QUIET)
     find_package(async CONFIG QUIET)
@@ -153,6 +160,7 @@ if (NOT TARGET vix::env AND NOT TARGET vix_env)
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../env/CMakeLists.txt")
     message(STATUS "[core] Adding env from sibling: ../env")
     add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../env" "env")
+    set(VIX_CORE_HAS_LOCAL_DEPENDENCIES ON)
   elseif (VIX_CORE_FETCH_ENV)
     find_package(vix_env CONFIG QUIET)
     find_package(env CONFIG QUIET)
@@ -180,6 +188,7 @@ if (NOT TARGET vix::io AND NOT TARGET vix_io)
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../io/CMakeLists.txt")
     message(STATUS "[core] Adding io from sibling: ../io")
     add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../io" "io")
+    set(VIX_CORE_HAS_LOCAL_DEPENDENCIES ON)
   elseif (VIX_CORE_FETCH_IO)
     find_package(vix_io CONFIG QUIET)
     find_package(io CONFIG QUIET)
@@ -207,6 +216,7 @@ if (NOT TARGET vix::json AND NOT TARGET vix_json)
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../json/CMakeLists.txt")
     message(STATUS "[core] Adding json from sibling: ../json")
     add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../json" "json")
+    set(VIX_CORE_HAS_LOCAL_DEPENDENCIES ON)
   elseif (VIX_CORE_FETCH_JSON)
     find_package(vix_json CONFIG QUIET)
     find_package(json CONFIG QUIET)
@@ -350,6 +360,7 @@ if (NOT TARGET vix::template AND NOT TARGET vix_template AND NOT TARGET template
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../template/CMakeLists.txt")
     message(STATUS "[core] Adding template from sibling: ../template")
     add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../template" "template")
+    set(VIX_CORE_HAS_LOCAL_DEPENDENCIES ON)
   elseif (VIX_CORE_FETCH_TEMPLATE)
     find_package(template CONFIG QUIET)
     find_package(vix_template CONFIG QUIET)
@@ -372,6 +383,7 @@ if (NOT VIX_CORE_WITH_UI STREQUAL "OFF" AND NOT TARGET vix::ui AND NOT TARGET vi
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ui/CMakeLists.txt")
     message(STATUS "[core] Adding ui from sibling: ../ui")
     add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../ui" "ui")
+    set(VIX_CORE_HAS_LOCAL_DEPENDENCIES ON)
   elseif (VIX_CORE_FETCH_UI)
     find_package(ui CONFIG QUIET)
     find_package(vix_ui CONFIG QUIET)
@@ -385,6 +397,15 @@ elseif (TARGET vix_ui)
   set(VIX_UI_TARGET vix_ui)
 elseif (TARGET ui)
   set(VIX_UI_TARGET ui)
+endif()
+
+if (
+  VIX_CORE_ENABLE_INSTALL
+  AND VIX_CORE_HAS_LOCAL_DEPENDENCIES
+  AND NOT (DEFINED VIX_UMBRELLA_BUILD AND VIX_UMBRELLA_BUILD)
+)
+  message(STATUS "[core] Local sibling dependencies detected; skipping standalone package export.")
+  set(VIX_CORE_ENABLE_INSTALL OFF)
 endif()
 
 # Defaults for standalone package config generation

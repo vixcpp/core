@@ -29,127 +29,41 @@
 #include <vix/http/Response.hpp>
 #include <vix/http/Status.hpp>
 #include <vix/json/Simple.hpp>
-#include <vix/json/json.hpp>
-#include <nlohmann/json.hpp>
-#include <vix/template/Context.hpp>
-#include <vix/view/TemplateView.hpp>
+
+namespace vix::template_
+{
+  class Context;
+}
+
+namespace vix::view
+{
+  class TemplateView;
+}
+
 #ifndef VIX_CORE_NO_UI
-#include <vix/ui/core/View.hpp>
-#include <vix/ui/html/HtmlResponse.hpp>
+namespace vix::ui
+{
+  class HtmlResponse;
+  class View;
+}
 #endif
 
 namespace vix::http
 {
   using OrderedJson = vix::json::OrderedJson;
 
-  inline vix::json::Json token_to_json(const vix::json::token &t);
-  inline vix::json::Json kvs_to_json(const vix::json::kvs &list);
-  inline vix::json::Json array_to_json(const vix::json::array_t &arr);
+  vix::json::Json token_to_json(const vix::json::token &t);
+  vix::json::Json kvs_to_json(const vix::json::kvs &list);
+  vix::json::Json array_to_json(const vix::json::array_t &arr);
 
   /** @brief Write an ordered JSON response into a native Vix response with the given status. */
-  inline void ordered_json_response(
+  void ordered_json_response(
       Response &res,
       const OrderedJson &j,
-      int status_code = OK)
-  {
-    res.set_status(normalize_status(status_code));
-    res.set_header("Content-Type", "application/json; charset=utf-8");
-    res.set_body(vix::json::dumps_compact(j));
-  }
+      int status_code = OK);
 
-  inline vix::json::Json token_to_json(const vix::json::token &t)
-  {
-    vix::json::Json j = nullptr;
-
-    std::visit(
-        [&](auto &&val)
-        {
-          using T = std::decay_t<decltype(val)>;
-
-          if constexpr (std::is_same_v<T, std::monostate>)
-          {
-            j = nullptr;
-          }
-          else if constexpr (std::is_same_v<T, bool> ||
-                             std::is_same_v<T, std::int64_t> ||
-                             std::is_same_v<T, double> ||
-                             std::is_same_v<T, std::string>)
-          {
-            j = val;
-          }
-          else if constexpr (std::is_same_v<T, std::shared_ptr<vix::json::array_t>>)
-          {
-            if (!val)
-            {
-              j = nullptr;
-              return;
-            }
-
-            j = array_to_json(*val);
-          }
-          else if constexpr (std::is_same_v<T, std::shared_ptr<vix::json::kvs>>)
-          {
-            if (!val)
-            {
-              j = nullptr;
-              return;
-            }
-
-            j = kvs_to_json(*val);
-          }
-          else
-          {
-            j = nullptr;
-          }
-        },
-        t.v);
-
-    return j;
-  }
-
-  inline vix::json::Json array_to_json(const vix::json::array_t &arr)
-  {
-    vix::json::Json j = vix::json::Json::array();
-
-    for (const auto &item : arr.elems)
-    {
-      j.push_back(token_to_json(item));
-    }
-
-    return j;
-  }
-
-  inline vix::json::Json kvs_to_json(const vix::json::kvs &list)
-  {
-    vix::json::Json obj = vix::json::Json::object();
-
-    const auto &items = list.flat;
-    const std::size_t n = items.size() - (items.size() % 2);
-
-    for (std::size_t i = 0; i < n; i += 2)
-    {
-      const auto &key_token = items[i];
-      const auto &value_token = items[i + 1];
-
-      const std::string *key = key_token.as_string();
-      if (!key)
-        continue;
-
-      obj[*key] = token_to_json(value_token);
-    }
-
-    return obj;
-  }
-
-  inline nlohmann::json token_to_nlohmann(const vix::json::token &t)
-  {
-    return token_to_json(t);
-  }
-
-  inline nlohmann::json kvs_to_nlohmann(const vix::json::kvs &list)
-  {
-    return kvs_to_json(list);
-  }
+  nlohmann::json token_to_nlohmann(const vix::json::token &t);
+  nlohmann::json kvs_to_nlohmann(const vix::json::kvs &list);
 
   /** @brief Lightweight response helper that sets status/headers and sends text, JSON, redirects, or static files. */
   struct ResponseWrapper
@@ -428,133 +342,31 @@ namespace vix::http
     /** @brief Render an HTML template using the configured template view. */
     ResponseWrapper &render(
         const std::string &name,
-        const vix::template_::Context &context)
-    {
-      ensure_status();
-
-      const int s = res.status();
-      if (s == NO_CONTENT || s == NOT_MODIFIED)
-        return this->send();
-
-      if (!template_view_)
-      {
-        throw std::runtime_error(
-            "ResponseWrapper::render() called but templates are not configured");
-      }
-
-      const int current_status = res.status();
-
-      auto rendered = template_view_->render_response(name, context);
-      rendered.set_status(current_status);
-
-      res = std::move(rendered);
-      return *this;
-    }
+        const vix::template_::Context &context);
 
 #ifndef VIX_CORE_NO_UI
     /** @brief Send a Vix UI HTML response. */
-    ResponseWrapper &ui(const vix::ui::HtmlResponse &response)
-    {
-      status(response.status_code());
-
-      const int s = res.status();
-      if (s == NO_CONTENT || s == NOT_MODIFIED)
-      {
-        res.set_body("");
-        return *this;
-      }
-
-      res.set_header("Content-Type", response.header_content_type());
-      res.set_header("X-Content-Type-Options", "nosniff");
-      res.set_body(response.body());
-
-      return *this;
-    }
+    ResponseWrapper &ui(const vix::ui::HtmlResponse &response);
 
     /** @brief Render and send a Vix UI view using the configured template view. */
-    ResponseWrapper &ui(const vix::ui::View &view)
-    {
-      ensure_status();
-
-      const int s = res.status();
-      if (s == NO_CONTENT || s == NOT_MODIFIED)
-      {
-        res.set_body("");
-        return *this;
-      }
-
-      if (!template_view_ || !template_view_->engine())
-      {
-        throw std::runtime_error(
-            "ResponseWrapper::ui() called but templates are not configured");
-      }
-
-      const vix::ui::ViewResult result =
-          view.render(*template_view_->engine());
-
-      return ui(vix::ui::HtmlResponse::from_view_result(result, s));
-    }
+    ResponseWrapper &ui(const vix::ui::View &view);
 
 #endif
     /** @brief Send JSON using nlohmann::json with an auto Content-Type if missing. */
-    ResponseWrapper &json(const vix::json::Json &j)
-    {
-      ensure_status();
-
-      const int s = res.status();
-      if (s == NO_CONTENT || s == NOT_MODIFIED)
-        return this->send();
-
-      if (!has_header("Content-Type"))
-      {
-        type("application/json; charset=utf-8");
-        header("X-Content-Type-Options", "nosniff");
-      }
-
-      Response::json_response(res, j, res.status());
-      return *this;
-    }
+    ResponseWrapper &json(const vix::json::Json &j);
 
     /** @brief Send JSON from a vix::json key-value list. */
-    ResponseWrapper &json(const vix::json::kvs &kv)
-    {
-      return json(kvs_to_json(kv));
-    }
+    ResponseWrapper &json(const vix::json::kvs &kv);
 
-    ResponseWrapper &json(const vix::json::token &t)
-    {
-      return json(token_to_json(t));
-    }
+    ResponseWrapper &json(const vix::json::token &t);
 
-    ResponseWrapper &json(const vix::json::array_t &arr)
-    {
-      return json(array_to_json(arr));
-    }
+    ResponseWrapper &json(const vix::json::array_t &arr);
 
     /** @brief Send JSON from an initializer list of vix::json tokens (key/value pairs). */
-    ResponseWrapper &json(std::initializer_list<vix::json::token> list)
-    {
-      return json(vix::json::kvs{list});
-    }
+    ResponseWrapper &json(std::initializer_list<vix::json::token> list);
 
     /** @brief Send ordered JSON (stable key order) with an auto Content-Type if missing. */
-    ResponseWrapper &json_ordered(const OrderedJson &j)
-    {
-      ensure_status();
-
-      const int s = res.status();
-      if (s == NO_CONTENT || s == NOT_MODIFIED)
-        return this->send();
-
-      if (!has_header("Content-Type"))
-      {
-        type("application/json; charset=utf-8");
-        header("X-Content-Type-Options", "nosniff");
-      }
-
-      ordered_json_response(res, j, res.status());
-      return *this;
-    }
+    ResponseWrapper &json_ordered(const OrderedJson &j);
 
     /** @brief Send JSON from any serializable type supported by vix::http::Response::json_response. */
     template <typename J>
@@ -633,38 +445,20 @@ namespace vix::http
     }
 
     /** @brief Send JSON (alias for json()). */
-    ResponseWrapper &send(const vix::json::Json &j)
-    {
-      return json(j);
-    }
+    ResponseWrapper &send(const vix::json::Json &j);
 
-    ResponseWrapper &send(const vix::json::token &t)
-    {
-      return json(t);
-    }
+    ResponseWrapper &send(const vix::json::token &t);
 
-    ResponseWrapper &send(const vix::json::array_t &arr)
-    {
-      return json(arr);
-    }
+    ResponseWrapper &send(const vix::json::array_t &arr);
 
     /** @brief Send JSON from vix::json key-value list. */
-    ResponseWrapper &send(const vix::json::kvs &kv)
-    {
-      return json(kv);
-    }
+    ResponseWrapper &send(const vix::json::kvs &kv);
 
     /** @brief Send JSON from initializer list of vix::json tokens. */
-    ResponseWrapper &send(std::initializer_list<vix::json::token> list)
-    {
-      return json(list);
-    }
+    ResponseWrapper &send(std::initializer_list<vix::json::token> list);
 
     /** @brief Send ordered JSON (stable key order). */
-    ResponseWrapper &send(const OrderedJson &j)
-    {
-      return json_ordered(j);
-    }
+    ResponseWrapper &send(const OrderedJson &j);
 
     /** @brief Send JSON from a custom type (must be supported by vix::http::Response::json_response). */
     template <typename J>

@@ -12,6 +12,13 @@
  *
  */
 #include <vix/app/App.hpp>
+#include <vix/executor/RuntimeExecutor.hpp>
+#include <vix/http/RequestHandler.hpp>
+#include <vix/router/Router.hpp>
+#include <vix/server/HTTPServer.hpp>
+#include <vix/template/Engine.hpp>
+#include <vix/template/FileSystemLoader.hpp>
+#include <vix/view/TemplateView.hpp>
 #include <vix/Version.hpp>
 
 #include <vix/openapi/register_docs.hpp>
@@ -249,7 +256,7 @@ namespace vix
       : config_(),
         router_(nullptr),
         executor_(make_default_executor()),
-        server_(config_, executor_)
+        server_(std::make_unique<vix::server::HTTPServer>(config_, executor_))
   {
     log().setLevelFromEnv("VIX_LOG_LEVEL");
     log().setFormatFromEnv("VIX_LOG_FORMAT");
@@ -267,7 +274,7 @@ namespace vix
     {
       init_modules_once();
 
-      router_ = server_.getRouter();
+      router_ = server_->getRouter();
       if (!router_)
       {
         log().throwError("Failed to get Router from HTTPServer");
@@ -293,7 +300,7 @@ namespace vix
       : config_(),
         router_(nullptr),
         executor_(std::move(executor)),
-        server_(config_, executor_)
+        server_(std::make_unique<vix::server::HTTPServer>(config_, executor_))
   {
     if (!executor_)
     {
@@ -328,7 +335,7 @@ namespace vix
     {
       init_modules_once();
 
-      router_ = server_.getRouter();
+      router_ = server_->getRouter();
       if (!router_)
       {
         log().throwError("Failed to get Router from HTTPServer");
@@ -436,6 +443,16 @@ namespace vix
     close();
   }
 
+  vix::server::HTTPServer &App::server() noexcept
+  {
+    return *server_;
+  }
+
+  vix::executor::RuntimeExecutor &App::executor() noexcept
+  {
+    return *executor_;
+  }
+
   void App::request_stop_from_signal() noexcept
   {
     stop_requested_.store(true, std::memory_order_release);
@@ -446,7 +463,7 @@ namespace vix
   {
     listen(port, [this, cb = std::move(cb)]()
            {
-             const int bound = server_.bound_port();
+             const int bound = server_->bound_port();
              if (cb)
              {
                cb(bound);
@@ -504,11 +521,11 @@ namespace vix
         {
           try
           {
-            server_.run();
+            server_->run();
           }
           catch (const std::exception &e)
           {
-            server_.report_startup_failure(e.what());
+            server_->report_startup_failure(e.what());
             try
             {
               log().log(
@@ -525,7 +542,7 @@ namespace vix
           }
           catch (...)
           {
-            server_.report_startup_failure("unknown server startup error");
+            server_->report_startup_failure("unknown server startup error");
             try
             {
               log().log(
@@ -540,13 +557,13 @@ namespace vix
             stop_cv_.notify_all();
           }
         });
-    if (server_.wait_for_startup() != vix::server::HTTPServer::StartupState::Ready)
+    if (server_->wait_for_startup() != vix::server::HTTPServer::StartupState::Ready)
     {
-      const std::string startup_error = server_.startup_error();
+      const std::string startup_error = server_->startup_error();
       close();
       throw std::runtime_error("Server startup failed on port " + std::to_string(port) + ": " + startup_error);
     }
-    const int bound = server_.bound_port();
+    const int bound = server_->bound_port();
 
     const auto t1 = clock::now();
     int ready_ms = static_cast<int>(
@@ -683,8 +700,8 @@ namespace vix
 
     try
     {
-      server_.stop_async();
-      server_.stop_blocking();
+      server_->stop_async();
+      server_->stop_blocking();
     }
     catch (const std::exception &e)
     {
@@ -747,6 +764,19 @@ namespace vix
         MiddlewareEntry{normalize_prefix(std::move(prefix)), std::move(mw)});
   }
 
+  void App::protect_exact(std::string path, Middleware mw)
+  {
+    std::string match = normalize_prefix(std::move(path));
+    use(match, [mw = std::move(mw), match](vix::http::Request &req,
+                                           vix::http::ResponseWrapper &res,
+                                           Next next) mutable
+        {
+          if (req.path() == match)
+            mw(req, res, std::move(next));
+          else
+            next(); });
+  }
+
   bool App::match_middleware_prefix_(const std::string &prefix,
                                      const std::string &path) const
   {
@@ -795,6 +825,87 @@ namespace vix
     }
 
     return out;
+  }
+
+  void App::run_middleware_chain_(
+      const std::vector<Middleware> &chain,
+      std::size_t i,
+      vix::http::Request &req,
+      vix::http::ResponseWrapper &res,
+      std::function<void()> final_handler)
+  {
+    if (i >= chain.size())
+    {
+      final_handler();
+      return;
+    }
+
+    auto next = [&]()
+    {
+      run_middleware_chain_(chain, i + 1, req, res, std::move(final_handler));
+    };
+
+    chain[i](req, res, std::move(next));
+  }
+
+  void App::add_route_erased_(
+      const std::string &method,
+      const std::string &path,
+      RouteHandler handler,
+      vix::router::RouteOptions opt)
+  {
+    if (!router_)
+      logger().throwError("Router is not initialized in App");
+
+    auto chain = collect_middlewares_for_(path);
+    RouteHandler wrapped = [chain = std::move(chain), handler = std::move(handler)](
+                               vix::http::Request &req,
+                               vix::http::ResponseWrapper &res) mutable
+    {
+      std::function<void()> final_handler = [&]()
+      {
+        handler(req, res);
+      };
+      run_middleware_chain_(chain, 0, req, res, std::move(final_handler));
+    };
+
+    using Adapter = vix::http::RequestHandler<RouteHandler>;
+    auto requestHandler = std::make_shared<Adapter>(
+        path,
+        std::move(wrapped),
+        template_view_.get());
+    router_->add_route(method, path, requestHandler, opt);
+
+    if (method != "OPTIONS")
+      ensure_options_route_for_path_(path);
+  }
+
+  void App::ensure_options_route_for_path_(const std::string &path)
+  {
+    if (!router_ || router_->has_route("OPTIONS", path))
+      return;
+
+    auto chain = collect_middlewares_for_(path);
+    RouteHandler wrapped = [chain = std::move(chain)](
+                               vix::http::Request &req,
+                               vix::http::ResponseWrapper &res) mutable
+    {
+      std::function<void()> final_handler = [&]()
+      {
+        if (res.res.status() == 0 && res.res.body().empty())
+          res.status(204).send();
+        else if (res.res.status() == 0)
+          res.send();
+      };
+      run_middleware_chain_(chain, 0, req, res, std::move(final_handler));
+    };
+
+    using Adapter = vix::http::RequestHandler<RouteHandler>;
+    auto requestHandler = std::make_shared<Adapter>(
+        path,
+        std::move(wrapped),
+        template_view_.get());
+    router_->add_route("OPTIONS", path, requestHandler, vix::router::RouteOptions{});
   }
 
   static App::StaticHandler &static_handler_ref()

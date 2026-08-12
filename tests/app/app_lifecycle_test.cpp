@@ -14,12 +14,23 @@
 #include <atomic>
 #include <cassert>
 #include <chrono>
+#include <cerrno>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <memory>
 #include <string>
 #include <thread>
+
+#if defined(_WIN32)
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
 
 #include <vix/app/App.hpp>
 #include <vix/config/Config.hpp>
@@ -124,6 +135,89 @@ namespace
         RuntimeConfig{
             1u,
             vix::runtime::BudgetConfig{8u}});
+  }
+
+  /**
+   * Check the only environmental capability required by the network lifecycle
+   * cases.  EPERM/WSAEACCES means the execution environment forbids creating
+   * or binding a TCP listener; every other failure remains a test failure.
+   */
+  static bool tcp_bind_is_unavailable()
+  {
+#if defined(_WIN32)
+    WSADATA data{};
+    assert(WSAStartup(MAKEWORD(2, 2), &data) == 0);
+
+    const SOCKET fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (fd == INVALID_SOCKET)
+    {
+      const int error = WSAGetLastError();
+      WSACleanup();
+      if (error == WSAEACCES)
+      {
+        std::fprintf(stderr, "SKIPPED: TCP bind unavailable in execution environment (WSAEACCES)\n");
+        return true;
+      }
+      assert(false && "unexpected TCP socket failure");
+      std::abort();
+    }
+
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = htons(0);
+    if (::bind(fd, reinterpret_cast<const sockaddr *>(&address), sizeof(address)) == SOCKET_ERROR)
+    {
+      const int error = WSAGetLastError();
+      closesocket(fd);
+      WSACleanup();
+      if (error == WSAEACCES)
+      {
+        std::fprintf(stderr, "SKIPPED: TCP bind unavailable in execution environment (WSAEACCES)\n");
+        return true;
+      }
+      assert(false && "unexpected TCP bind failure");
+      std::abort();
+    }
+
+    assert(::listen(fd, 1) == 0);
+    closesocket(fd);
+    WSACleanup();
+#else
+    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0)
+    {
+      const int error = errno;
+      if (error == EPERM)
+      {
+        std::fprintf(stderr, "SKIPPED: TCP bind unavailable in execution environment (EPERM)\n");
+        return true;
+      }
+      assert(false && "unexpected TCP socket failure");
+      std::abort();
+    }
+
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = htons(0);
+    if (::bind(fd, reinterpret_cast<const sockaddr *>(&address), sizeof(address)) != 0)
+    {
+      const int error = errno;
+      ::close(fd);
+      if (error == EPERM)
+      {
+        std::fprintf(stderr, "SKIPPED: TCP bind unavailable in execution environment (EPERM)\n");
+        return true;
+      }
+      assert(false && "unexpected TCP bind failure");
+      std::abort();
+    }
+
+    assert(::listen(fd, 1) == 0);
+    ::close(fd);
+#endif
+    return false;
   }
 
   static bool wait_until(
@@ -1119,6 +1213,14 @@ int main()
   test_shutdown_callback_can_be_replaced_before_close_without_running();
   test_empty_shutdown_callback_is_allowed();
 
+  test_listen_after_manual_close_keeps_app_stopped();
+
+  if (tcp_bind_is_unavailable())
+  {
+    App::set_static_handler({});
+    return 77;
+  }
+
   test_listen_starts_server_and_callback_runs();
   test_listen_without_callback_starts_server();
 
@@ -1162,7 +1264,6 @@ int main()
   test_lifecycle_with_static_handler_installed();
 
   test_lifecycle_keeps_executor_available_after_close();
-  test_listen_after_manual_close_keeps_app_stopped();
 
   App::set_static_handler({});
 
