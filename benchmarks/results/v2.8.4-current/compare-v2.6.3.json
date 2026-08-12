@@ -1,0 +1,1128 @@
+{
+  "metric": "median_ops_per_sec",
+  "warn_percent": 5.0,
+  "fail_percent": 10.0,
+  "summary": {
+    "ok": 15,
+    "warn": 0,
+    "fail": 144,
+    "new": 0,
+    "missing": 0,
+    "total": 159
+  },
+  "results": [
+    {
+      "benchmark": "vix.core.app.group_registration/app.group_registration/callback_get_routes",
+      "status": "FAIL",
+      "baseline": 31780.21515078536,
+      "current": 10258.67600337494,
+      "change_percent": -67.71992903540357
+    },
+    {
+      "benchmark": "vix.core.app.group_registration/app.group_registration/create_group_objects",
+      "status": "FAIL",
+      "baseline": 69923.36119919123,
+      "current": 26970.860428866563,
+      "change_percent": -61.42796918466996
+    },
+    {
+      "benchmark": "vix.core.app.group_registration/app.group_registration/deeply_nested_group_routes",
+      "status": "FAIL",
+      "baseline": 28509.18162427014,
+      "current": 12095.925040101014,
+      "change_percent": -57.5718265100825
+    },
+    {
+      "benchmark": "vix.core.app.group_registration/app.group_registration/duplicate_routes",
+      "status": "FAIL",
+      "baseline": 243035.15916737125,
+      "current": 120510.1160433363,
+      "change_percent": -50.41453407144911
+    },
+    {
+      "benchmark": "vix.core.app.group_registration/app.group_registration/middleware_helpers",
+      "status": "FAIL",
+      "baseline": 30219.499029002167,
+      "current": 13090.760836852545,
+      "change_percent": -56.68107924526108
+    },
+    {
+      "benchmark": "vix.core.app.group_registration/app.group_registration/mixed_methods",
+      "status": "FAIL",
+      "baseline": 106780.50801441744,
+      "current": 48013.87015462364,
+      "change_percent": -55.034986209148926
+    },
+    {
+      "benchmark": "vix.core.app.group_registration/app.group_registration/multiple_group_objects_same_prefix",
+      "status": "FAIL",
+      "baseline": 26006.24061353507,
+      "current": 11268.532764239373,
+      "change_percent": -56.669889617284355
+    },
+    {
+      "benchmark": "vix.core.app.group_registration/app.group_registration/multiple_groups_different_prefixes",
+      "status": "FAIL",
+      "baseline": 77015.00321576146,
+      "current": 34744.01130158758,
+      "change_percent": -54.88669759027282
+    },
+    {
+      "benchmark": "vix.core.app.group_registration/app.group_registration/nested_group_param_routes",
+      "status": "FAIL",
+      "baseline": 81223.12566380006,
+      "current": 36596.06738279305,
+      "change_percent": -54.94378345611566
+    },
+    {
+      "benchmark": "vix.core.app.group_registration/app.group_registration/nested_group_routes",
+      "status": "FAIL",
+      "baseline": 104171.84053474656,
+      "current": 49357.22042483517,
+      "change_percent": -52.619421744428095
+    },
+    {
+      "benchmark": "vix.core.app.group_registration/app.group_registration/param_routes",
+      "status": "FAIL",
+      "baseline": 87962.05314212664,
+      "current": 39452.54362731711,
+      "change_percent": -55.148223332655974
+    },
+    {
+      "benchmark": "vix.core.app.group_registration/app.group_registration/path_normalization",
+      "status": "FAIL",
+      "baseline": 32920.235947231886,
+      "current": 13519.684701484415,
+      "change_percent": -58.93199330905395
+    },
+    {
+      "benchmark": "vix.core.app.group_registration/app.group_registration/post_routes",
+      "status": "FAIL",
+      "baseline": 128749.05466650355,
+      "current": 59061.81213881975,
+      "change_percent": -54.12641103128366
+    },
+    {
+      "benchmark": "vix.core.app.group_registration/app.group_registration/returned_group_get_routes",
+      "status": "FAIL",
+      "baseline": 128584.00658547619,
+      "current": 56009.64064819465,
+      "change_percent": -56.44120747554848
+    },
+    {
+      "benchmark": "vix.core.app.group_registration/app.group_registration/route_records_scan",
+      "status": "FAIL",
+      "baseline": 241243.8820189654,
+      "current": 79897.7859953574,
+      "change_percent": -66.88090685380521
+    },
+    {
+      "benchmark": "vix.core.app.group_registration/app.group_registration/routes_after_templates",
+      "status": "FAIL",
+      "baseline": 32307.022160646473,
+      "current": 13603.30007353672,
+      "change_percent": -57.89367399479162
+    },
+    {
+      "benchmark": "vix.core.app.group_registration/app.group_registration/same_path_multiple_methods",
+      "status": "FAIL",
+      "baseline": 97054.87562252696,
+      "current": 44364.52480922345,
+      "change_percent": -54.289236347312155
+    },
+    {
+      "benchmark": "vix.core.app.route_registration/app.route_registration/construct_close",
+      "status": "FAIL",
+      "baseline": 2263.283055481012,
+      "current": 547.4137612024394,
+      "change_percent": -75.81328769829462
+    },
+    {
+      "benchmark": "vix.core.app.route_registration/app.route_registration/duplicate_routes",
+      "status": "FAIL",
+      "baseline": 246033.55890854573,
+      "current": 112378.0924419806,
+      "change_percent": -54.32407963348075
+    },
+    {
+      "benchmark": "vix.core.app.route_registration/app.route_registration/get_routes",
+      "status": "FAIL",
+      "baseline": 138351.3378322569,
+      "current": 50289.07386712224,
+      "change_percent": -63.651183533841305
+    },
+    {
+      "benchmark": "vix.core.app.route_registration/app.route_registration/mixed_methods",
+      "status": "FAIL",
+      "baseline": 128257.41513576222,
+      "current": 51985.74828593839,
+      "change_percent": -59.46764697315101
+    },
+    {
+      "benchmark": "vix.core.app.route_registration/app.route_registration/mixed_route_tree",
+      "status": "FAIL",
+      "baseline": 104822.46790940857,
+      "current": 40977.99791223821,
+      "change_percent": -60.907237990568106
+    },
+    {
+      "benchmark": "vix.core.app.route_registration/app.route_registration/nested_param_routes",
+      "status": "FAIL",
+      "baseline": 62706.22423273482,
+      "current": 23146.86352937069,
+      "change_percent": -63.08681663966744
+    },
+    {
+      "benchmark": "vix.core.app.route_registration/app.route_registration/param_routes",
+      "status": "FAIL",
+      "baseline": 92398.11680071815,
+      "current": 33590.8691074533,
+      "change_percent": -63.64550461574752
+    },
+    {
+      "benchmark": "vix.core.app.route_registration/app.route_registration/path_normalization",
+      "status": "FAIL",
+      "baseline": 107739.90181050784,
+      "current": 42452.23743129193,
+      "change_percent": -60.597479004615565
+    },
+    {
+      "benchmark": "vix.core.app.route_registration/app.route_registration/post_routes",
+      "status": "FAIL",
+      "baseline": 138294.82158608577,
+      "current": 53810.03827038799,
+      "change_percent": -61.09034477701516
+    },
+    {
+      "benchmark": "vix.core.app.route_registration/app.route_registration/put_routes",
+      "status": "FAIL",
+      "baseline": 137910.7796692149,
+      "current": 53662.29833342041,
+      "change_percent": -61.08911974674365
+    },
+    {
+      "benchmark": "vix.core.app.route_registration/app.route_registration/route_records_scan",
+      "status": "OK",
+      "baseline": 123937.30785757485,
+      "current": 161452.41518069274,
+      "change_percent": 30.269422477878216
+    },
+    {
+      "benchmark": "vix.core.app.route_registration/app.route_registration/same_path_multiple_methods",
+      "status": "FAIL",
+      "baseline": 198972.06700552767,
+      "current": 78603.20719906125,
+      "change_percent": -60.49535576424526
+    },
+    {
+      "benchmark": "vix.core.executor.metrics/executor.metrics/active_reads",
+      "status": "FAIL",
+      "baseline": 28754095.94908271,
+      "current": 14696824.786277303,
+      "change_percent": -48.88789126842241
+    },
+    {
+      "benchmark": "vix.core.executor.metrics/executor.metrics/after_completed_work",
+      "status": "FAIL",
+      "baseline": 1752601.807886198,
+      "current": 1009810.4962449664,
+      "change_percent": -42.38220617477894
+    },
+    {
+      "benchmark": "vix.core.executor.metrics/executor.metrics/counter_accessors",
+      "status": "FAIL",
+      "baseline": 5098808535.91537,
+      "current": 294678771.7759325,
+      "change_percent": -94.22063468945241
+    },
+    {
+      "benchmark": "vix.core.executor.metrics/executor.metrics/counter_accessors_after_rejections",
+      "status": "FAIL",
+      "baseline": 643898003.9805775,
+      "current": 334165740.19215196,
+      "change_percent": -48.10269046862402
+    },
+    {
+      "benchmark": "vix.core.executor.metrics/executor.metrics/idle_reads",
+      "status": "FAIL",
+      "baseline": 112232714.98344906,
+      "current": 22902707.466465857,
+      "change_percent": -79.59355481167562
+    },
+    {
+      "benchmark": "vix.core.executor.metrics/executor.metrics/pending_reads",
+      "status": "FAIL",
+      "baseline": 18507479.83499027,
+      "current": 9130804.230827535,
+      "change_percent": -50.664248659264665
+    },
+    {
+      "benchmark": "vix.core.executor.metrics/executor.metrics/running_idle_reads",
+      "status": "FAIL",
+      "baseline": 2797003.4314924716,
+      "current": 1294860.2001789387,
+      "change_percent": -53.70544828084084
+    },
+    {
+      "benchmark": "vix.core.executor.metrics/executor.metrics/timeout_counter_reads",
+      "status": "FAIL",
+      "baseline": 2053307.3190124503,
+      "current": 986346.6791388614,
+      "change_percent": -51.963027160822165
+    },
+    {
+      "benchmark": "vix.core.executor.post/executor.post/cpu_tasks",
+      "status": "FAIL",
+      "baseline": 397028.6502861751,
+      "current": 347839.9037624381,
+      "change_percent": -12.389218382170183
+    },
+    {
+      "benchmark": "vix.core.executor.post/executor.post/exceptions",
+      "status": "FAIL",
+      "baseline": 617295.747824909,
+      "current": 402480.74966772797,
+      "change_percent": -34.79936463422904
+    },
+    {
+      "benchmark": "vix.core.executor.post/executor.post/reject_after_stop",
+      "status": "FAIL",
+      "baseline": 55108369.50646708,
+      "current": 18361207.17592699,
+      "change_percent": -66.68163594683696
+    },
+    {
+      "benchmark": "vix.core.executor.post/executor.post/reject_before_start",
+      "status": "FAIL",
+      "baseline": 45239927.23972022,
+      "current": 15721193.067507243,
+      "change_percent": -65.2492963036771
+    },
+    {
+      "benchmark": "vix.core.executor.post/executor.post/reject_empty_callable_after_start",
+      "status": "FAIL",
+      "baseline": 59297786.12901443,
+      "current": 19877129.918948617,
+      "change_percent": -66.47913654701733
+    },
+    {
+      "benchmark": "vix.core.executor.post/executor.post/timeout_recording",
+      "status": "OK",
+      "baseline": 1515.9393534272467,
+      "current": 1472.0174083369461,
+      "change_percent": -2.8973418356744647
+    },
+    {
+      "benchmark": "vix.core.executor.post/executor.post/void_tasks",
+      "status": "FAIL",
+      "baseline": 397461.2164797357,
+      "current": 343191.4140399491,
+      "change_percent": -13.654112700717688
+    },
+    {
+      "benchmark": "vix.core.executor.post/executor.post/with_options",
+      "status": "FAIL",
+      "baseline": 397043.3673317863,
+      "current": 348506.7236182414,
+      "change_percent": -12.224519462375417
+    },
+    {
+      "benchmark": "vix.core.executor.submit/executor.submit/reject_before_start",
+      "status": "FAIL",
+      "baseline": 75151512.96528932,
+      "current": 25828360.72818414,
+      "change_percent": -65.63161577317327
+    },
+    {
+      "benchmark": "vix.core.executor.submit/executor.submit/reject_invalid_task",
+      "status": "FAIL",
+      "baseline": 49986488.652117334,
+      "current": 20509186.495324172,
+      "change_percent": -58.97053974313229
+    },
+    {
+      "benchmark": "vix.core.executor.submit/executor.submit/reject_terminal_state_task",
+      "status": "FAIL",
+      "baseline": 37355228.876607984,
+      "current": 11655652.308348324,
+      "change_percent": -68.79780245263831
+    },
+    {
+      "benchmark": "vix.core.executor.submit/executor.submit/task_complete",
+      "status": "OK",
+      "baseline": 465791.2777918907,
+      "current": 493726.4207987429,
+      "change_percent": 5.997352105707147
+    },
+    {
+      "benchmark": "vix.core.executor.submit/executor.submit/task_cpu",
+      "status": "OK",
+      "baseline": 459976.5566508231,
+      "current": 440855.7260047805,
+      "change_percent": -4.156914166509921
+    },
+    {
+      "benchmark": "vix.core.executor.submit/executor.submit/task_failed",
+      "status": "OK",
+      "baseline": 464433.93057880324,
+      "current": 444333.3156947818,
+      "change_percent": -4.327981562193563
+    },
+    {
+      "benchmark": "vix.core.executor.submit/executor.submit/task_yielding",
+      "status": "OK",
+      "baseline": 336069.5895266198,
+      "current": 345129.92398732004,
+      "change_percent": 2.695969746463049
+    },
+    {
+      "benchmark": "vix.core.executor.submit/executor.submit/taskfn_affinity",
+      "status": "FAIL",
+      "baseline": 967790.7714549608,
+      "current": 759801.7695418507,
+      "change_percent": -21.491112340369074
+    },
+    {
+      "benchmark": "vix.core.executor.submit/executor.submit/taskfn_complete",
+      "status": "OK",
+      "baseline": 457153.4004064231,
+      "current": 473249.04632153624,
+      "change_percent": 3.5208413413973614
+    },
+    {
+      "benchmark": "vix.core.http.request/http.request/basic_accessors",
+      "status": "FAIL",
+      "baseline": 499999999999999.94,
+      "current": 333333333333333.3,
+      "change_percent": -33.33333333333333
+    },
+    {
+      "benchmark": "vix.core.http.request/http.request/construct_json_body",
+      "status": "FAIL",
+      "baseline": 1129722.62098983,
+      "current": 597862.3293709282,
+      "change_percent": -47.07883879964281
+    },
+    {
+      "benchmark": "vix.core.http.request/http.request/construct_query_target",
+      "status": "FAIL",
+      "baseline": 700890.3352455617,
+      "current": 346594.53518656763,
+      "change_percent": -50.549391572772095
+    },
+    {
+      "benchmark": "vix.core.http.request/http.request/construct_static_target",
+      "status": "FAIL",
+      "baseline": 1182153.4334389847,
+      "current": 569541.6045876285,
+      "change_percent": -51.821685030277024
+    },
+    {
+      "benchmark": "vix.core.http.request/http.request/construct_with_params",
+      "status": "FAIL",
+      "baseline": 768798.2669810969,
+      "current": 362272.2366191141,
+      "change_percent": -52.87811482176225
+    },
+    {
+      "benchmark": "vix.core.http.request/http.request/copy_request",
+      "status": "FAIL",
+      "baseline": 2217391.236283556,
+      "current": 583523.8708966273,
+      "change_percent": -73.68421677923475
+    },
+    {
+      "benchmark": "vix.core.http.request/http.request/default_construct",
+      "status": "FAIL",
+      "baseline": 10724897.080670144,
+      "current": 5076008.094446156,
+      "change_percent": -52.67079901778431
+    },
+    {
+      "benchmark": "vix.core.http.request/http.request/header_lookup_missing",
+      "status": "FAIL",
+      "baseline": 67627660.79869062,
+      "current": 17810822.830649182,
+      "change_percent": -73.66340544637909
+    },
+    {
+      "benchmark": "vix.core.http.request/http.request/header_lookup_present",
+      "status": "FAIL",
+      "baseline": 34695533.01474478,
+      "current": 10406948.812343847,
+      "change_percent": -70.00493173596399
+    },
+    {
+      "benchmark": "vix.core.http.request/http.request/json_cached_access",
+      "status": "FAIL",
+      "baseline": 15738695.103844618,
+      "current": 4327087.513529748,
+      "change_percent": -72.50669458313138
+    },
+    {
+      "benchmark": "vix.core.http.request/http.request/json_parse_new_request",
+      "status": "FAIL",
+      "baseline": 334853.1491803528,
+      "current": 89751.01753780116,
+      "change_percent": -73.19690205766557
+    },
+    {
+      "benchmark": "vix.core.http.request/http.request/move_request",
+      "status": "FAIL",
+      "baseline": 637897.0552903678,
+      "current": 177498.5328574769,
+      "change_percent": -72.17442353975433
+    },
+    {
+      "benchmark": "vix.core.http.request/http.request/param_lookup_missing",
+      "status": "FAIL",
+      "baseline": 42636284.164267965,
+      "current": 23944484.90330756,
+      "change_percent": -43.84012262641164
+    },
+    {
+      "benchmark": "vix.core.http.request/http.request/param_lookup_present",
+      "status": "FAIL",
+      "baseline": 47533034.047526084,
+      "current": 23138605.54887073,
+      "change_percent": -51.32100020012291
+    },
+    {
+      "benchmark": "vix.core.http.request/http.request/query_lookup_missing",
+      "status": "FAIL",
+      "baseline": 37950621.46917795,
+      "current": 16075033.53046033,
+      "change_percent": -57.6422390249502
+    },
+    {
+      "benchmark": "vix.core.http.request/http.request/query_lookup_present",
+      "status": "FAIL",
+      "baseline": 42158416.045071565,
+      "current": 22154168.30953671,
+      "change_percent": -47.450188152582186
+    },
+    {
+      "benchmark": "vix.core.http.request/http.request/state_emplace",
+      "status": "FAIL",
+      "baseline": 5627494.53819297,
+      "current": 2027092.4719814162,
+      "change_percent": -63.9787749552871
+    },
+    {
+      "benchmark": "vix.core.http.request/http.request/state_has_get",
+      "status": "FAIL",
+      "baseline": 43409966.140334934,
+      "current": 13896911.460067192,
+      "change_percent": -67.98681801514999
+    },
+    {
+      "benchmark": "vix.core.http.request/http.request/state_try_get",
+      "status": "FAIL",
+      "baseline": 44639454.380876996,
+      "current": 14717082.70216058,
+      "change_percent": -67.0312218052889
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/common_headers",
+      "status": "OK",
+      "baseline": 958780.526281598,
+      "current": 914757.4099024477,
+      "change_percent": -4.591573897509525
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/construct_status",
+      "status": "FAIL",
+      "baseline": 6580592516.55019,
+      "current": 2658429081.087404,
+      "change_percent": -59.60197999797959
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/construct_status_body",
+      "status": "FAIL",
+      "baseline": 63350905.60753075,
+      "current": 21075595.547856312,
+      "change_percent": -66.73197431711067
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/copy_response",
+      "status": "FAIL",
+      "baseline": 3791991.2886129087,
+      "current": 725972.5921970129,
+      "change_percent": -80.85510917767509
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/default_construct",
+      "status": "FAIL",
+      "baseline": 3382011755.8728633,
+      "current": 2186279782.5963383,
+      "change_percent": -35.35564213223495
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/error_response_helper",
+      "status": "FAIL",
+      "baseline": 492154.1830073886,
+      "current": 240467.65842411722,
+      "change_percent": -51.139771493010535
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/header_lookup_missing",
+      "status": "FAIL",
+      "baseline": 45118306.9120716,
+      "current": 15590860.431036426,
+      "change_percent": -65.44449138700942
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/header_lookup_present",
+      "status": "FAIL",
+      "baseline": 33347700.078322075,
+      "current": 10259823.370805232,
+      "change_percent": -69.23379019629989
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/http_date_now",
+      "status": "FAIL",
+      "baseline": 1423936.2448684303,
+      "current": 391888.41764219577,
+      "change_percent": -72.47851376390763
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/json_response_helper",
+      "status": "FAIL",
+      "baseline": 498317.6422658872,
+      "current": 237881.13054057138,
+      "change_percent": -52.26315298432777
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/move_response",
+      "status": "FAIL",
+      "baseline": 1847798.165922844,
+      "current": 322684.6593343801,
+      "change_percent": -82.53680162231235
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/no_content_response_helper",
+      "status": "FAIL",
+      "baseline": 825774.6191201275,
+      "current": 650556.8761438484,
+      "change_percent": -21.21859147995801
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/redirect_response_helper",
+      "status": "FAIL",
+      "baseline": 466286.1056036721,
+      "current": 228458.9627062356,
+      "change_percent": -51.00455279265426
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/remove_header",
+      "status": "FAIL",
+      "baseline": 1721482.7753632374,
+      "current": 427472.8873718161,
+      "change_percent": -75.16833200485448
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/replace_headers",
+      "status": "FAIL",
+      "baseline": 1878130.6630452203,
+      "current": 543665.3739449396,
+      "change_percent": -71.05284607496716
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/set_status_body_headers",
+      "status": "FAIL",
+      "baseline": 2830287.5043406705,
+      "current": 830291.4747189148,
+      "change_percent": -70.66405891820042
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/status_helpers",
+      "status": "FAIL",
+      "baseline": 26968021.633450303,
+      "current": 6861045.582575021,
+      "change_percent": -74.55858766419561
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/text_response_helper",
+      "status": "FAIL",
+      "baseline": 718491.4346911691,
+      "current": 465532.54094574007,
+      "change_percent": -35.20694632277126
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/to_http_string_json",
+      "status": "FAIL",
+      "baseline": 1029290.7851970487,
+      "current": 158594.97036351648,
+      "change_percent": -84.59182063568606
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/to_http_string_large_body",
+      "status": "FAIL",
+      "baseline": 39177.85467846514,
+      "current": 11148.771264040282,
+      "change_percent": -71.54318082105598
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/to_http_string_many_headers",
+      "status": "FAIL",
+      "baseline": 164631.0357384279,
+      "current": 30930.145134803617,
+      "change_percent": -81.21244576025957
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/to_http_string_text",
+      "status": "FAIL",
+      "baseline": 547802.4106505235,
+      "current": 219010.80785704163,
+      "change_percent": -60.02010878393853
+    },
+    {
+      "benchmark": "vix.core.http.response/http.response/to_json_string",
+      "status": "FAIL",
+      "baseline": 1720471.0337711717,
+      "current": 481418.48608954524,
+      "change_percent": -72.01821613733861
+    },
+    {
+      "benchmark": "vix.core.router.match/router.match/many_param_routes",
+      "status": "FAIL",
+      "baseline": 3329047.20724765,
+      "current": 743722.7759905987,
+      "change_percent": -77.65959057680395
+    },
+    {
+      "benchmark": "vix.core.router.match/router.match/many_static_routes",
+      "status": "FAIL",
+      "baseline": 5824100.832797497,
+      "current": 1507390.2141704538,
+      "change_percent": -74.11806118325036
+    },
+    {
+      "benchmark": "vix.core.router.match/router.match/method_case_normalization",
+      "status": "FAIL",
+      "baseline": 8137108.057475063,
+      "current": 2139181.154098116,
+      "change_percent": -73.71079333113954
+    },
+    {
+      "benchmark": "vix.core.router.match/router.match/missing_route",
+      "status": "FAIL",
+      "baseline": 4888163.009717047,
+      "current": 1334613.3057909007,
+      "change_percent": -72.6970376573396
+    },
+    {
+      "benchmark": "vix.core.router.match/router.match/mixed_routes",
+      "status": "FAIL",
+      "baseline": 6025952.524123274,
+      "current": 1816700.5565191468,
+      "change_percent": -69.85205991506776
+    },
+    {
+      "benchmark": "vix.core.router.match/router.match/nested_param_route",
+      "status": "FAIL",
+      "baseline": 3910198.3227564036,
+      "current": 1015447.9394367434,
+      "change_percent": -74.03078167347464
+    },
+    {
+      "benchmark": "vix.core.router.match/router.match/nested_static_route",
+      "status": "FAIL",
+      "baseline": 8175977.4493460385,
+      "current": 2143928.028782011,
+      "change_percent": -73.77771597262056
+    },
+    {
+      "benchmark": "vix.core.router.match/router.match/param_route",
+      "status": "FAIL",
+      "baseline": 5675203.441997266,
+      "current": 1517982.7415623849,
+      "change_percent": -73.25236430593644
+    },
+    {
+      "benchmark": "vix.core.router.match/router.match/query_string",
+      "status": "FAIL",
+      "baseline": 5336571.9067069255,
+      "current": 1726427.5341132195,
+      "change_percent": -67.64912823635954
+    },
+    {
+      "benchmark": "vix.core.router.match/router.match/static_route",
+      "status": "FAIL",
+      "baseline": 9374362.367589708,
+      "current": 2145620.923298789,
+      "change_percent": -77.1118200986457
+    },
+    {
+      "benchmark": "vix.core.router.match/router.match/static_wins_over_param",
+      "status": "FAIL",
+      "baseline": 6079743.4717903305,
+      "current": 1764247.613846281,
+      "change_percent": -70.98154515840525
+    },
+    {
+      "benchmark": "vix.core.router.match/router.match/strip_query",
+      "status": "FAIL",
+      "baseline": 41685816.37805016,
+      "current": 13130448.58632579,
+      "change_percent": -68.50139993122532
+    },
+    {
+      "benchmark": "vix.core.router.match/router.match/wrong_method",
+      "status": "FAIL",
+      "baseline": 8201741.785859231,
+      "current": 2305672.8433397952,
+      "change_percent": -71.88800984548126
+    },
+    {
+      "benchmark": "vix.core.router.registration/router.registration/duplicate_route",
+      "status": "FAIL",
+      "baseline": 1795799.6246778786,
+      "current": 953597.9249709153,
+      "change_percent": -46.8984227490321
+    },
+    {
+      "benchmark": "vix.core.router.registration/router.registration/lowercase_methods",
+      "status": "FAIL",
+      "baseline": 1044237.5577789694,
+      "current": 529301.8878610434,
+      "change_percent": -49.31211926653579
+    },
+    {
+      "benchmark": "vix.core.router.registration/router.registration/mixed_methods",
+      "status": "FAIL",
+      "baseline": 1046598.7633389012,
+      "current": 651752.611654184,
+      "change_percent": -37.72660216271069
+    },
+    {
+      "benchmark": "vix.core.router.registration/router.registration/mixed_route_tree",
+      "status": "FAIL",
+      "baseline": 896734.8806912176,
+      "current": 389684.0955736095,
+      "change_percent": -56.544113096923944
+    },
+    {
+      "benchmark": "vix.core.router.registration/router.registration/nested_param_routes",
+      "status": "FAIL",
+      "baseline": 392297.47446731885,
+      "current": 163656.03657974268,
+      "change_percent": -58.282668833909
+    },
+    {
+      "benchmark": "vix.core.router.registration/router.registration/nested_static_routes",
+      "status": "FAIL",
+      "baseline": 832850.2801708343,
+      "current": 349421.69835368224,
+      "change_percent": -58.04507644735272
+    },
+    {
+      "benchmark": "vix.core.router.registration/router.registration/param_routes",
+      "status": "FAIL",
+      "baseline": 680585.7801810018,
+      "current": 303250.8491023775,
+      "change_percent": -55.442670426977195
+    },
+    {
+      "benchmark": "vix.core.router.registration/router.registration/path_with_trailing_slash",
+      "status": "FAIL",
+      "baseline": 1095231.4716953854,
+      "current": 589763.1275374559,
+      "change_percent": -46.15173661650534
+    },
+    {
+      "benchmark": "vix.core.router.registration/router.registration/path_without_leading_slash",
+      "status": "FAIL",
+      "baseline": 1079177.0627390377,
+      "current": 576770.1219234361,
+      "change_percent": -46.554634838184256
+    },
+    {
+      "benchmark": "vix.core.router.registration/router.registration/route_records_scan",
+      "status": "FAIL",
+      "baseline": 212202.86675547724,
+      "current": 99308.53059086073,
+      "change_percent": -53.20113620081551
+    },
+    {
+      "benchmark": "vix.core.router.registration/router.registration/static_and_param_same_prefix",
+      "status": "FAIL",
+      "baseline": 912814.5701636061,
+      "current": 443264.81825976225,
+      "change_percent": -51.43977399699977
+    },
+    {
+      "benchmark": "vix.core.router.registration/router.registration/static_routes",
+      "status": "FAIL",
+      "baseline": 1346909.280945746,
+      "current": 668097.9551859935,
+      "change_percent": -50.39770201027335
+    },
+    {
+      "benchmark": "vix.core.runtime.queue/runtime.queue/front_back_size",
+      "status": "FAIL",
+      "baseline": 92974073.24993353,
+      "current": 28771163.468448155,
+      "change_percent": -69.0546380697925
+    },
+    {
+      "benchmark": "vix.core.runtime.queue/runtime.queue/push_batch",
+      "status": "FAIL",
+      "baseline": 30328686.907416254,
+      "current": 11054821.820066037,
+      "change_percent": -63.54994908347712
+    },
+    {
+      "benchmark": "vix.core.runtime.queue/runtime.queue/push_batch_pop_batch",
+      "status": "FAIL",
+      "baseline": 75148682.84320344,
+      "current": 23568779.424838554,
+      "change_percent": -68.63713569802088
+    },
+    {
+      "benchmark": "vix.core.runtime.queue/runtime.queue/push_clear",
+      "status": "FAIL",
+      "baseline": 33359837.724405374,
+      "current": 10278314.134470362,
+      "change_percent": -69.18955595832841
+    },
+    {
+      "benchmark": "vix.core.runtime.queue/runtime.queue/push_pop",
+      "status": "FAIL",
+      "baseline": 49692638.607055716,
+      "current": 14686026.521128142,
+      "change_percent": -70.44627346666411
+    },
+    {
+      "benchmark": "vix.core.runtime.queue/runtime.queue/push_steal",
+      "status": "FAIL",
+      "baseline": 55996269.52852401,
+      "current": 15218354.278798195,
+      "change_percent": -72.82255691864242
+    },
+    {
+      "benchmark": "vix.core.runtime.queue/runtime.queue/push_yielded_normalize",
+      "status": "FAIL",
+      "baseline": 24332170.13394008,
+      "current": 7909279.613717111,
+      "change_percent": -67.49455732809982
+    },
+    {
+      "benchmark": "vix.core.runtime.queue/runtime.queue/swap",
+      "status": "FAIL",
+      "baseline": 27831070.412190676,
+      "current": 8819925.304934585,
+      "change_percent": -68.30906905732506
+    },
+    {
+      "benchmark": "vix.core.runtime.queue/runtime.queue/try_pop_empty",
+      "status": "FAIL",
+      "baseline": 108357329.96703228,
+      "current": 39110035.49822372,
+      "change_percent": -63.90642376466553
+    },
+    {
+      "benchmark": "vix.core.runtime.queue/runtime.queue/try_steal_empty",
+      "status": "FAIL",
+      "baseline": 132659423.46214564,
+      "current": 35163666.64914344,
+      "change_percent": -73.49327644320918
+    },
+    {
+      "benchmark": "vix.core.runtime.scheduler/runtime.scheduler/start_stop",
+      "status": "FAIL",
+      "baseline": 28687.934371186297,
+      "current": 12077.624340954235,
+      "change_percent": -57.89998615904249
+    },
+    {
+      "benchmark": "vix.core.runtime.scheduler/runtime.scheduler/submit_affinity_tasks",
+      "status": "FAIL",
+      "baseline": 1079115.1549248938,
+      "current": 854862.8914046383,
+      "change_percent": -20.78112447006301
+    },
+    {
+      "benchmark": "vix.core.runtime.scheduler/runtime.scheduler/submit_complete_tasks",
+      "status": "FAIL",
+      "baseline": 677308.4925476762,
+      "current": 441663.46821344044,
+      "change_percent": -34.79138781323468
+    },
+    {
+      "benchmark": "vix.core.runtime.scheduler/runtime.scheduler/submit_cpu_tasks",
+      "status": "OK",
+      "baseline": 476744.2305056829,
+      "current": 476134.6074625596,
+      "change_percent": -0.1278721385839648
+    },
+    {
+      "benchmark": "vix.core.runtime.scheduler/runtime.scheduler/submit_large_affinity_tasks",
+      "status": "FAIL",
+      "baseline": 946091.659403521,
+      "current": 543086.3532283605,
+      "change_percent": -42.596856464123334
+    },
+    {
+      "benchmark": "vix.core.runtime.scheduler/runtime.scheduler/submit_yielding_tasks",
+      "status": "OK",
+      "baseline": 335330.15360613656,
+      "current": 348562.33547639917,
+      "change_percent": 3.946016106205742
+    },
+    {
+      "benchmark": "vix.core.runtime.task/runtime.task/cancel",
+      "status": "OK",
+      "baseline": 31250000000000.0,
+      "current": 50847457627118.65,
+      "change_percent": 62.71186440677967
+    },
+    {
+      "benchmark": "vix.core.runtime.task/runtime.task/construct_valid",
+      "status": "OK",
+      "baseline": 882050449.7575244,
+      "current": 1291395688.8046324,
+      "change_percent": 46.40837031029654
+    },
+    {
+      "benchmark": "vix.core.runtime.task/runtime.task/default_construct",
+      "status": "FAIL",
+      "baseline": 13698630136986.3,
+      "current": 9900990099009.9,
+      "change_percent": -27.722772277227726
+    },
+    {
+      "benchmark": "vix.core.runtime.task/runtime.task/execute_complete_fn",
+      "status": "FAIL",
+      "baseline": 369290810.2351164,
+      "current": 101521038.96631278,
+      "change_percent": -72.50918892303945
+    },
+    {
+      "benchmark": "vix.core.runtime.task/runtime.task/mark_ready",
+      "status": "OK",
+      "baseline": 31250000000000.0,
+      "current": 51724137931034.484,
+      "change_percent": 65.51724137931035
+    },
+    {
+      "benchmark": "vix.core.runtime.task/runtime.task/state_queries",
+      "status": "OK",
+      "baseline": 61855670103092.78,
+      "current": 101694915254237.3,
+      "change_percent": 64.40677966101697
+    },
+    {
+      "benchmark": "vix.core.runtime.worker/runtime.worker/start_stop",
+      "status": "FAIL",
+      "baseline": 24441.236667916426,
+      "current": 12179.582586217439,
+      "change_percent": -50.167895545951005
+    },
+    {
+      "benchmark": "vix.core.runtime.worker/runtime.worker/steal_callback_complete_tasks",
+      "status": "FAIL",
+      "baseline": 9325831.013144292,
+      "current": 3126471.8843418,
+      "change_percent": -66.47513899903188
+    },
+    {
+      "benchmark": "vix.core.runtime.worker/runtime.worker/submit_batch_complete_tasks",
+      "status": "FAIL",
+      "baseline": 7472788.686524862,
+      "current": 2639287.9036280517,
+      "change_percent": -64.6813523793696
+    },
+    {
+      "benchmark": "vix.core.runtime.worker/runtime.worker/submit_complete_tasks",
+      "status": "OK",
+      "baseline": 747698.5185363248,
+      "current": 994037.2970944976,
+      "change_percent": 32.94627078309572
+    },
+    {
+      "benchmark": "vix.core.runtime.worker/runtime.worker/submit_cpu_tasks",
+      "status": "FAIL",
+      "baseline": 1979394.9733818881,
+      "current": 1061652.439727735,
+      "change_percent": -46.364800658564235
+    },
+    {
+      "benchmark": "vix.core.runtime.worker/runtime.worker/submit_yielding_tasks",
+      "status": "FAIL",
+      "baseline": 1239263.3323047447,
+      "current": 737753.8105500743,
+      "change_percent": -40.4683579899018
+    },
+    {
+      "benchmark": "vix.core.runtime.worker/runtime.worker/try_steal_empty",
+      "status": "FAIL",
+      "baseline": 53675165.41344101,
+      "current": 17437986.596117225,
+      "change_percent": -67.51200213022445
+    },
+    {
+      "benchmark": "vix.core.session.fake_transport/session.fake_transport/connection_close",
+      "status": "FAIL",
+      "baseline": 148246.57069361577,
+      "current": 28552.073202581894,
+      "change_percent": -80.74014591434222
+    },
+    {
+      "benchmark": "vix.core.session.fake_transport/session.fake_transport/get_param_route",
+      "status": "FAIL",
+      "baseline": 99421.76895705193,
+      "current": 26077.92870564459,
+      "change_percent": -73.77040362567911
+    },
+    {
+      "benchmark": "vix.core.session.fake_transport/session.fake_transport/get_query_route",
+      "status": "FAIL",
+      "baseline": 81971.51057198047,
+      "current": 17146.748710155545,
+      "change_percent": -79.08206327965773
+    },
+    {
+      "benchmark": "vix.core.session.fake_transport/session.fake_transport/keep_alive_pipeline",
+      "status": "FAIL",
+      "baseline": 248638.43726962872,
+      "current": 57873.60533075167,
+      "change_percent": -76.7237897863747
+    },
+    {
+      "benchmark": "vix.core.session.fake_transport/session.fake_transport/missing_route_404",
+      "status": "FAIL",
+      "baseline": 56916.80829845244,
+      "current": 21588.854361882084,
+      "change_percent": -62.06945714756622
+    },
+    {
+      "benchmark": "vix.core.session.fake_transport/session.fake_transport/post_json_body",
+      "status": "FAIL",
+      "baseline": 58021.85284780054,
+      "current": 11251.18498886701,
+      "change_percent": -80.60871131023607
+    },
+    {
+      "benchmark": "vix.core.session.fake_transport/session.fake_transport/put_json_body_param_route",
+      "status": "FAIL",
+      "baseline": 66115.79719067366,
+      "current": 14292.056555954521,
+      "change_percent": -78.38329542524133
+    },
+    {
+      "benchmark": "vix.core.session.fake_transport/session.fake_transport/single_get_health",
+      "status": "FAIL",
+      "baseline": 146870.2550810279,
+      "current": 44466.26374362168,
+      "change_percent": -69.72411893811325
+    },
+    {
+      "benchmark": "vix.core.session.fake_transport/session.fake_transport/single_get_root",
+      "status": "FAIL",
+      "baseline": 148273.7656824343,
+      "current": 29773.058316656054,
+      "change_percent": -79.92021165738613
+    }
+  ]
+}

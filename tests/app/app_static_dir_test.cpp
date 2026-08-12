@@ -21,6 +21,7 @@
 #include <vix/app/App.hpp>
 #include <vix/http/Request.hpp>
 #include <vix/http/ResponseWrapper.hpp>
+#include <vix/router/Router.hpp>
 
 namespace
 {

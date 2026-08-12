@@ -1,0 +1,972 @@
+{
+  "arch": "x86_64",
+  "build_type": "Release",
+  "compiler": {
+    "name": "gcc",
+    "version": "13.3.0"
+  },
+  "machine": "softadastra-HP-EliteBook-x360-1030-G3",
+  "os": "linux",
+  "results": [
+    {
+      "max_ms": 205.405055,
+      "max_ops_per_sec": 27892.498539562723,
+      "mean_ms": 189.03414422222224,
+      "mean_ops_per_sec": 26497.763906684246,
+      "measure_iterations": 9,
+      "median_ms": 185.385261,
+      "median_ops_per_sec": 26970.860428866563,
+      "min_ms": 179.259667,
+      "min_ops_per_sec": 24342.146788938568,
+      "name": "app.group_registration/create_group_objects",
+      "operations": 5000,
+      "samples": [
+        {
+          "elapsed_ms": 198.535586,
+          "ops_per_sec": 25184.401954015437
+        },
+        {
+          "elapsed_ms": 205.405055,
+          "ops_per_sec": 24342.146788938568
+        },
+        {
+          "elapsed_ms": 179.259667,
+          "ops_per_sec": 27892.498539562723
+        },
+        {
+          "elapsed_ms": 185.385261,
+          "ops_per_sec": 26970.860428866563
+        },
+        {
+          "elapsed_ms": 183.811159,
+          "ops_per_sec": 27201.83054827482
+        },
+        {
+          "elapsed_ms": 184.428645,
+          "ops_per_sec": 27110.756032502435
+        },
+        {
+          "elapsed_ms": 188.341441,
+          "ops_per_sec": 26547.52970696449
+        },
+        {
+          "elapsed_ms": 194.29051,
+          "ops_per_sec": 25734.658887868478
+        },
+        {
+          "elapsed_ms": 181.849974,
+          "ops_per_sec": 27495.192273164692
+        }
+      ],
+      "warmup_iterations": 2
+    },
+    {
+      "max_ms": 114.147008,
+      "max_ops_per_sec": 14071.248754940732,
+      "mean_ms": 95.88745293333334,
+      "mean_ops_per_sec": 10605.22585136735,
+      "measure_iterations": 15,
+      "median_ms": 97.478466,
+      "median_ops_per_sec": 10258.67600337494,
+      "min_ms": 71.066898,
+      "min_ops_per_sec": 8760.632604579527,
+      "name": "app.group_registration/callback_get_routes",
+      "operations": 1000,
+      "samples": [
+        {
+          "elapsed_ms": 107.004009,
+          "ops_per_sec": 9345.444244056314
+        },
+        {
+          "elapsed_ms": 104.6058,
+          "ops_per_sec": 9559.69936657432
+        },
+        {
+          "elapsed_ms": 114.147008,
+          "ops_per_sec": 8760.632604579527
+        },
+        {
+          "elapsed_ms": 97.055919,
+          "ops_per_sec": 10303.338635122294
+        },
+        {
+          "elapsed_ms": 90.588069,
+          "ops_per_sec": 11038.981303376717
+        },
+        {
+          "elapsed_ms": 96.856094,
+          "ops_per_sec": 10324.595579912608
+        },
+        {
+          "elapsed_ms": 98.107662,
+          "ops_per_sec": 10192.883813702541
+        },
+        {
+          "elapsed_ms": 101.761645,
+          "ops_per_sec": 9826.885168768646
+        },
+        {
+          "elapsed_ms": 102.044452,
+          "ops_per_sec": 9799.650842360346
+        },
+        {
+          "elapsed_ms": 90.047758,
+          "ops_per_sec": 11105.218188774894
+        },
+        {
+          "elapsed_ms": 97.478466,
+          "ops_per_sec": 10258.67600337494
+        },
+        {
+          "elapsed_ms": 107.764455,
+          "ops_per_sec": 9279.497585729914
+        },
+        {
+          "elapsed_ms": 86.600381,
+          "ops_per_sec": 11547.29330809757
+        },
+        {
+          "elapsed_ms": 73.183178,
+          "ops_per_sec": 13664.342371138899
+        },
+        {
+          "elapsed_ms": 71.066898,
+          "ops_per_sec": 14071.248754940732
+        }
+      ],
+      "warmup_iterations": 3
+    },
+    {
+      "max_ms": 458.906043,
+      "max_ops_per_sec": 58444.24810657761,
+      "mean_ms": 445.5411537777778,
+      "mean_ops_per_sec": 56139.0695476638,
+      "measure_iterations": 9,
+      "median_ms": 446.35173,
+      "median_ops_per_sec": 56009.64064819465,
+      "min_ms": 427.758091,
+      "min_ops_per_sec": 54477.3824213947,
+      "name": "app.group_registration/returned_group_get_routes",
+      "operations": 25000,
+      "samples": [
+        {
+          "elapsed_ms": 446.039618,
+          "ops_per_sec": 56048.83286399012
+        },
+        {
+          "elapsed_ms": 446.35173,
+          "ops_per_sec": 56009.64064819465
+        },
+        {
+          "elapsed_ms": 454.541303,
+          "ops_per_sec": 55000.502341588086
+        },
+        {
+          "elapsed_ms": 452.812391,
+          "ops_per_sec": 55210.503283246064
+        },
+        {
+          "elapsed_ms": 444.597607,
+          "ops_per_sec": 56230.62204201203
+        },
+        {
+          "elapsed_ms": 458.906043,
+          "ops_per_sec": 54477.3824213947
+        },
+        {
+          "elapsed_ms": 448.322449,
+          "ops_per_sec": 55763.435571347
+        },
+        {
+          "elapsed_ms": 430.541152,
+          "ops_per_sec": 58066.45865062394
+        },
+        {
+          "elapsed_ms": 427.758091,
+          "ops_per_sec": 58444.24810657761
+        }
+      ],
+      "warmup_iterations": 2
+    },
+    {
+      "max_ms": 450.163703,
+      "max_ops_per_sec": 60037.73323503636,
+      "mean_ms": 427.3560308888889,
+      "mean_ops_per_sec": 58532.09085421329,
+      "measure_iterations": 9,
+      "median_ms": 423.285353,
+      "median_ops_per_sec": 59061.81213881975,
+      "min_ms": 416.404795,
+      "min_ops_per_sec": 55535.35265814179,
+      "name": "app.group_registration/post_routes",
+      "operations": 25000,
+      "samples": [
+        {
+          "elapsed_ms": 450.163703,
+          "ops_per_sec": 55535.35265814179
+        },
+        {
+          "elapsed_ms": 417.77437,
+          "ops_per_sec": 59840.91364915469
+        },
+        {
+          "elapsed_ms": 430.812551,
+          "ops_per_sec": 58029.878521343264
+        },
+        {
+          "elapsed_ms": 433.63009,
+          "ops_per_sec": 57652.82570681384
+        },
+        {
+          "elapsed_ms": 423.285353,
+          "ops_per_sec": 59061.81213881975
+        },
+        {
+          "elapsed_ms": 422.519235,
+          "ops_per_sec": 59168.90387250654
+        },
+        {
+          "elapsed_ms": 433.398178,
+          "ops_per_sec": 57683.67581831413
+        },
+        {
+          "elapsed_ms": 416.404795,
+          "ops_per_sec": 60037.73323503636
+        },
+        {
+          "elapsed_ms": 418.216003,
+          "ops_per_sec": 59777.72208778917
+        }
+      ],
+      "warmup_iterations": 2
+    },
+    {
+      "max_ms": 546.901097,
+      "max_ops_per_sec": 49641.41277276529,
+      "mean_ms": 524.2380387777778,
+      "mean_ops_per_sec": 47714.17411600242,
+      "measure_iterations": 9,
+      "median_ms": 520.682876,
+      "median_ops_per_sec": 48013.87015462364,
+      "min_ms": 503.611775,
+      "min_ops_per_sec": 45712.10432221898,
+      "name": "app.group_registration/mixed_methods",
+      "operations": 25000,
+      "samples": [
+        {
+          "elapsed_ms": 503.611775,
+          "ops_per_sec": 49641.41277276529
+        },
+        {
+          "elapsed_ms": 520.682876,
+          "ops_per_sec": 48013.87015462364
+        },
+        {
+          "elapsed_ms": 529.798666,
+          "ops_per_sec": 47187.7367845241
+        },
+        {
+          "elapsed_ms": 519.808511,
+          "ops_per_sec": 48094.63383334253
+        },
+        {
+          "elapsed_ms": 546.901097,
+          "ops_per_sec": 45712.10432221898
+        },
+        {
+          "elapsed_ms": 517.097128,
+          "ops_per_sec": 48346.816577175035
+        },
+        {
+          "elapsed_ms": 518.254757,
+          "ops_per_sec": 48238.823980538975
+        },
+        {
+          "elapsed_ms": 521.659782,
+          "ops_per_sec": 47923.95515742481
+        },
+        {
+          "elapsed_ms": 540.327757,
+          "ops_per_sec": 46268.213461408384
+        }
+      ],
+      "warmup_iterations": 2
+    },
+    {
+      "max_ms": 118.837673,
+      "max_ops_per_sec": 45557.60753094222,
+      "mean_ms": 113.56277466666667,
+      "mean_ops_per_sec": 44063.574822364244,
+      "measure_iterations": 9,
+      "median_ms": 112.702661,
+      "median_ops_per_sec": 44364.52480922345,
+      "min_ms": 109.751154,
+      "min_ops_per_sec": 42074.19982045593,
+      "name": "app.group_registration/same_path_multiple_methods",
+      "operations": 5000,
+      "samples": [
+        {
+          "elapsed_ms": 117.626822,
+          "ops_per_sec": 42507.31181022641
+        },
+        {
+          "elapsed_ms": 117.13989,
+          "ops_per_sec": 42684.00798395833
+        },
+        {
+          "elapsed_ms": 111.629178,
+          "ops_per_sec": 44791.15666335911
+        },
+        {
+          "elapsed_ms": 110.139699,
+          "ops_per_sec": 45396.89181463988
+        },
+        {
+          "elapsed_ms": 111.239952,
+          "ops_per_sec": 44947.879876826984
+        },
+        {
+          "elapsed_ms": 112.997943,
+          "ops_per_sec": 44248.593091645926
+        },
+        {
+          "elapsed_ms": 109.751154,
+          "ops_per_sec": 45557.60753094222
+        },
+        {
+          "elapsed_ms": 112.702661,
+          "ops_per_sec": 44364.52480922345
+        },
+        {
+          "elapsed_ms": 118.837673,
+          "ops_per_sec": 42074.19982045593
+        }
+      ],
+      "warmup_iterations": 2
+    },
+    {
+      "max_ms": 666.984185,
+      "max_ops_per_sec": 40148.87672428244,
+      "mean_ms": 636.5011295555555,
+      "mean_ops_per_sec": 39291.355220862395,
+      "measure_iterations": 9,
+      "median_ms": 633.672704,
+      "median_ops_per_sec": 39452.54362731711,
+      "min_ms": 622.682427,
+      "min_ops_per_sec": 37482.148096210105,
+      "name": "app.group_registration/param_routes",
+      "operations": 25000,
+      "samples": [
+        {
+          "elapsed_ms": 666.984185,
+          "ops_per_sec": 37482.148096210105
+        },
+        {
+          "elapsed_ms": 633.672704,
+          "ops_per_sec": 39452.54362731711
+        },
+        {
+          "elapsed_ms": 634.540288,
+          "ops_per_sec": 39398.60159044779
+        },
+        {
+          "elapsed_ms": 629.151591,
+          "ops_per_sec": 39736.051466172
+        },
+        {
+          "elapsed_ms": 632.570992,
+          "ops_per_sec": 39521.25582135451
+        },
+        {
+          "elapsed_ms": 643.866771,
+          "ops_per_sec": 38827.908390383454
+        },
+        {
+          "elapsed_ms": 622.682427,
+          "ops_per_sec": 40148.87672428244
+        },
+        {
+          "elapsed_ms": 627.008822,
+          "ops_per_sec": 39871.8472895745
+        },
+        {
+          "elapsed_ms": 638.032386,
+          "ops_per_sec": 39182.96398201956
+        }
+      ],
+      "warmup_iterations": 2
+    },
+    {
+      "max_ms": 515.234316,
+      "max_ops_per_sec": 50818.9228536166,
+      "mean_ms": 504.685444,
+      "mean_ops_per_sec": 49551.12258789705,
+      "measure_iterations": 9,
+      "median_ms": 506.511505,
+      "median_ops_per_sec": 49357.22042483517,
+      "min_ms": 491.942737,
+      "min_ops_per_sec": 48521.61283449917,
+      "name": "app.group_registration/nested_group_routes",
+      "operations": 25000,
+      "samples": [
+        {
+          "elapsed_ms": 500.831093,
+          "ops_per_sec": 49917.02861387641
+        },
+        {
+          "elapsed_ms": 512.898426,
+          "ops_per_sec": 48742.59450349727
+        },
+        {
+          "elapsed_ms": 491.942737,
+          "ops_per_sec": 50818.9228536166
+        },
+        {
+          "elapsed_ms": 495.791324,
+          "ops_per_sec": 50424.440263097466
+        },
+        {
+          "elapsed_ms": 493.195007,
+          "ops_per_sec": 50689.88867521119
+        },
+        {
+          "elapsed_ms": 513.496592,
+          "ops_per_sec": 48685.81484178575
+        },
+        {
+          "elapsed_ms": 512.267996,
+          "ops_per_sec": 48802.580280654496
+        },
+        {
+          "elapsed_ms": 515.234316,
+          "ops_per_sec": 48521.61283449917
+        },
+        {
+          "elapsed_ms": 506.511505,
+          "ops_per_sec": 49357.22042483517
+        }
+      ],
+      "warmup_iterations": 2
+    },
+    {
+      "max_ms": 87.299312,
+      "max_ops_per_sec": 13150.340385383086,
+      "mean_ms": 82.54150311111113,
+      "mean_ops_per_sec": 12134.543528004762,
+      "measure_iterations": 9,
+      "median_ms": 82.67247,
+      "median_ops_per_sec": 12095.925040101014,
+      "min_ms": 76.043659,
+      "min_ops_per_sec": 11454.8439969378,
+      "name": "app.group_registration/deeply_nested_group_routes",
+      "operations": 1000,
+      "samples": [
+        {
+          "elapsed_ms": 81.685866,
+          "ops_per_sec": 12242.019935248038
+        },
+        {
+          "elapsed_ms": 76.043659,
+          "ops_per_sec": 13150.340385383086
+        },
+        {
+          "elapsed_ms": 87.299312,
+          "ops_per_sec": 11454.8439969378
+        },
+        {
+          "elapsed_ms": 85.983764,
+          "ops_per_sec": 11630.102631934094
+        },
+        {
+          "elapsed_ms": 81.995083,
+          "ops_per_sec": 12195.853256225133
+        },
+        {
+          "elapsed_ms": 84.04222,
+          "ops_per_sec": 11898.781350611633
+        },
+        {
+          "elapsed_ms": 78.926435,
+          "ops_per_sec": 12670.026208582714
+        },
+        {
+          "elapsed_ms": 84.224719,
+          "ops_per_sec": 11872.998947019343
+        },
+        {
+          "elapsed_ms": 82.67247,
+          "ops_per_sec": 12095.925040101014
+        }
+      ],
+      "warmup_iterations": 2
+    },
+    {
+      "max_ms": 698.426478,
+      "max_ops_per_sec": 37021.574852894475,
+      "mean_ms": 686.1644329999999,
+      "mean_ops_per_sec": 36438.402872027866,
+      "measure_iterations": 9,
+      "median_ms": 683.133511,
+      "median_ops_per_sec": 36596.06738279305,
+      "min_ms": 675.281916,
+      "min_ops_per_sec": 35794.74831995129,
+      "name": "app.group_registration/nested_group_param_routes",
+      "operations": 25000,
+      "samples": [
+        {
+          "elapsed_ms": 686.068751,
+          "ops_per_sec": 36439.49671743612
+        },
+        {
+          "elapsed_ms": 681.864143,
+          "ops_per_sec": 36664.19514304919
+        },
+        {
+          "elapsed_ms": 698.426478,
+          "ops_per_sec": 35794.74831995129
+        },
+        {
+          "elapsed_ms": 683.133511,
+          "ops_per_sec": 36596.06738279305
+        },
+        {
+          "elapsed_ms": 680.595565,
+          "ops_per_sec": 36732.53439434329
+        },
+        {
+          "elapsed_ms": 695.249601,
+          "ops_per_sec": 35958.30902174081
+        },
+        {
+          "elapsed_ms": 682.320806,
+          "ops_per_sec": 36639.6565664744
+        },
+        {
+          "elapsed_ms": 692.539126,
+          "ops_per_sec": 36099.04344956822
+        },
+        {
+          "elapsed_ms": 675.281916,
+          "ops_per_sec": 37021.574852894475
+        }
+      ],
+      "warmup_iterations": 2
+    },
+    {
+      "max_ms": 86.392642,
+      "max_ops_per_sec": 14950.255938664004,
+      "mean_ms": 74.75745106666666,
+      "mean_ops_per_sec": 13451.114111630788,
+      "measure_iterations": 15,
+      "median_ms": 73.966222,
+      "median_ops_per_sec": 13519.684701484415,
+      "min_ms": 66.888487,
+      "min_ops_per_sec": 11575.059829748001,
+      "name": "app.group_registration/path_normalization",
+      "operations": 1000,
+      "samples": [
+        {
+          "elapsed_ms": 72.50627,
+          "ops_per_sec": 13791.910685793104
+        },
+        {
+          "elapsed_ms": 67.600536,
+          "ops_per_sec": 14792.782116402153
+        },
+        {
+          "elapsed_ms": 73.966222,
+          "ops_per_sec": 13519.684701484415
+        },
+        {
+          "elapsed_ms": 66.888487,
+          "ops_per_sec": 14950.255938664004
+        },
+        {
+          "elapsed_ms": 68.996867,
+          "ops_per_sec": 14493.411708099733
+        },
+        {
+          "elapsed_ms": 75.953685,
+          "ops_per_sec": 13165.918151304972
+        },
+        {
+          "elapsed_ms": 69.333684,
+          "ops_per_sec": 14423.003975960659
+        },
+        {
+          "elapsed_ms": 70.680446,
+          "ops_per_sec": 14148.184633696284
+        },
+        {
+          "elapsed_ms": 72.30187,
+          "ops_per_sec": 13830.900915840768
+        },
+        {
+          "elapsed_ms": 78.200823,
+          "ops_per_sec": 12787.58920478369
+        },
+        {
+          "elapsed_ms": 77.016678,
+          "ops_per_sec": 12984.200642878935
+        },
+        {
+          "elapsed_ms": 82.705771,
+          "ops_per_sec": 12091.054685893685
+        },
+        {
+          "elapsed_ms": 81.991008,
+          "ops_per_sec": 12196.459397108523
+        },
+        {
+          "elapsed_ms": 76.826777,
+          "ops_per_sec": 13016.295086802873
+        },
+        {
+          "elapsed_ms": 86.392642,
+          "ops_per_sec": 11575.059829748001
+        }
+      ],
+      "warmup_iterations": 3
+    },
+    {
+      "max_ms": 227.895245,
+      "max_ops_per_sec": 121507.94725888253,
+      "mean_ms": 214.4207742222222,
+      "mean_ops_per_sec": 116795.63768829129,
+      "measure_iterations": 9,
+      "median_ms": 207.451464,
+      "median_ops_per_sec": 120510.1160433363,
+      "min_ms": 205.747859,
+      "min_ops_per_sec": 109699.52444597956,
+      "name": "app.group_registration/duplicate_routes",
+      "operations": 25000,
+      "samples": [
+        {
+          "elapsed_ms": 207.451464,
+          "ops_per_sec": 120510.1160433363
+        },
+        {
+          "elapsed_ms": 206.730575,
+          "ops_per_sec": 120930.34617641827
+        },
+        {
+          "elapsed_ms": 219.655733,
+          "ops_per_sec": 113814.46620380266
+        },
+        {
+          "elapsed_ms": 227.360421,
+          "ops_per_sec": 109957.57260671153
+        },
+        {
+          "elapsed_ms": 227.895245,
+          "ops_per_sec": 109699.52444597956
+        },
+        {
+          "elapsed_ms": 221.554875,
+          "ops_per_sec": 112838.8621554818
+        },
+        {
+          "elapsed_ms": 205.747859,
+          "ops_per_sec": 121507.94725888253
+        },
+        {
+          "elapsed_ms": 206.601189,
+          "ops_per_sec": 121006.07997953003
+        },
+        {
+          "elapsed_ms": 206.789607,
+          "ops_per_sec": 120895.82432447874
+        }
+      ],
+      "warmup_iterations": 2
+    },
+    {
+      "max_ms": 105.338197,
+      "max_ops_per_sec": 11740.205454769479,
+      "mean_ms": 91.4686478888889,
+      "mean_ops_per_sec": 10981.602275502124,
+      "measure_iterations": 9,
+      "median_ms": 88.742698,
+      "median_ops_per_sec": 11268.532764239373,
+      "min_ms": 85.177385,
+      "min_ops_per_sec": 9493.232545075743,
+      "name": "app.group_registration/multiple_group_objects_same_prefix",
+      "operations": 1000,
+      "samples": [
+        {
+          "elapsed_ms": 85.177385,
+          "ops_per_sec": 11740.205454769479
+        },
+        {
+          "elapsed_ms": 91.720059,
+          "ops_per_sec": 10902.740479048318
+        },
+        {
+          "elapsed_ms": 86.952522,
+          "ops_per_sec": 11500.528989831944
+        },
+        {
+          "elapsed_ms": 92.091345,
+          "ops_per_sec": 10858.78374346688
+        },
+        {
+          "elapsed_ms": 88.221186,
+          "ops_per_sec": 11335.145732454786
+        },
+        {
+          "elapsed_ms": 85.888524,
+          "ops_per_sec": 11642.999011136808
+        },
+        {
+          "elapsed_ms": 88.742698,
+          "ops_per_sec": 11268.532764239373
+        },
+        {
+          "elapsed_ms": 105.338197,
+          "ops_per_sec": 9493.232545075743
+        },
+        {
+          "elapsed_ms": 99.085915,
+          "ops_per_sec": 10092.251759495786
+        }
+      ],
+      "warmup_iterations": 2
+    },
+    {
+      "max_ms": 152.524238,
+      "max_ops_per_sec": 35680.5064690899,
+      "mean_ms": 145.053034,
+      "mean_ops_per_sec": 34491.30932172127,
+      "measure_iterations": 9,
+      "median_ms": 143.909693,
+      "median_ops_per_sec": 34744.01130158758,
+      "min_ms": 140.13254,
+      "min_ops_per_sec": 32781.6750017135,
+      "name": "app.group_registration/multiple_groups_different_prefixes",
+      "operations": 5000,
+      "samples": [
+        {
+          "elapsed_ms": 145.175608,
+          "ops_per_sec": 34441.04742444061
+        },
+        {
+          "elapsed_ms": 143.909693,
+          "ops_per_sec": 34744.01130158758
+        },
+        {
+          "elapsed_ms": 142.7652,
+          "ops_per_sec": 35022.54050707035
+        },
+        {
+          "elapsed_ms": 143.970734,
+          "ops_per_sec": 34729.28046612585
+        },
+        {
+          "elapsed_ms": 143.49291,
+          "ops_per_sec": 34844.927181419625
+        },
+        {
+          "elapsed_ms": 140.13254,
+          "ops_per_sec": 35680.5064690899
+        },
+        {
+          "elapsed_ms": 150.133701,
+          "ops_per_sec": 33303.648459315606
+        },
+        {
+          "elapsed_ms": 152.524238,
+          "ops_per_sec": 32781.6750017135
+        },
+        {
+          "elapsed_ms": 143.372682,
+          "ops_per_sec": 34874.14708472846
+        }
+      ],
+      "warmup_iterations": 2
+    },
+    {
+      "max_ms": 80.007866,
+      "max_ops_per_sec": 13824.540644384513,
+      "mean_ms": 76.3716877777778,
+      "mean_ops_per_sec": 13109.355169091692,
+      "measure_iterations": 9,
+      "median_ms": 76.389754,
+      "median_ops_per_sec": 13090.760836852545,
+      "min_ms": 72.335134,
+      "min_ops_per_sec": 12498.771058335687,
+      "name": "app.group_registration/middleware_helpers",
+      "operations": 1000,
+      "samples": [
+        {
+          "elapsed_ms": 74.146109,
+          "ops_per_sec": 13486.884389307605
+        },
+        {
+          "elapsed_ms": 78.366321,
+          "ops_per_sec": 12760.583720652141
+        },
+        {
+          "elapsed_ms": 73.146821,
+          "ops_per_sec": 13671.134115315825
+        },
+        {
+          "elapsed_ms": 72.335134,
+          "ops_per_sec": 13824.540644384513
+        },
+        {
+          "elapsed_ms": 79.6675,
+          "ops_per_sec": 12552.169956381209
+        },
+        {
+          "elapsed_ms": 77.625031,
+          "ops_per_sec": 12882.44252037722
+        },
+        {
+          "elapsed_ms": 75.660654,
+          "ops_per_sec": 13216.909280218488
+        },
+        {
+          "elapsed_ms": 76.389754,
+          "ops_per_sec": 13090.760836852545
+        },
+        {
+          "elapsed_ms": 80.007866,
+          "ops_per_sec": 12498.771058335687
+        }
+      ],
+      "warmup_iterations": 2
+    },
+    {
+      "max_ms": 77.773963,
+      "max_ops_per_sec": 14225.075835657415,
+      "mean_ms": 74.10623477777777,
+      "mean_ops_per_sec": 13516.173399358073,
+      "measure_iterations": 9,
+      "median_ms": 73.511574,
+      "median_ops_per_sec": 13603.30007353672,
+      "min_ms": 70.298395,
+      "min_ops_per_sec": 12857.773494196254,
+      "name": "app.group_registration/routes_after_templates",
+      "operations": 1000,
+      "samples": [
+        {
+          "elapsed_ms": 70.298395,
+          "ops_per_sec": 14225.075835657415
+        },
+        {
+          "elapsed_ms": 70.422315,
+          "ops_per_sec": 14200.04440353885
+        },
+        {
+          "elapsed_ms": 77.603936,
+          "ops_per_sec": 12885.944341792148
+        },
+        {
+          "elapsed_ms": 77.251281,
+          "ops_per_sec": 12944.769161821407
+        },
+        {
+          "elapsed_ms": 73.11959,
+          "ops_per_sec": 13676.22548211772
+        },
+        {
+          "elapsed_ms": 76.192587,
+          "ops_per_sec": 13124.636390151709
+        },
+        {
+          "elapsed_ms": 73.511574,
+          "ops_per_sec": 13603.30007353672
+        },
+        {
+          "elapsed_ms": 70.782472,
+          "ops_per_sec": 14127.79141141044
+        },
+        {
+          "elapsed_ms": 77.773963,
+          "ops_per_sec": 12857.773494196254
+        }
+      ],
+      "warmup_iterations": 2
+    },
+    {
+      "max_ms": 6641.429319,
+      "max_ops_per_sec": 81699.12919501125,
+      "mean_ms": 6276.533300933333,
+      "mean_ops_per_sec": 79692.66650861377,
+      "measure_iterations": 15,
+      "median_ms": 6257.995685,
+      "median_ops_per_sec": 79897.7859953574,
+      "min_ms": 6120.016271,
+      "min_ops_per_sec": 75284.99905428264,
+      "name": "app.group_registration/route_records_scan",
+      "operations": 500000,
+      "samples": [
+        {
+          "elapsed_ms": 6286.696823,
+          "ops_per_sec": 79533.02251998863
+        },
+        {
+          "elapsed_ms": 6324.457862,
+          "ops_per_sec": 79058.15975219158
+        },
+        {
+          "elapsed_ms": 6223.218104,
+          "ops_per_sec": 80344.28355943735
+        },
+        {
+          "elapsed_ms": 6257.995685,
+          "ops_per_sec": 79897.7859953574
+        },
+        {
+          "elapsed_ms": 6159.710573,
+          "ops_per_sec": 81172.64505765277
+        },
+        {
+          "elapsed_ms": 6192.431303,
+          "ops_per_sec": 80743.7298105784
+        },
+        {
+          "elapsed_ms": 6126.020121,
+          "ops_per_sec": 81619.05937690276
+        },
+        {
+          "elapsed_ms": 6120.016271,
+          "ops_per_sec": 81699.12919501125
+        },
+        {
+          "elapsed_ms": 6354.398766,
+          "ops_per_sec": 78685.65043089712
+        },
+        {
+          "elapsed_ms": 6350.590395,
+          "ops_per_sec": 78732.83724827603
+        },
+        {
+          "elapsed_ms": 6345.797449,
+          "ops_per_sec": 78792.30372831902
+        },
+        {
+          "elapsed_ms": 6202.851821,
+          "ops_per_sec": 80608.08389896245
+        },
+        {
+          "elapsed_ms": 6641.429319,
+          "ops_per_sec": 75284.99905428264
+        },
+        {
+          "elapsed_ms": 6337.666439,
+          "ops_per_sec": 78893.39156809481
+        },
+        {
+          "elapsed_ms": 6224.718583,
+          "ops_per_sec": 80324.91643325429
+        }
+      ],
+      "warmup_iterations": 3
+    }
+  ],
+  "runner": "local",
+  "suite": "vix.core.app.group_registration",
+  "timestamp_unix": "1786540076",
+  "version": "v2.8.4-current"
+}

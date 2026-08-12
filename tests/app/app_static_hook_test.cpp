@@ -23,6 +23,7 @@
 #include <vix/http/Request.hpp>
 #include <vix/http/Response.hpp>
 #include <vix/http/ResponseWrapper.hpp>
+#include <vix/router/Router.hpp>
 
 namespace
 {
