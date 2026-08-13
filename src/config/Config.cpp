@@ -281,7 +281,7 @@ namespace vix::config
       return;
     }
 
-    if (!rawConfig_.unique())
+    if (rawConfig_.use_count() > 1)
     {
       rawConfig_ = std::make_shared<RawConfigState>(*rawConfig_);
     }
