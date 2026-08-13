@@ -458,6 +458,11 @@ namespace vix::config
         {
         }
       }
+
+      // A raw value is authoritative.  If it cannot be converted, use the
+      // caller's fallback instead of silently falling through to the process
+      // environment.
+      return defaultValue;
     }
 
     return get_env_int(dotted_to_env_key(dottedKey), defaultValue);
@@ -497,6 +502,10 @@ namespace vix::config
           return false;
         }
       }
+
+      // Do not let an invalid raw value be overridden by an environment
+      // value; the raw configuration still owns this key.
+      return defaultValue;
     }
 
     return get_env_bool(dotted_to_env_key(dottedKey), defaultValue);
@@ -533,6 +542,10 @@ namespace vix::config
       {
         return std::to_string(node->get<double>());
       }
+
+      // null, arrays and objects are present but not string-convertible.
+      // Their presence must prevent an environment fallback.
+      return defaultValue;
     }
 
     return get_env_string(dotted_to_env_key(dottedKey), defaultValue);
