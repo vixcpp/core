@@ -597,13 +597,19 @@ if (
 endif()
 
 # --------------------------------------------------------------------
-# Standalone package config/export
-# Only for non-umbrella builds
+# Package config/export
+#
+# Standalone builds export their own vix_coreTargets.  In an umbrella build,
+# vix::core belongs to the shared VixTargets export, but we still install a
+# vix_core package config so consumers can consistently use
+# find_package(vix_core CONFIG REQUIRED).
 # --------------------------------------------------------------------
-if (
-  VIX_CORE_ENABLE_INSTALL
-  AND NOT (DEFINED VIX_UMBRELLA_BUILD AND VIX_UMBRELLA_BUILD)
-)
+if (VIX_CORE_ENABLE_INSTALL)
+
+  set(VIX_CORE_USE_UMBRELLA_TARGETS OFF)
+  if (DEFINED VIX_UMBRELLA_BUILD AND VIX_UMBRELLA_BUILD)
+    set(VIX_CORE_USE_UMBRELLA_TARGETS ON)
+  endif()
 
   configure_package_config_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/vix_coreConfig.cmake.in"
@@ -623,11 +629,13 @@ if (
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/vix_core"
   )
 
-  install(EXPORT vix_coreTargets
-    FILE vix_coreTargets.cmake
-    NAMESPACE vix::
-    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/vix_core"
-  )
+  if (NOT VIX_CORE_USE_UMBRELLA_TARGETS)
+    install(EXPORT vix_coreTargets
+      FILE vix_coreTargets.cmake
+      NAMESPACE vix::
+      DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/vix_core"
+    )
+  endif()
 
 endif()
 

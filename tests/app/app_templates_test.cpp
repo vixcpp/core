@@ -24,6 +24,7 @@
 #include <vix/executor/RuntimeExecutor.hpp>
 #include <vix/http/Request.hpp>
 #include <vix/http/ResponseWrapper.hpp>
+#include <vix/router/Router.hpp>
 #include <vix/runtime/Budget.hpp>
 #include <vix/runtime/Runtime.hpp>
 #include <vix/template/Context.hpp>

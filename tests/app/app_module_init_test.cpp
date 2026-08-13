@@ -22,6 +22,7 @@
 
 #include <vix/app/App.hpp>
 #include <vix/executor/RuntimeExecutor.hpp>
+#include <vix/router/Router.hpp>
 #include <vix/runtime/Budget.hpp>
 #include <vix/runtime/Runtime.hpp>
 
