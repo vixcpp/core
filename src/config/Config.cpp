@@ -313,7 +313,13 @@ namespace vix::config
 
   void Config::set(const std::string &dottedKey, const char *value)
   {
-    set(dottedKey, std::string_view(value ? value : ""));
+    if (value == nullptr)
+    {
+      set(dottedKey, vix::json::Json(nullptr));
+      return;
+    }
+
+    set(dottedKey, std::string_view(value));
   }
 
   void Config::set(const std::string &dottedKey, bool value)
