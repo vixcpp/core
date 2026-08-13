@@ -80,6 +80,11 @@ option(
   "Enable installation and package export rules for vix::core"
   ON
 )
+option(
+  VIX_CORE_INSTALL_WITH_LOCAL_DEPENDENCIES
+  "Allow standalone package export when dependencies are installed from sibling sources"
+  OFF
+)
 
 # A standalone core build may resolve dependencies by adding sibling source
 # directories.  Those targets are intentionally not part of vix_coreTargets;
@@ -402,6 +407,7 @@ endif()
 if (
   VIX_CORE_ENABLE_INSTALL
   AND VIX_CORE_HAS_LOCAL_DEPENDENCIES
+  AND NOT VIX_CORE_INSTALL_WITH_LOCAL_DEPENDENCIES
   AND NOT (DEFINED VIX_UMBRELLA_BUILD AND VIX_UMBRELLA_BUILD)
 )
   message(STATUS "[core] Local sibling dependencies detected; skipping standalone package export.")
