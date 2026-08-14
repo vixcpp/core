@@ -53,12 +53,7 @@ namespace vix::executor
      * @param config Runtime configuration used to create the underlying runtime.
      */
     explicit RuntimeExecutor(
-        const vix::runtime::RuntimeConfig &config = vix::runtime::RuntimeConfig{})
-        : runtime_(std::make_unique<vix::runtime::Runtime>(config)),
-          state_(std::make_shared<SharedState>()),
-          started_(false)
-    {
-    }
+        const vix::runtime::RuntimeConfig &config = vix::runtime::RuntimeConfig{});
 
     /**
      * @brief Construct a RuntimeExecutor with an explicit worker count.
@@ -68,10 +63,7 @@ namespace vix::executor
      *
      * @param workers Number of runtime workers to use.
      */
-    explicit RuntimeExecutor(std::uint32_t workers)
-        : RuntimeExecutor(make_config_from_workers(workers))
-    {
-    }
+    explicit RuntimeExecutor(std::uint32_t workers);
 
     /**
      * @brief Construct a RuntimeExecutor from an existing runtime instance.
@@ -80,16 +72,7 @@ namespace vix::executor
      *
      * @throw std::invalid_argument If runtime is null.
      */
-    explicit RuntimeExecutor(std::unique_ptr<vix::runtime::Runtime> runtime)
-        : runtime_(std::move(runtime)),
-          state_(std::make_shared<SharedState>()),
-          started_(false)
-    {
-      if (!runtime_)
-      {
-        throw std::invalid_argument("RuntimeExecutor requires a valid runtime");
-      }
-    }
+    explicit RuntimeExecutor(std::unique_ptr<vix::runtime::Runtime> runtime);
 
     RuntimeExecutor(const RuntimeExecutor &) = delete;
     RuntimeExecutor &operator=(const RuntimeExecutor &) = delete;
@@ -100,16 +83,7 @@ namespace vix::executor
     /**
      * @brief Destroy the executor and stop the runtime safely.
      */
-    ~RuntimeExecutor() noexcept
-    {
-      try
-      {
-        stop();
-      }
-      catch (...)
-      {
-      }
-    }
+    ~RuntimeExecutor() noexcept;
 
     /**
      * @brief Start the underlying runtime once.
