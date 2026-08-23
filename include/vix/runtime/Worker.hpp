@@ -320,7 +320,7 @@ namespace vix::runtime
       {
         if (localBatch.empty())
         {
-          localBatch = queue_.try_pop_batch(kLocalBatchSize);
+          queue_.try_pop_batch_into(localBatch, kLocalBatchSize);
         }
 
         if (!localBatch.empty())

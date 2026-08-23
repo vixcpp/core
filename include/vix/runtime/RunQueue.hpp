@@ -167,6 +167,35 @@ namespace vix::runtime
     }
 
     /**
+     * @brief Pop up to @p max_count tasks into a caller-provided buffer.
+     *
+     * Keeping the buffer with the caller lets a worker reuse its allocation
+     * between local batch refills.
+     *
+     * @param out Destination buffer, cleared before tasks are appended.
+     * @param max_count Maximum number of tasks to pop.
+     */
+    void try_pop_batch_into(std::vector<Task> &out, std::size_t max_count)
+    {
+      out.clear();
+      if (max_count == 0)
+      {
+        return;
+      }
+
+      out.reserve(max_count);
+
+      std::lock_guard<std::mutex> lock(mutex_);
+      const std::size_t count = (max_count < queue_.size()) ? max_count : queue_.size();
+
+      for (std::size_t i = 0; i < count; ++i)
+      {
+        out.emplace_back(std::move(queue_.front()));
+        queue_.pop_front();
+      }
+    }
+
+    /**
      * @brief Return the next local task without removing it.
      *
      * This inspects the front of the queue.
