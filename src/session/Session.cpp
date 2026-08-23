@@ -253,28 +253,6 @@ namespace vix::session
     }
 #endif
 
-    inline std::vector<std::string_view> split_lines(std::string_view block)
-    {
-      std::vector<std::string_view> out;
-      std::size_t start = 0;
-
-      while (start < block.size())
-      {
-        std::size_t end = block.find("\r\n", start);
-
-        if (end == std::string_view::npos)
-        {
-          out.emplace_back(block.substr(start));
-          break;
-        }
-
-        out.emplace_back(block.substr(start, end - start));
-        start = end + 2;
-      }
-
-      return out;
-    }
-
   } // namespace
 
   const std::regex Session::XSS_PATTERN(
@@ -1115,16 +1093,18 @@ namespace vix::session
       block.remove_suffix(4);
     }
 
-    const auto lines = split_lines(block);
+    const std::size_t request_line_end = block.find("\r\n");
+    const std::string_view request_line =
+        request_line_end == std::string_view::npos
+            ? block
+            : block.substr(0, request_line_end);
 
-    if (lines.empty())
+    if (request_line.empty())
     {
       throw std::runtime_error("empty request head");
     }
 
     {
-      const std::string_view request_line = lines.front();
-
       const std::size_t sp1 = request_line.find(' ');
 
       if (sp1 == std::string_view::npos)
@@ -1154,14 +1134,29 @@ namespace vix::session
       }
     }
 
-    head.headers.reserve(lines.size() > 0 ? lines.size() - 1 : 0);
+    head.headers.reserve(4);
 
-    for (std::size_t i = 1; i < lines.size(); ++i)
+    std::size_t line_start =
+        request_line_end == std::string_view::npos
+            ? block.size()
+            : request_line_end + 2;
+
+    while (line_start < block.size())
     {
-      const std::string_view line = lines[i];
+      const std::size_t line_end = block.find("\r\n", line_start);
+      const std::string_view line =
+          line_end == std::string_view::npos
+              ? block.substr(line_start)
+              : block.substr(line_start, line_end - line_start);
 
       if (line.empty())
       {
+        if (line_end == std::string_view::npos)
+        {
+          break;
+        }
+
+        line_start = line_end + 2;
         continue;
       }
 
@@ -1181,6 +1176,13 @@ namespace vix::session
       }
 
       head.headers[std::move(key)] = std::move(value);
+
+      if (line_end == std::string_view::npos)
+      {
+        break;
+      }
+
+      line_start = line_end + 2;
     }
 
     const auto it = head.headers.find("Content-Length");
