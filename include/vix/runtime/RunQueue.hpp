@@ -69,7 +69,9 @@ namespace vix::runtime
         return false;
       }
 
-      task.mark_ready();
+      // schedulable() above excludes terminal states, so normalization cannot
+      // change the outcome for a completed, failed, or cancelled task.
+      task.state = TaskState::ready;
 
       std::lock_guard<std::mutex> lock(mutex_);
       queue_.emplace_front(std::move(task));
