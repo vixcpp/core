@@ -63,7 +63,8 @@ else()
   set(VIX_CORE_EXPORT_SET vix_coreTargets)
 endif()
 
-option(VIX_CORE_WITH_OPENSSL "Enable HTTPS/TLS support using OpenSSL" ON)
+# Direct server TLS is opt-in; enable this to build OpenSSL-backed TlsTransport support.
+option(VIX_CORE_WITH_OPENSSL "Enable HTTPS/TLS support using OpenSSL" OFF)
 option(VIX_CORE_WITH_MYSQL   "Enable MySQL client linkage" OFF)
 option(VIX_CORE_FETCH_UTILS  "Auto-resolve vix::utils if missing" ON)
 option(VIX_CORE_FETCH_ASYNC  "Auto-resolve vix::async if missing" ON)
@@ -229,6 +230,10 @@ if (NOT TARGET vix::json AND NOT TARGET vix_json)
 endif()
 
 set(VIX_JSON_TARGET "")
+set(VIX_CORE_JSON_BUNDLED OFF)
+if (VIX_JSON_BUNDLED)
+  set(VIX_CORE_JSON_BUNDLED ON)
+endif()
 if (TARGET vix::json)
   set(VIX_JSON_TARGET vix::json)
 elseif (TARGET vix_json)
@@ -467,7 +472,7 @@ if (CORE_SOURCES)
   if (VIX_CORE_WITH_OPENSSL)
     find_package(OpenSSL QUIET)
 
-    if (OpenSSL_FOUND)
+    if (OpenSSL_FOUND AND TARGET OpenSSL::SSL AND TARGET OpenSSL::Crypto)
       target_compile_definitions(vix_core PUBLIC VIX_CORE_HAS_OPENSSL=1)
       target_link_libraries(vix_core PUBLIC OpenSSL::SSL OpenSSL::Crypto)
       set(VIX_CORE_PACKAGE_WITH_OPENSSL ON)
@@ -480,6 +485,10 @@ if (CORE_SOURCES)
     target_compile_definitions(vix_core PUBLIC VIX_CORE_HAS_OPENSSL=0)
     set(VIX_CORE_PACKAGE_WITH_OPENSSL OFF)
   endif()
+
+  set_property(TARGET vix_core PROPERTY
+    VIX_REQUIRES_OPENSSL ${VIX_CORE_PACKAGE_WITH_OPENSSL}
+  )
 
   # Build-only helpers must not leak into exported interfaces.
   if (TARGET vix_warnings)
@@ -578,6 +587,7 @@ else()
     VIX_CORE_WITH_MYSQL=0
     VIX_CORE_HAS_OPENSSL=0
   )
+  set_property(TARGET vix_core PROPERTY VIX_REQUIRES_OPENSSL OFF)
 
   if (VIX_CORE_ENABLE_INSTALL)
     install(TARGETS vix_core

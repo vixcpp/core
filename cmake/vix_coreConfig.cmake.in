@@ -24,7 +24,7 @@ if (@VIX_CORE_PACKAGE_WITH_OPENSSL@)
   find_dependency(OpenSSL REQUIRED)
 endif()
 
-if (@VIX_CORE_PACKAGE_WITH_JSON@)
+if (@VIX_CORE_PACKAGE_WITH_JSON@ AND NOT @VIX_CORE_JSON_BUNDLED@)
   find_dependency(nlohmann_json CONFIG REQUIRED)
 endif()
 
