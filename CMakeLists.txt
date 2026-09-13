@@ -565,6 +565,10 @@ else()
   add_library(vix_core INTERFACE)
   add_library(vix::core ALIAS vix_core)
 
+  set_target_properties(vix_core PROPERTIES
+    EXPORT_NAME core
+  )
+
   target_compile_features(vix_core INTERFACE cxx_std_20)
 
   target_include_directories(vix_core INTERFACE
