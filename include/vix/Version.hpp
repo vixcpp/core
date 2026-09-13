@@ -8,9 +8,13 @@
 
 #include <string_view>
 
+#ifndef VIX_CORE_RUNTIME_VERSION
+#define VIX_CORE_RUNTIME_VERSION "v2.9.0"
+#endif
+
 namespace vix
 {
-  inline constexpr std::string_view VERSION = "v2.8.4";
+  inline constexpr std::string_view VERSION = VIX_CORE_RUNTIME_VERSION;
   inline constexpr std::string_view CORE_VERSION = VERSION;
 }
 
