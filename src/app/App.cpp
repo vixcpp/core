@@ -45,7 +45,7 @@ namespace
   static std::atomic<std::uint64_t> g_rid_seq{0};
   static std::once_flag g_module_init_once;
 
-  inline vix::utils::Logger &log()
+  inline vix::utils::Logger &core_logger()
   {
     return vix::utils::Logger::getInstance();
   }
@@ -64,7 +64,7 @@ namespace
             return;
           }
 
-          if (!log().enabled(vix::utils::Logger::Level::Debug))
+          if (!core_logger().enabled(vix::utils::Logger::Level::Debug))
           {
             next();
             return;
@@ -83,7 +83,7 @@ namespace
                                  ? res.res.status()
                                  : vix::http::OK;
 
-          log().logf(
+          core_logger().logf(
               vix::utils::Logger::Level::Debug,
               "request_done",
               "rid", static_cast<unsigned long long>(rid),
@@ -105,7 +105,7 @@ namespace
     {
       try
       {
-        log().log(
+        core_logger().log(
             vix::utils::Logger::Level::Warn,
             "{}: detaching current thread during shutdown",
             name);
@@ -124,7 +124,7 @@ namespace
     }
     catch (const std::exception &e)
     {
-      log().log(
+      core_logger().log(
           vix::utils::Logger::Level::Warn,
           "{}: join failed during shutdown: {}",
           name,
@@ -258,17 +258,17 @@ namespace vix
         executor_(make_default_executor()),
         server_(std::make_unique<vix::server::HTTPServer>(config_, executor_))
   {
-    log().setLevelFromEnv("VIX_LOG_LEVEL");
-    log().setFormatFromEnv("VIX_LOG_FORMAT");
+    core_logger().setLevelFromEnv("VIX_LOG_LEVEL");
+    core_logger().setFormatFromEnv("VIX_LOG_FORMAT");
 
     if (vix::utils::env_bool("VIX_LOG_ASYNC", true))
-      log().setAsync(true);
+      core_logger().setAsync(true);
     else
-      log().setAsync(false);
+      core_logger().setAsync(false);
 
     Logger::Context ctx;
     ctx.module = "App";
-    log().setContext(ctx);
+    core_logger().setContext(ctx);
 
     try
     {
@@ -277,7 +277,7 @@ namespace vix
       router_ = server_->getRouter();
       if (!router_)
       {
-        log().throwError("Failed to get Router from HTTPServer");
+        core_logger().throwError("Failed to get Router from HTTPServer");
       }
 
       setup_not_found_handler_();
@@ -292,7 +292,7 @@ namespace vix
     }
     catch (const std::exception &e)
     {
-      log().throwError("Failed to initialize App: {}", e.what());
+      core_logger().throwError("Failed to initialize App: {}", e.what());
     }
   }
 
@@ -304,32 +304,32 @@ namespace vix
   {
     if (!executor_)
     {
-      log().throwError("App: executor cannot be null");
+      core_logger().throwError("App: executor cannot be null");
     }
 
     executor_->start();
 
-    log().setPattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
-    log().setLevel(parse_log_level_from_env());
+    core_logger().setPattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
+    core_logger().setLevel(parse_log_level_from_env());
 
     if (vix::utils::env_bool("VIX_LOG_ASYNC", true))
-      log().setAsync(true);
+      core_logger().setAsync(true);
     else
-      log().setAsync(false);
+      core_logger().setAsync(false);
 
     if (vix::utils::env_bool("VIX_INTERNAL_LOGS", false))
     {
-      log().setPattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
-      log().setLevel(parse_log_level_from_env());
+      core_logger().setPattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
+      core_logger().setLevel(parse_log_level_from_env());
     }
     else
     {
-      log().setLevel(Logger::Level::Critical);
+      core_logger().setLevel(Logger::Level::Critical);
     }
 
     Logger::Context ctx;
     ctx.module = "App";
-    log().setContext(ctx);
+    core_logger().setContext(ctx);
 
     try
     {
@@ -338,7 +338,7 @@ namespace vix
       router_ = server_->getRouter();
       if (!router_)
       {
-        log().throwError("Failed to get Router from HTTPServer");
+        core_logger().throwError("Failed to get Router from HTTPServer");
       }
 
       setup_not_found_handler_();
@@ -353,7 +353,7 @@ namespace vix
     }
     catch (const std::exception &e)
     {
-      log().throwError("Failed to initialize App: {}", e.what());
+      core_logger().throwError("Failed to initialize App: {}", e.what());
     }
   }
 
@@ -437,7 +437,7 @@ namespace vix
     if (listen_called_.load(std::memory_order_relaxed) &&
         !wait_called_.load(std::memory_order_relaxed))
     {
-      log().log(Logger::Level::Warn, "listen() without wait()");
+      core_logger().log(Logger::Level::Warn, "listen() without wait()");
     }
 
     close();
@@ -487,7 +487,7 @@ namespace vix
 
     if (closed_.load(std::memory_order_acquire))
     {
-      log().log(
+      core_logger().log(
           Logger::Level::Warn,
           "App::listen() called after close(); create a new App instance instead");
       return;
@@ -497,7 +497,7 @@ namespace vix
 
     if (started_.exchange(true, std::memory_order_relaxed))
     {
-      log().log(Logger::Level::Warn, "App::listen() called but server is already running");
+      core_logger().log(Logger::Level::Warn, "App::listen() called but server is already running");
       return;
     }
 
@@ -528,7 +528,7 @@ namespace vix
             server_->report_startup_failure(e.what());
             try
             {
-              log().log(
+              core_logger().log(
                   Logger::Level::Error,
                   "App server thread stopped with exception: {}",
                   e.what());
@@ -545,7 +545,7 @@ namespace vix
             server_->report_startup_failure("unknown server startup error");
             try
             {
-              log().log(
+              core_logger().log(
                   Logger::Level::Error,
                   "App server thread stopped with unknown exception");
             }
@@ -707,7 +707,7 @@ namespace vix
     {
       try
       {
-        log().log(
+        core_logger().log(
             Logger::Level::Warn,
             "App::close: server shutdown failed: {}",
             e.what());
@@ -720,7 +720,7 @@ namespace vix
     {
       try
       {
-        log().log(
+        core_logger().log(
             Logger::Level::Warn,
             "App::close: server shutdown failed with unknown exception");
       }
