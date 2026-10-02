@@ -22,6 +22,8 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <type_traits>
+#include <utility>
 
 #if defined(_WIN32)
 #include <winsock2.h>
@@ -40,6 +42,7 @@
 #include <vix/router/Router.hpp>
 #include <vix/runtime/Budget.hpp>
 #include <vix/runtime/Runtime.hpp>
+#include <vix/server/ServerReadyPresentation.hpp>
 
 namespace
 {
@@ -49,6 +52,9 @@ namespace
   using ResponseWrapper = vix::http::ResponseWrapper;
   using RuntimeConfig = vix::runtime::RuntimeConfig;
   using RuntimeExecutor = vix::executor::RuntimeExecutor;
+
+  static_assert(std::is_same_v<decltype(std::declval<const App &>().server_ready_info()),
+                               vix::server::ServerReadyInfo>);
 
   static void set_env_var(const char *name, const std::string &value)
   {

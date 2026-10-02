@@ -31,7 +31,7 @@
 #include <vix/http/ResponseWrapper.hpp>
 #include <vix/http/Status.hpp>
 #include <vix/json/json.hpp>
-#include <vix/utils/Logger.hpp>
+#include <vix/log/Logger.hpp>
 
 #ifdef _WIN32
 #ifdef ERROR
@@ -44,9 +44,9 @@ namespace vix::http
   using vix::async::core::task;
 
   /** @brief Return the global Vix logger instance. */
-  inline vix::utils::Logger &log()
+  inline vix::log::Logger &log()
   {
-    return vix::utils::Logger::getInstance();
+    return vix::log::Logger::getInstance();
   }
 
   /** @brief Extract route params from a path using a pattern like "/posts/{id}" and return an empty map on mismatch. */
@@ -267,7 +267,7 @@ namespace vix::http
       }
       catch (const std::range_error &e)
       {
-        log().log(vix::utils::Logger::Level::Error,
+        log().log(vix::log::Logger::Level::Error,
                   "Route '{}' threw range_error: {} (method={}, path={})",
                   route_pattern_, e.what(), req.method(), req.path());
 
@@ -289,7 +289,7 @@ namespace vix::http
       }
       catch (const std::exception &e)
       {
-        log().log(vix::utils::Logger::Level::Error,
+        log().log(vix::log::Logger::Level::Error,
                   "Route '{}' threw exception: {} (method={}, path={})",
                   route_pattern_, e.what(), req.method(), req.path());
 

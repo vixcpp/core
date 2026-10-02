@@ -24,7 +24,6 @@
 #include <vix/json/json.hpp>
 
 #include <vix/http/RequestState.hpp>
-#include <vix/utils/String.hpp>
 
 namespace vix::http
 {
@@ -396,6 +395,95 @@ namespace vix::http
       }
     }
 
+    /**
+     * @brief Decode an HTTP query component using established Request semantics.
+     *
+     * This is deliberately local to HTTP request parsing. The similarly named
+     * Vix2 utility functions remain compatibility APIs and must not make the
+     * canonical HTTP request contract depend on vix::utils.
+     */
+    static std::string decode_query_component(std::string_view input)
+    {
+      std::string output;
+      output.reserve(input.size());
+
+      for (std::size_t index = 0; index < input.size(); ++index)
+      {
+        const unsigned char character = static_cast<unsigned char>(input[index]);
+
+        if (character == '+')
+        {
+          output.push_back(' ');
+        }
+        else if (character == '%' && index + 2 < input.size())
+        {
+          const auto hex = [](unsigned char value) -> int {
+            if (value >= '0' && value <= '9')
+              return value - '0';
+            if (value >= 'a' && value <= 'f')
+              return 10 + (value - 'a');
+            if (value >= 'A' && value <= 'F')
+              return 10 + (value - 'A');
+            return -1;
+          };
+
+          const int high = hex(static_cast<unsigned char>(input[index + 1]));
+          const int low = hex(static_cast<unsigned char>(input[index + 2]));
+
+          if (high >= 0 && low >= 0)
+          {
+            output.push_back(static_cast<char>((high << 4) | low));
+            index += 2;
+          }
+          else
+          {
+            output.push_back(static_cast<char>(character));
+          }
+        }
+        else
+        {
+          output.push_back(static_cast<char>(character));
+        }
+      }
+
+      return output;
+    }
+
+    static QueryMap parse_query_parameters(std::string_view query)
+    {
+      QueryMap parameters;
+      std::size_t position = 0;
+
+      while (position < query.size())
+      {
+        std::size_t separator = query.find('&', position);
+        if (separator == std::string_view::npos)
+          separator = query.size();
+
+        const std::string_view pair = query.substr(position, separator - position);
+        if (!pair.empty())
+        {
+          const std::size_t equals = pair.find('=');
+          const std::string_view encoded_key = pair.substr(0, equals);
+          const std::string_view encoded_value = equals == std::string_view::npos
+              ? std::string_view{}
+              : pair.substr(equals + 1);
+
+          std::string key = decode_query_component(encoded_key);
+          std::string value = decode_query_component(encoded_value);
+
+          if (!key.empty())
+            parameters[std::move(key)] = std::move(value);
+        }
+
+        if (separator == query.size())
+          break;
+        position = separator + 1;
+      }
+
+      return parameters;
+    }
+
     void ensure_query_cache() const
     {
       if (query_cache_)
@@ -408,7 +496,7 @@ namespace vix::http
       else
       {
         query_cache_ = std::make_shared<const QueryMap>(
-            vix::utils::parse_query_string(query_raw_));
+            parse_query_parameters(query_raw_));
       }
     }
 

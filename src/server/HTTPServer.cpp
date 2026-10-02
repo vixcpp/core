@@ -33,8 +33,7 @@
 #include <vix/json/build.hpp>
 #include <vix/session/Session.hpp>
 #include <vix/session/TlsSession.hpp>
-#include <vix/utils/Logger.hpp>
-#include <vix/utils/ServerPrettyLogs.hpp>
+#include <vix/log/Logger.hpp>
 
 #if defined(__linux__)
 #include <pthread.h>
@@ -43,7 +42,7 @@
 
 namespace vix::server
 {
-  using Logger = vix::utils::Logger;
+  using Logger = vix::log::Logger;
   using vix::async::core::spawn_detached;
 
   namespace

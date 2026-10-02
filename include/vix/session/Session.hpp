@@ -114,17 +114,6 @@ namespace vix::session
     /** @brief Cancel the active timeout scope. */
     void cancel_timer();
 
-    /**
-     * @brief Return true if a socket/system error corresponds to a normal connection shutdown.
-     *
-     * This includes expected cases such as EOF after the client closes the connection,
-     * operation canceled during timeout/stop, and common peer disconnect conditions.
-     *
-     * @param e System error raised by socket I/O.
-     * @return true if the error should not be treated as a server-side failure.
-     */
-    static bool is_normal_disconnect(const std::system_error &e) noexcept;
-
     /** @brief Read and handle one ultra-fast /bench request in VIX_BENCH_MODE. */
     task<bool> handle_bench_request_fast();
 

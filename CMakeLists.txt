@@ -20,7 +20,7 @@
 #   - vix::core  : Namespaced alias for consumers
 #
 # Public Dependencies:
-#   - vix::utils
+#   - vix::log
 #   - vix::async
 #   - vix::env
 #   - vix::io
@@ -66,7 +66,7 @@ endif()
 # Direct server TLS is opt-in; enable this to build OpenSSL-backed TlsTransport support.
 option(VIX_CORE_WITH_OPENSSL "Enable HTTPS/TLS support using OpenSSL" OFF)
 option(VIX_CORE_WITH_MYSQL   "Enable MySQL client linkage" OFF)
-option(VIX_CORE_FETCH_UTILS  "Auto-resolve vix::utils if missing" ON)
+option(VIX_CORE_FETCH_LOG    "Auto-resolve vix::log if missing" ON)
 option(VIX_CORE_FETCH_ASYNC  "Auto-resolve vix::async if missing" ON)
 option(VIX_CORE_FETCH_ENV    "Auto-resolve vix::env if missing" ON)
 option(VIX_CORE_FETCH_IO     "Auto-resolve vix::io if missing" ON)
@@ -104,30 +104,30 @@ file(GLOB_RECURSE CORE_SOURCES CONFIGURE_DEPENDS
 )
 
 # --------------------------------------------------------------------
-# utils dependency
+# log dependency
 # --------------------------------------------------------------------
-if (NOT TARGET vix::utils AND NOT TARGET vix_utils)
-  if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../utils/CMakeLists.txt")
-    message(STATUS "[core] Adding utils from sibling: ../utils")
-    add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../utils" "utils")
+if (NOT TARGET vix::log AND NOT TARGET vix_log)
+  if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../log/CMakeLists.txt")
+    message(STATUS "[core] Adding log from sibling: ../log")
+    add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../log" "log")
     set(VIX_CORE_HAS_LOCAL_DEPENDENCIES ON)
-  elseif (VIX_CORE_FETCH_UTILS)
-    find_package(vix_utils CONFIG QUIET)
-    find_package(utils CONFIG QUIET)
+  elseif (VIX_CORE_FETCH_LOG)
+    find_package(vix_log CONFIG QUIET)
+    find_package(log CONFIG QUIET)
   endif()
 endif()
 
-set(VIX_UTILS_TARGET "")
-if (TARGET vix::utils)
-  set(VIX_UTILS_TARGET vix::utils)
-elseif (TARGET vix_utils)
-  set(VIX_UTILS_TARGET vix_utils)
+set(VIX_LOG_TARGET "")
+if (TARGET vix::log)
+  set(VIX_LOG_TARGET vix::log)
+elseif (TARGET vix_log)
+  set(VIX_LOG_TARGET vix_log)
 endif()
 
-if (NOT VIX_UTILS_TARGET)
+if (NOT VIX_LOG_TARGET)
   message(FATAL_ERROR
-    "vix::utils not found.\n"
-    "Provide ../utils in the umbrella build, or install/export the utils package."
+    "vix::log not found.\n"
+    "Provide ../log in the umbrella build, or install/export the log package."
   )
 endif()
 
@@ -462,7 +462,7 @@ if (CORE_SOURCES)
 
   target_link_libraries(vix_core
     PUBLIC
-      ${VIX_UTILS_TARGET}
+      ${VIX_LOG_TARGET}
       ${VIX_ASYNC_TARGET}
       ${VIX_ENV_TARGET}
       ${VIX_IO_TARGET}
@@ -577,7 +577,7 @@ else()
   )
 
   target_link_libraries(vix_core INTERFACE
-    ${VIX_UTILS_TARGET}
+    ${VIX_LOG_TARGET}
     ${VIX_ASYNC_TARGET}
     ${VIX_ENV_TARGET}
     ${VIX_IO_TARGET}
@@ -695,7 +695,7 @@ message(STATUS "JSON policy:      ${VIX_CORE_WITH_JSON}")
 message(STATUS "Template policy:  ${VIX_CORE_WITH_TEMPLATE}")
 message(STATUS "UI policy:        ${VIX_CORE_WITH_UI}")
 message(STATUS "UI target:        ${VIX_UI_TARGET}")
-message(STATUS "Utils target:     ${VIX_UTILS_TARGET}")
+message(STATUS "Log target:       ${VIX_LOG_TARGET}")
 message(STATUS "Async target:     ${VIX_ASYNC_TARGET}")
 message(STATUS "Include dir:      ${CMAKE_CURRENT_SOURCE_DIR}/include (for <vix/...>)")
 message(STATUS "Sanitizers:       ${VIX_ENABLE_SANITIZERS}")

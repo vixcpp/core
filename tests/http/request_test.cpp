@@ -137,6 +137,28 @@ namespace
     assert(req.query_value("q") == "a?b");
   }
 
+  static void test_query_parsing_preserves_legacy_string_contract()
+  {
+    Request req = make_request(
+        "GET",
+        "/search?name=Ada+Lovelace&escaped=%41%62&nul=%00&dup=first&dup=last"
+        "&empty=&=ignored&expression=a=b=c&invalid=%G1&incomplete=%");
+
+    assert(req.query_value("name") == "Ada Lovelace");
+    assert(req.query_value("escaped") == "Ab");
+    assert(req.query_value("dup") == "last");
+    assert(req.has_query("empty"));
+    assert(req.query_value("empty").empty());
+    assert(!req.has_query(""));
+    assert(req.query_value("expression") == "a=b=c");
+    assert(req.query_value("invalid") == "%G1");
+    assert(req.query_value("incomplete") == "%");
+
+    const std::string nul = req.query_value("nul");
+    assert(nul.size() == 1);
+    assert(nul.front() == '\0');
+  }
+
   static void test_set_target_resets_query_cache()
   {
     Request req = make_request("GET", "/items?page=1");
@@ -492,6 +514,7 @@ int main()
   test_target_without_query();
   test_target_with_empty_query_string();
   test_target_with_multiple_question_marks();
+  test_query_parsing_preserves_legacy_string_contract();
   test_set_target_resets_query_cache();
   test_query_map_is_available_on_const_request();
   test_headers();

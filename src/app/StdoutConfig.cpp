@@ -12,9 +12,9 @@
  *
  */
 #include <iostream>
-#include <cstdlib>
-#include <string_view>
-#include <vix/utils/Env.hpp>
+#include <string>
+
+#include <vix/env/GetOr.hpp>
 
 namespace
 {
@@ -22,11 +22,7 @@ namespace
   {
     VixStdoutConfigurator()
     {
-      const char *env = vix::utils::vix_getenv("VIX_STDOUT_MODE");
-      if (!env)
-        return;
-
-      std::string_view mode{env};
+      const std::string mode = vix::env::get_or("VIX_STDOUT_MODE");
 
       if (mode == "line")
       {

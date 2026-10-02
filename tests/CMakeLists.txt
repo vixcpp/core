@@ -70,6 +70,10 @@ vix_core_add_test(core_smoke_test
   core_smoke_test.cpp
 )
 
+vix_core_add_test(core_umbrella_header_test
+  core_umbrella_header_test.cpp
+)
+
 vix_core_add_test(runtime_test
   runtime/test_runtime.cpp
 )
@@ -327,6 +331,14 @@ vix_core_add_test(config_copy_move_test
 
 vix_core_add_test(app_constructor_test
   app/app_constructor_test.cpp
+)
+
+vix_core_add_test(core_logger_identity_test
+  logging/core_logger_identity_test.cpp
+)
+
+vix_core_add_test(app_env_test
+  app/app_env_test.cpp
 )
 
 vix_core_add_test(app_config_test

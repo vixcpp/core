@@ -23,10 +23,10 @@
 
 #include <vix/openapi/register_docs.hpp>
 #include <vix/router/Router.hpp>
-#include <vix/utils/Env.hpp>
-#include <vix/utils/Logger.hpp>
-#include <vix/utils/ScopeGuard.hpp>
-#include <vix/utils/ServerPrettyLogs.hpp>
+#include <vix/env/GetBool.hpp>
+#include <vix/env/GetOr.hpp>
+#include <vix/env/Has.hpp>
+#include <vix/log/Logger.hpp>
 
 #include <atomic>
 #include <cctype>
@@ -36,6 +36,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <chrono>
 #include <utility>
@@ -45,9 +46,41 @@ namespace
   static std::atomic<std::uint64_t> g_rid_seq{0};
   static std::once_flag g_module_init_once;
 
-  inline vix::utils::Logger &core_logger()
+  inline vix::log::Logger &core_logger()
   {
-    return vix::utils::Logger::getInstance();
+    return vix::log::Logger::getInstance();
+  }
+
+  std::string core_env_or(std::string_view key, std::string_view fallback)
+  {
+    std::string value = vix::env::get_or(key, fallback);
+
+#if defined(_WIN32)
+    // The Vix2 lookup contract treated an empty Windows variable as absent.
+    if (value.empty())
+      return std::string(fallback);
+#endif
+
+    return value;
+  }
+
+  bool core_env_bool(std::string_view key, bool fallback)
+  {
+    if (!vix::env::has(key))
+      return fallback;
+
+    const auto parsed = vix::env::get_bool(key);
+    if (parsed)
+      return parsed.value();
+
+#if defined(_WIN32)
+    // Preserve the Vix2 distinction: an empty Windows variable was absent,
+    // while a non-empty invalid value evaluated to false.
+    if (vix::env::get_or(key).empty())
+      return fallback;
+#endif
+
+    return false;
   }
 
   static void install_access_logs(vix::App &app)
@@ -57,14 +90,14 @@ namespace
            vix::http::ResponseWrapper &res,
            vix::App::Next next)
         {
-          static const bool kAccessLogs = vix::utils::env_bool("VIX_ACCESS_LOGS", true);
+          static const bool kAccessLogs = core_env_bool("VIX_ACCESS_LOGS", true);
           if (!kAccessLogs)
           {
             next();
             return;
           }
 
-          if (!core_logger().enabled(vix::utils::Logger::Level::Debug))
+          if (!core_logger().enabled(vix::log::Logger::Level::Debug))
           {
             next();
             return;
@@ -84,7 +117,7 @@ namespace
                                  : vix::http::OK;
 
           core_logger().logf(
-              vix::utils::Logger::Level::Debug,
+              vix::log::Logger::Level::Debug,
               "request_done",
               "rid", static_cast<unsigned long long>(rid),
               "method", req.method(),
@@ -106,7 +139,7 @@ namespace
       try
       {
         core_logger().log(
-            vix::utils::Logger::Level::Warn,
+            vix::log::Logger::Level::Warn,
             "{}: detaching current thread during shutdown",
             name);
         t.detach();
@@ -125,7 +158,7 @@ namespace
     catch (const std::exception &e)
     {
       core_logger().log(
-          vix::utils::Logger::Level::Warn,
+          vix::log::Logger::Level::Warn,
           "{}: join failed during shutdown: {}",
           name,
           e.what());
@@ -143,11 +176,11 @@ namespace
     }
   }
 
-  vix::utils::Logger::Level parse_log_level_from_env()
+  vix::log::Logger::Level parse_log_level_from_env()
   {
-    using Level = vix::utils::Logger::Level;
+    using Level = vix::log::Logger::Level;
 
-    const std::string raw = vix::utils::env_or("VIX_LOG_LEVEL", std::string{"warn"});
+    const std::string raw = core_env_or("VIX_LOG_LEVEL", "warn");
     std::string s;
     s.reserve(raw.size());
 
@@ -229,7 +262,7 @@ namespace
 
 namespace vix
 {
-  using Logger = vix::utils::Logger;
+  using Logger = vix::log::Logger;
 
   static vix::App::ModuleInitFn &module_init_ref()
   {
@@ -261,7 +294,7 @@ namespace vix
     core_logger().setLevelFromEnv("VIX_LOG_LEVEL");
     core_logger().setFormatFromEnv("VIX_LOG_FORMAT");
 
-    if (vix::utils::env_bool("VIX_LOG_ASYNC", true))
+    if (core_env_bool("VIX_LOG_ASYNC", true))
       core_logger().setAsync(true);
     else
       core_logger().setAsync(false);
@@ -282,7 +315,7 @@ namespace vix
 
       setup_not_found_handler_();
 
-      if (vix::utils::env_bool("VIX_DOCS", true))
+      if (core_env_bool("VIX_DOCS", true))
       {
         vix::openapi::register_openapi_and_docs(*router_, "Vix API", "2.8.4");
       }
@@ -312,12 +345,12 @@ namespace vix
     core_logger().setPattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
     core_logger().setLevel(parse_log_level_from_env());
 
-    if (vix::utils::env_bool("VIX_LOG_ASYNC", true))
+    if (core_env_bool("VIX_LOG_ASYNC", true))
       core_logger().setAsync(true);
     else
       core_logger().setAsync(false);
 
-    if (vix::utils::env_bool("VIX_INTERNAL_LOGS", false))
+    if (core_env_bool("VIX_INTERNAL_LOGS", false))
     {
       core_logger().setPattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
       core_logger().setLevel(parse_log_level_from_env());
@@ -343,7 +376,7 @@ namespace vix
 
       setup_not_found_handler_();
 
-      if (vix::utils::env_bool("VIX_DOCS", true))
+      if (core_env_bool("VIX_DOCS", true))
       {
         vix::openapi::register_openapi_and_docs(*router_, "Vix API", "0.0.0");
       }
@@ -574,15 +607,15 @@ namespace vix
       ready_ms = 1;
     }
 
-    vix::utils::ServerReadyInfo info;
+    vix::server::ServerReadyInfo info;
     info.app = "vix.cpp";
     info.version = std::string(vix::VERSION);
     info.ready_ms = ready_ms;
     info.mode = dev_mode_ ? "dev" : "run";
 
-    if (const char *v = vix::utils::vix_getenv("VIX_MODE"); v && *v)
+    if (!vix::env::get_or("VIX_MODE").empty())
     {
-      info.mode = vix::utils::RuntimeBanner::mode_from_env();
+      info.mode = vix::server::StartupPresentation::mode_from_env();
     }
 
     info.scheme = config_.isTlsEnabled() ? "https" : "http";
@@ -607,7 +640,7 @@ namespace vix
     }
     else
     {
-      vix::utils::RuntimeBanner::emit_server_ready(info);
+      vix::server::StartupPresentation::emit_server_ready(info);
     }
   }
 

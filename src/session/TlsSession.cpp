@@ -22,11 +22,11 @@
 #include <vix/server/TlsConfig.hpp>
 #include <vix/session/Session.hpp>
 #include <vix/session/TlsTransport.hpp>
-#include <vix/utils/Logger.hpp>
+#include <vix/log/Logger.hpp>
 
 namespace vix::session
 {
-  using Logger = vix::utils::Logger;
+  using Logger = vix::log::Logger;
 
   namespace
   {

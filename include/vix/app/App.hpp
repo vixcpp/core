@@ -28,8 +28,8 @@
 #include <vix/config/Config.hpp>
 #include <vix/http/ResponseWrapper.hpp>
 #include <vix/router/RouteOptions.hpp>
-#include <vix/utils/Logger.hpp>
-#include <vix/utils/ServerPrettyLogs.hpp>
+#include <vix/server/ServerReadyPresentation.hpp>
+#include <vix/log/Logger.hpp>
 
 namespace vix::router
 {
@@ -63,7 +63,7 @@ namespace vix::http
 
 namespace vix
 {
-  using Logger = vix::utils::Logger;
+  using Logger = vix::log::Logger;
 
   /**
    * @brief Returns the global Vix logger instance.
@@ -746,9 +746,9 @@ namespace vix
     /**
      * @brief Returns the last captured server ready information.
      *
-     * @return vix::utils::ServerReadyInfo Last ready info.
+     * @return vix::server::ServerReadyInfo Last ready info.
      */
-    vix::utils::ServerReadyInfo server_ready_info() const
+    vix::server::ServerReadyInfo server_ready_info() const
     {
       std::lock_guard<std::mutex> lock(ready_info_mutex_);
       return last_ready_info_;
@@ -1016,7 +1016,7 @@ namespace vix
     std::atomic<bool> listen_called_{false};
 
     mutable std::mutex ready_info_mutex_;
-    vix::utils::ServerReadyInfo last_ready_info_{};
+    vix::server::ServerReadyInfo last_ready_info_{};
     std::atomic<bool> has_ready_info_{false};
 
     std::vector<MiddlewareEntry> middlewares_;
