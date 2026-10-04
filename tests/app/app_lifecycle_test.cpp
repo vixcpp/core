@@ -42,6 +42,7 @@
 #include <vix/router/Router.hpp>
 #include <vix/runtime/Budget.hpp>
 #include <vix/runtime/Runtime.hpp>
+#include <vix/server/HTTPServer.hpp>
 #include <vix/server/ServerReadyPresentation.hpp>
 
 namespace
@@ -1001,6 +1002,85 @@ namespace
     assert(executor->accepting() == false);
   }
 
+  static void test_default_app_shares_an_usable_executor_with_its_server()
+  {
+    prepare_app_env();
+
+    App app;
+
+    auto server_executor = app.server().executor();
+
+    assert(server_executor != nullptr);
+    assert(server_executor.get() == &app.executor());
+    assert(server_executor->started() == true);
+    assert(server_executor->accepting() == true);
+
+    std::atomic<bool> executed{false};
+
+    assert(app.executor().post(
+        [&executed]()
+        {
+          executed.store(true, std::memory_order_release);
+        }) == true);
+
+    app.executor().wait_idle();
+
+    assert(executed.load(std::memory_order_acquire) == true);
+
+    app.close();
+  }
+
+  static void test_external_executor_is_shared_by_app_and_server_and_survives_app_shutdown()
+  {
+    prepare_app_env();
+
+    auto executor = make_executor();
+    App app{executor};
+
+    assert(&app.executor() == executor.get());
+    assert(app.server().executor() == executor);
+
+    app.get("/status", text_handler);
+    app.listen(19131);
+
+    assert_started_on_port(app, 19131);
+
+    std::atomic<bool> executed_while_running{false};
+
+    assert(executor->post(
+        [&executed_while_running]()
+        {
+          executed_while_running.store(true, std::memory_order_release);
+        }) == true);
+
+    executor->wait_idle();
+
+    assert(executed_while_running.load(std::memory_order_acquire) == true);
+
+    close_and_wait(app);
+
+    /*
+     * App shutdown stops the HTTP server. It does not take ownership of the
+     * caller-supplied execution context or make it unavailable.
+     */
+    assert(executor->started() == true);
+    assert(executor->accepting() == true);
+
+    std::atomic<bool> executed_after_close{false};
+
+    assert(executor->post(
+        [&executed_after_close]()
+        {
+          executed_after_close.store(true, std::memory_order_release);
+        }) == true);
+
+    executor->wait_idle();
+
+    assert(executed_after_close.load(std::memory_order_acquire) == true);
+
+    executor->stop();
+  }
+
   static void test_external_executor_signal_stop_lifecycle()
   {
     prepare_app_env();
@@ -1221,6 +1301,7 @@ int main()
   test_empty_shutdown_callback_is_allowed();
 
   test_listen_after_manual_close_keeps_app_stopped();
+  test_default_app_shares_an_usable_executor_with_its_server();
 
   if (tcp_bind_is_unavailable())
   {
@@ -1260,6 +1341,7 @@ int main()
   test_config_mutation_before_listen_is_used();
 
   test_external_executor_lifecycle();
+  test_external_executor_is_shared_by_app_and_server_and_survives_app_shutdown();
   test_external_executor_signal_stop_lifecycle();
 
   test_listen_callback_can_observe_app_state();

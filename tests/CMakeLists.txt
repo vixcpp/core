@@ -201,6 +201,10 @@ vix_core_add_network_test(server_tls_config_test 18090
   server/tls_config_test.cpp
 )
 
+vix_core_add_test(server_ready_presentation_test
+  server/server_ready_presentation_test.cpp
+)
+
 vix_core_add_network_test(server_http_server_constructor_test 18091
   server/http_server_constructor_test.cpp
 )

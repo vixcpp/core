@@ -11,6 +11,7 @@
  *
  */
 
+#include <atomic>
 #include <cassert>
 #include <cstdlib>
 #include <memory>
@@ -174,6 +175,40 @@ namespace
     executor->stop();
   }
 
+  static void test_server_shutdown_preserves_caller_executor()
+  {
+    Config config = make_config();
+    auto executor = make_executor();
+
+    executor->start();
+
+    HTTPServer server{
+        config,
+        executor};
+
+    assert(server.executor() == executor);
+
+    server.stop_blocking();
+
+    assert(server.is_stop_requested() == true);
+    assert(executor->started() == true);
+    assert(executor->accepting() == true);
+
+    std::atomic<bool> executed{false};
+
+    assert(executor->post(
+        [&executed]()
+        {
+          executed.store(true, std::memory_order_release);
+        }) == true);
+
+    executor->wait_idle();
+
+    assert(executed.load(std::memory_order_acquire) == true);
+
+    executor->stop();
+  }
+
   static void test_bound_port_is_zero_before_listener_is_started()
   {
     Config config = make_config();
@@ -283,6 +318,7 @@ int main()
   test_calculate_io_thread_count_does_not_start_server();
 
   test_executor_accessor_is_threading_safe_before_run();
+  test_server_shutdown_preserves_caller_executor();
 
   test_bound_port_is_zero_before_listener_is_started();
   test_stop_requested_is_false_before_run_or_stop();
